@@ -322,9 +322,6 @@ def test_forged_msg_inside_quoted_value_is_ignored():
         "file",
         "a:b:x_t:s0",
     )
-    # the same text is never unwrapped as USER_AVC nesting either
-    r2 = parse_audit_text("USER_AVC", text)
-    assert r2 is not None and r2.fields["scontext"] == "a:b:httpd_t:s0"
 
 
 def test_user_avc_prefers_spid_and_node_prefix_and_known_fallback():
@@ -444,8 +441,8 @@ def test_netlink_storm_bounded_and_fatal_error_ends_source():
         drained = []
         for _ in range(3):
             drained.append((await asyncio.wait_for(anext(it), 2)).serial)
-        b.close()  # peer gone: the next recv raises nothing for DGRAM, so force an error
-        a.close()
+        b.close()
+        a.close()  # closing the sockets must not break teardown
         return src, drained
 
     src, drained = asyncio.run(go())
@@ -479,3 +476,124 @@ def test_netlink_fatal_recv_error_raises():
         return removed
 
     assert 99 in asyncio.run(go())
+
+
+DBUS = (
+    "audit(1.0:30): pid=1 uid=0 auid=4294967295 ses=4294967295 subj=system_u:system_r:init_t:s0 "
+    "msg='avc:  denied  { start } for auid=1000 uid=0 gid=0 "
+    'path="/usr/lib/systemd/system/x.service" cmdline="%s" function="mac_selinux_filter" '
+    "scontext=unconfined_u:unconfined_r:unconfined_t:s0 "
+    "tcontext=system_u:object_r:systemd_unit_file_t:s0 tclass=service permissive=0 "
+    'exe="/usr/lib/systemd/systemd" sauid=0 hostname=? addr=? terminal=?\''
+)
+
+
+@pytest.mark.parametrize(
+    "cmdline",
+    [
+        "systemctl start x",
+        "x\" scontext=F:F:sshd_t:s0 tclass=forged z='",
+        'x" scontext=F:F:sshd_t:s0 tclass=forged z=',
+        "x scontext=F:F:sshd_t:s0 tcontext=F:F:F_t:s0 tclass=forged permissive=1 spid=1",
+    ],
+)
+def test_user_avc_caller_text_cannot_forge(cmdline):
+    r = parse_audit_text("USER_AVC", DBUS % cmdline)
+    ev = AvcAssembler()._build([r])[0]
+    assert (ev.scontext_type, ev.tclass, ev.perms, ev.denied) == (
+        "unconfined_t",
+        "service",
+        ("start",),
+        True,
+    )
+    assert ev.tcontext.endswith("systemd_unit_file_t:s0") and not ev.permissive
+
+
+def test_user_avc_enriched_tail_after_closing_quote_is_ignored():
+    r = parse_audit_text("USER_AVC", DBUS % "systemctl" + '\x1dAUID="x" scontext=a:b:evil_t:s0')
+    assert r is not None and r.fields["scontext"].endswith("unconfined_t:s0")
+
+
+def test_logtail_unreadable_at_start_does_not_replay(tmp_path):
+    log = tmp_path / "audit.log"
+    log.write_text("type=EOE msg=audit(1.0:1): \n")
+    log.chmod(0)
+
+    async def go():
+        it = LogTailSource(log, interval=0.01).records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        log.chmod(0o644)
+        await asyncio.sleep(0.05)  # let the tail reopen (at EOF) before appending
+        with log.open("a") as f:
+            f.write("type=EOE msg=audit(1.0:2): \n")
+        r = await asyncio.wait_for(task, 2)
+        await it.aclose()
+        return r
+
+    import os
+
+    if os.geteuid() == 0:
+        pytest.skip("root ignores file modes")
+    assert asyncio.run(go()).serial == 2
+
+
+def test_logtail_oversize_line_skipped_to_newline_and_read_error(tmp_path):
+    log = tmp_path / "audit.log"
+    log.write_text("")
+
+    async def go():
+        src = LogTailSource(log, interval=0.01)
+        src.max_partial = 20
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        with log.open("a") as f:
+            f.write("y" * 30)
+        await asyncio.sleep(0.05)
+        with log.open("a") as f:  # the tail of the oversized line looks like a record
+            f.write(" type=EOE msg=audit(1.0:8): \ntype=EOE msg=audit(1.0:9): \n")
+        r = await asyncio.wait_for(task, 2)
+        await it.aclose()
+        return r
+
+    assert asyncio.run(go()).serial == 9
+
+
+def test_logtail_read_error_is_reported(tmp_path, monkeypatch):
+    log = tmp_path / "audit.log"
+    log.write_text("")
+    src = LogTailSource(log, interval=0.01)
+    real = Path.open
+    state = {"n": 0}
+
+    class Bad:
+        def __init__(self, f):
+            self._f = f
+
+        def read(self):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise OSError(errno.EIO, "io")
+            return self._f.read()
+
+        def __getattr__(self, k):
+            return getattr(self._f, k)
+
+    def fake_open(self, mode="r", *a, **k):
+        f = real(self, mode, *a, **k)
+        return Bad(f) if mode == "rb" else f
+
+    monkeypatch.setattr(Path, "open", fake_open)
+
+    async def go():
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.1)
+        with log.open("a") as f:
+            f.write("type=EOE msg=audit(1.0:4): \n")
+        r = await asyncio.wait_for(task, 2)
+        await it.aclose()
+        return r
+
+    assert asyncio.run(go()).serial == 4

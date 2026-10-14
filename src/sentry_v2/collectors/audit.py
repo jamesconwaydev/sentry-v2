@@ -39,6 +39,7 @@ NETLINK_TYPES = {
 AVC_TYPES = frozenset({"AVC", "USER_AVC", "SELINUX_ERR"})
 
 _STAMP = re.compile(r"audit\((\d+)\.(\d+):(\d+)\):\s?(.*)", re.S)
+_CONTEXTS = re.compile(r"scontext=(\S+) tcontext=(\S+) tclass=(\S+)")
 _PAIR = re.compile(r"""(\w+)=("[^"]*"|'[^']*'|\S+)""")
 _VERDICT = re.compile(r"avc:\s+(denied|granted)\s+\{([^}]*)\}")
 _LOG_LINE = re.compile(r"(?:node=\S+ )?type=(\w+) msg=(audit\(.*)", re.S)
@@ -69,26 +70,47 @@ def _pairs(text: str) -> dict[str, str]:
 
 def parse_audit_text(type_name: str, text: str) -> AuditRecord | None:
     """Parse the text from `audit(sec.ms:serial): ...` onward."""
-    text = text.split("\x1d", 1)[0]  # auditd "enriched" fields follow the separator
-    m = _STAMP.match(text)
+    m = _STAMP.match(text if type_name == "USER_AVC" else text.split("\x1d", 1)[0])
     if m is None:
         return None
     sec, ms, serial, body = m.groups()
     fields: dict[str, str] = {}
     if type_name == "USER_AVC":
-        # The real record nests in a top-level msg='...'. Tokenising first keeps
-        # a msg='...' inside some other quoted value from being unwrapped.
-        outer = {k: v for k, v in _PAIR.findall(body)}
-        if (nested := outer.pop("msg", "")).startswith("'"):
-            fields.update({k: _decode(k, v) for k, v in outer.items()})
-            body = nested[1:-1]
-    if v := _VERDICT.match(body):
-        fields["verdict"] = v.group(1)
-        fields["perms"] = " ".join(v.group(2).split())
-    fields.update(_pairs(body))
+        fields.update(_user_avc_fields(body))
+    else:
+        if v := _VERDICT.match(body):
+            fields["verdict"] = v.group(1)
+            fields["perms"] = " ".join(v.group(2).split())
+        fields.update(_pairs(body))
     return AuditRecord(
         type_name, int(sec) * 1_000_000 + int(ms.ljust(3, "0")[:3]) * 1000, int(serial), fields
     )
+
+
+def _user_avc_fields(body: str) -> dict[str, str]:
+    """Fields of a USER_AVC, whose msg='...' embeds caller-chosen text.
+
+    systemd puts cmdline="..." in there, so quoting cannot be trusted. The
+    nested record runs to the last quote; userspace object managers append
+    scontext/tcontext/tclass after the caller text, so the last match wins.
+    """
+    start = body.find("msg='")
+    end = body.rfind("'")  # anything after the closing quote is enriched data
+    if start < 0 or end <= start + 5:
+        return {}
+    inner = body[start + 5 : end]
+    fields = _pairs(body[:start])
+    fields.update(_pairs(inner))
+    if v := _VERDICT.match(inner):
+        fields["verdict"] = v.group(1)
+        fields["perms"] = " ".join(v.group(2).split())
+    fields.pop("permissive", None)
+    if ctx := list(_CONTEXTS.finditer(inner)):
+        last = ctx[-1]
+        fields["scontext"], fields["tcontext"], fields["tclass"] = last.groups()
+        if p := re.search(r"\bpermissive=([01])\b", inner[last.end() :]):
+            fields["permissive"] = p.group(1)
+    return fields
 
 
 def parse_netlink(buf: bytes) -> list[tuple[int, str]]:
@@ -254,7 +276,9 @@ class LogTailSource:
         fh: Any = None
         ino = None
         buf = b""
-        first = True
+        discarding = False  # inside an oversized line, skipping to its newline
+        start_ino: int | None = None
+        started = False
         try:
             while True:
                 try:
@@ -262,30 +286,45 @@ class LogTailSource:
                 except OSError as e:
                     st = None
                     self._fail(e)
+                if not started:
+                    # Only the file present at startup is skipped to EOF; one
+                    # that appears later is read from its first byte.
+                    started, start_ino = True, st.st_ino if st else None
                 # stat before the final read: whatever the old file held when we
                 # noticed the rotation is consumed before we switch.
                 rotated = st is not None and (
                     fh is None or st.st_ino != ino or st.st_size < fh.tell()
                 )
                 if fh is not None:
-                    buf += fh.read()
+                    try:
+                        data = fh.read()
+                    except OSError as e:
+                        self._fail(e)
+                        fh.close()
+                        fh, start_ino = None, st.st_ino if st else None
+                        continue
+                    if discarding:
+                        _, nl, data = data.partition(b"\n")
+                        discarding = not nl
+                    buf += data
                     *lines, buf = buf.split(b"\n")  # last item is a partial line
                     for line in lines:
                         if rec := self._parse(line.decode("utf-8", "replace")):
                             yield rec
                     if len(buf) > self.max_partial:
                         log.warning("audit log line over %d bytes; dropped", self.max_partial)
-                        buf = b""
+                        buf, discarding = b"", True
                 if rotated:
                     if fh is not None:
                         fh.close()
                         fh = None
                     try:
                         fh = self._path.open("rb")
-                        if first:
-                            fh.seek(0, os.SEEK_END)
                         ino = os.fstat(fh.fileno()).st_ino
-                        buf, self.error = b"", None
+                        if ino == start_ino:
+                            fh.seek(0, os.SEEK_END)
+                        start_ino = None
+                        buf, discarding, self.error = b"", False, None
                         continue
                     except OSError as e:
                         if fh is not None:
@@ -294,7 +333,6 @@ class LogTailSource:
                         self._fail(e)
                 elif st is not None:
                     self.error = None
-                first = False
                 await asyncio.sleep(self._interval)
         finally:
             if fh is not None:
