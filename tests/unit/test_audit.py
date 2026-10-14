@@ -1,0 +1,298 @@
+import asyncio
+import base64
+import socket
+import struct
+import sys
+from pathlib import Path
+
+import pytest
+
+from sentry_v2.cgroupfs import CgroupFS
+from sentry_v2.collectors.audit import (
+    AuditCollector,
+    AuditRecord,
+    AvcAssembler,
+    LogTailSource,
+    NetlinkSource,
+    open_source,
+    parse_audit_text,
+    parse_netlink,
+)
+from sentry_v2.events import AvcEvent, EventQueue
+
+FIX = Path(__file__).parent.parent / "fixtures" / "audit"
+AVC_TEXT = (
+    "audit(1792020144.848:918): avc:  denied  { entrypoint } for  pid=6844 "
+    'comm="(cat)" path="/usr/bin/cat" dev="vda1" ino=41589 '
+    "scontext=system_u:system_r:httpd_t:s0 tcontext=system_u:object_r:bin_t:s0 "
+    "tclass=file permissive=0"
+)
+
+
+def nl(mtype: int, text: str) -> bytes:
+    payload = text.encode() + b"\0"
+    msg = struct.pack("=IHHII", 16 + len(payload), mtype, 0, 0, 0) + payload
+    return msg + b"\0" * (-len(msg) % 4)
+
+
+def rec(type_: str, serial: int, **f: str) -> AuditRecord:
+    return AuditRecord(type_, serial * 1000, serial, f)
+
+
+def avc(serial: int, **f: str) -> AuditRecord:
+    base = {
+        "verdict": "denied",
+        "perms": "read",
+        "pid": "7",
+        "scontext": "a:b:httpd_t:s0",
+        "tcontext": "a:b:x_t:s0",
+        "tclass": "file",
+    }
+    return rec("AVC", serial, **(base | f))
+
+
+def test_parse_avc_line():
+    r = parse_audit_text("AVC", AVC_TEXT)
+    assert r is not None and (r.serial, r.ts_us) == (918, 1792020144_848_000)
+    ev = AvcAssembler()._build([r])[0]
+    assert ev.perms == ("entrypoint",) and ev.denied and not ev.permissive
+    assert ev.scontext_type == "httpd_t" and ev.tclass == "file" and ev.pid == 6844
+    assert ev.comm == "(cat)"
+
+
+def test_parse_garbage_and_user_avc_and_enriched():
+    assert parse_audit_text("AVC", "nonsense") is None
+    r = parse_audit_text(
+        "USER_AVC",
+        "audit(1.002:5): pid=900 uid=81 msg='avc:  granted  { send_msg acquire_svc } for "
+        'pid=12 comm="x" scontext=a:b:c_t:s0 tcontext=a:b:d_t:s0 tclass=dbus permissive=1\''
+        "\x1dARCH=x86_64",
+    )
+    assert r is not None and r.ts_us == 1_002_000
+    ev = AvcAssembler()._build([r])[0]
+    assert (ev.denied, ev.permissive, ev.pid) == (False, True, 12)
+    assert ev.perms == ("send_msg", "acquire_svc")
+
+
+def test_hex_fields():
+    r = parse_audit_text("PROCTITLE", "audit(1.0:1): proctitle=636174002F6574632F736861646F77")
+    assert r is not None and r.fields["proctitle"] == "cat /etc/shadow"
+    r = parse_audit_text("SYSCALL", 'audit(1.0:1): comm=636174 exe="/bin/cat" key=(null)')
+    assert r is not None and r.fields["comm"] == "cat" and r.fields["exe"] == "/bin/cat"
+
+
+def test_netlink_alignment():
+    buf = nl(1400, "audit(1.0:1): abc") + nl(1320, "audit(1.0:1): ")
+    assert len(nl(1400, "audit(1.0:1): abc")) % 4 == 0
+    out = parse_netlink(buf)
+    assert [t for t, _ in out] == [1400, 1320] and out[0][1] == "audit(1.0:1): abc"
+    # unpadded odd-length first message still advances by the aligned length
+    odd = struct.pack("=IHHII", 16 + 3, 1400, 0, 0, 0) + b"abc" + b"\0"
+    assert [t for t, _ in parse_netlink(odd + nl(1320, "z"))] == [1400, 1320]
+    assert parse_netlink(buf[:20]) == []  # truncated
+
+
+def test_interleaved_serials():
+    a = AvcAssembler()
+    out = []
+    for r, t in [
+        (avc(10), 0),
+        (avc(11), 0),
+        (rec("SYSCALL", 10, comm="c10", exe="/e10"), 0),
+        (rec("SYSCALL", 11, comm="c11", exe="/e11"), 0),
+        (rec("EOE", 10), 0),
+        (rec("EOE", 11), 0),
+    ]:
+        out += a.feed(r, t)
+    assert [(e.serial, e.comm, e.exe) for e in out] == [(10, "c10", "/e10"), (11, "c11", "/e11")]
+
+
+def test_flush_timeout_and_non_avc_dropped():
+    a = AvcAssembler()
+    assert a.feed(avc(1), 100.0) == [] and a.feed(rec("SYSCALL", 2, comm="x"), 100.0) == []
+    assert a.flush(100.05) == []
+    assert [e.serial for e in a.flush(100.2)] == [1]
+    assert a.flush(101) == [] and a.feed(rec("EOE", 9), 0) == []
+
+
+def test_selinux_err():
+    r = rec("SELINUX_ERR", 3, op="security_compute_av", scontext="a:b:c_t:s0", pid="(null)")
+    ev = AvcAssembler()._build([r])[0]
+    assert ev.perms == ("security_compute_av",) and ev.pid is None
+
+
+def test_real_netlink_fixture():
+    a = AvcAssembler()
+    events = []
+    for line in (FIX / "avc_netlink.b64").read_text().split():
+        for mtype, text in parse_netlink(base64.b64decode(line)):
+            names = {1300: "SYSCALL", 1320: "EOE", 1327: "PROCTITLE", 1400: "AVC"}
+            if mtype in names and (r := parse_audit_text(names[mtype], text)):
+                events += a.feed(r, 0)
+    assert len(events) == 1
+    ev = events[0]
+    assert (ev.serial, ev.scontext_type, ev.perms) == (918, "httpd_t", ("entrypoint",))
+    assert ev.exe == "/usr/lib/systemd/systemd-executor" and ev.comm == "(cat)"
+
+
+def test_real_log_fixture(tmp_path):
+    log = tmp_path / "audit.log"
+    log.write_text("")
+
+    async def go():
+        src = LogTailSource(log, interval=0.01)
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        with log.open("a") as f:
+            f.write((FIX / "avc_auditlog.txt").read_text())
+        out = [await asyncio.wait_for(task, 2)]
+        out += [await asyncio.wait_for(anext(it), 2) for _ in range(2)]
+        await it.aclose()
+        return out
+
+    out = asyncio.run(go())
+    assert [r.type for r in out] == ["AVC", "SYSCALL", "PROCTITLE"]
+    ev = AvcAssembler()._build(out)  # no EOE in the log: assembled on flush in practice
+    assert ev[0].exe == "/usr/lib/systemd/systemd-executor"
+
+
+def test_logtail_rotation_partial_and_noise(tmp_path):
+    log = tmp_path / "audit.log"
+    log.write_text("type=AVC msg=audit(1.0:1): old\n")
+
+    async def go():
+        it = LogTailSource(log, interval=0.01).records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        with log.open("a") as f:
+            f.write("type=DAEMON_START msg=audit(1.0:2): x\ntype=EOE msg=audit(1.0:5): ")
+        await asyncio.sleep(0.05)  # partial last line must stay buffered
+        with log.open("a") as f:
+            f.write("\n")
+        first = await asyncio.wait_for(task, 2)
+        log.rename(tmp_path / "audit.log.1")
+        log.write_text("type=EOE msg=audit(2.0:6): \n")
+        second = await asyncio.wait_for(anext(it), 2)
+        await it.aclose()
+        return first, second
+
+    first, second = asyncio.run(go())
+    assert first.serial == 5 and second.serial == 6
+
+
+def test_logtail_truncation_and_late_file(tmp_path):
+    log = tmp_path / "audit.log"
+
+    async def go():
+        it = LogTailSource(log, interval=0.01).records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        log.write_text("type=EOE msg=audit(1.0:1): padding padding padding\n")
+        first = await asyncio.wait_for(task, 2)
+        log.write_text("type=EOE msg=audit(1.0:2): \n")  # same inode, shorter
+        second = await asyncio.wait_for(anext(it), 2)
+        await it.aclose()
+        return first, second
+
+    first, second = asyncio.run(go())
+    assert (first.serial, second.serial) == (1, 2)
+
+
+def test_factory_falls_back_to_logfile():
+    def deny():
+        raise PermissionError("no CAP_AUDIT_READ")
+
+    src = open_source(netlink=deny)
+    assert src.name == "logfile"
+    q = EventQueue()
+    c = AuditCollector(q, CgroupFS(), lambda: src)
+    c._source = src
+    assert c.health() == {"source": "logfile"}
+    assert AuditCollector(q, CgroupFS()).health() == {"source": None}
+
+
+@pytest.mark.skipif(sys.platform == "linux", reason="needs a host without AF_NETLINK")
+def test_netlink_unavailable_off_linux():
+    with pytest.raises(OSError):
+        NetlinkSource()
+
+
+def test_netlink_source_reads_datagrams(monkeypatch):
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    a.setblocking(False)
+
+    class Fake(NetlinkSource):
+        def __init__(self) -> None:
+            self._sock = a
+
+    async def go():
+        it = Fake().records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.01)
+        b.send(nl(1000, "audit(1.0:1): skipped") + nl(1320, "audit(5.0:7): "))
+        r = await asyncio.wait_for(task, 2)
+        await it.aclose()
+        return r
+
+    assert asyncio.run(go()).serial == 7
+    b.close()
+
+
+class Stub:
+    name = "stub"
+
+    def __init__(self, recs):
+        self.recs = recs
+
+    async def records(self):
+        for r in self.recs:
+            yield r
+        await asyncio.sleep(0.2)
+
+
+def test_collector_fills_cgroup_and_flushes(tmp_path):
+    proc = tmp_path / "proc"
+    (proc / "7").mkdir(parents=True)
+    (proc / "7" / "cgroup").write_text("0::/system.slice/httpd.service\n")
+    q = EventQueue()
+    now = [1_000_000_000]
+    recs = [avc(1), avc(2, pid="999"), rec("EOE", 1)]
+    c = AuditCollector(q, CgroupFS(tmp_path, proc), lambda: Stub(recs), lambda: now[0], 0.01)
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        now[0] += 200_000  # 0.2 s later: serial 2 times out
+        await asyncio.sleep(0.05)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    asyncio.run(go())
+    evs = [q._q.popleft(), q._q.popleft()]
+    assert all(isinstance(e, AvcEvent) for e in evs)
+    assert (evs[0].cgroup_at_receipt, evs[0].unit_at_receipt) == (
+        "system.slice/httpd.service",
+        "httpd.service",
+    )
+    assert evs[1].cgroup_at_receipt is None and evs[1].unit_at_receipt is None
+    assert c.health() == {"source": "stub"}
+
+
+def test_collector_survives_bad_record(tmp_path):
+    q = EventQueue()
+
+    class Boom(AuditCollector):
+        def _publish(self, events):
+            raise RuntimeError("x")
+
+    c = Boom(q, CgroupFS(tmp_path, tmp_path), lambda: Stub([rec("EOE", 1)]), flush_interval=0.01)
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        t.cancel()
+
+    asyncio.run(go())
+    assert len(q) == 0
