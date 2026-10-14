@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from sentry_v2.events import AvcEvent, Incident, PsiEvent, UnitEvent
 from sentry_v2.policy import (
     AvcWhen,
@@ -8,7 +10,9 @@ from sentry_v2.policy import (
     PolicyEngine,
     PsiWhen,
     UnitFailedWhen,
+    effective_mode,
     is_protected,
+    target_matches,
 )
 
 
@@ -98,3 +102,55 @@ def test_avc_match_counts_types() -> None:
     assert len(PolicyEngine([policy("a", AvcWhen(("httpd_t",), 2))], Clock()).plan(inc)) == 1
     assert PolicyEngine([policy("b", AvcWhen(("httpd_t",), 3))], Clock()).plan(inc) == []
     assert len(PolicyEngine([policy("c", AvcWhen((), 3))], Clock()).plan(inc)) == 1
+
+
+@pytest.mark.parametrize(
+    ("daemon", "pol", "expected"),
+    [
+        ("dry-run", "dry-run", "dry-run"),
+        ("dry-run", "enforce", "dry-run"),
+        ("enforce", "dry-run", "dry-run"),
+        ("enforce", "enforce", "enforce"),
+    ],
+)
+def test_effective_mode(daemon: str, pol: str, expected: str) -> None:
+    assert effective_mode(daemon, pol) == expected  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("pattern", "path", "expected"),
+    [
+        ("nginx.service", "system.slice/nginx.service", True),
+        ("nginx.service", "/system.slice/nginx.service", True),
+        ("nginx.service", "nginx.service", True),
+        ("nginx.service", "system.slice/nginx.service/extra", False),
+        ("batch-*.service", "system.slice/batch-1.service", True),
+        ("system.slice/batch-*.service", "system.slice/batch-1.service", True),
+        ("system.slice/batch-*.service", "user.slice/batch-1.service", False),
+        ("system.slice/nginx.service", "nginx.service", False),
+    ],
+)
+def test_target_matches(pattern: str, path: str, expected: bool) -> None:
+    assert target_matches(pattern, path) is expected
+
+
+def test_engine_bare_name_and_path_patterns() -> None:
+    def when(pattern: str) -> PsiWhen:
+        return PsiWhen("memory", "some", 150_000, 1_000_000, 5.0, (pattern,))
+
+    for pattern, n in [
+        ("x.service", 1),
+        ("system.slice/x.service", 1),
+        ("user.slice/x.service", 0),
+    ]:
+        engine = PolicyEngine([policy("p", when(pattern))], Clock())
+        assert len(engine.plan(psi_incident())) == n
+
+
+def test_cooldown_history_pruned() -> None:
+    clock = Clock()
+    engine = PolicyEngine([policy("p", UnitFailedWhen(("*.service",)), 10.0)], clock)
+    engine.plan(unit_incident("a.service"))
+    clock.now += 11
+    engine.plan(unit_incident("b.service"))
+    assert list(engine._last) == [("p", "b.service")]

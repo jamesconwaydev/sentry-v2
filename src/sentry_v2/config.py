@@ -5,7 +5,6 @@ from __future__ import annotations
 import re
 import tomllib
 from collections.abc import Callable
-from dataclasses import replace
 from pathlib import Path
 from typing import Any, Literal, TypeVar, cast
 
@@ -18,7 +17,6 @@ from .config_types import (
     FileSinkConfig,
     LimitsConfig,
     MetricsConfig,
-    Mode,
     ProtectionConfig,
     RedactionConfig,
     SinksConfig,
@@ -31,13 +29,13 @@ from .policy import (
     AvcWhen,
     BackupReload,
     Freeze,
+    Mode,
     Notify,
     Policy,
     PsiWhen,
     Throttle,
     UnitFailedWhen,
     When,
-    effective_mode,
     is_protected,
 )
 from .units import Percent, parse_duration, parse_size
@@ -89,6 +87,13 @@ def _float_in(lo: float, hi: float) -> Callable[[object], float]:
         return float(v)
 
     return conv
+
+
+def _pos_duration(v: object) -> float:
+    d = _duration(v)
+    if d <= 0:
+        raise ValueError("must be above 0")
+    return d
 
 
 def _bool(v: object) -> bool:
@@ -219,10 +224,10 @@ def _limits(root: _Reader) -> LimitsConfig:
         max_concurrent_freezes=r.get(
             "max_concurrent_freezes", _int_in(0, 1000), d.max_concurrent_freezes
         ),
-        max_action_duration=r.get("max_action_duration", _duration, d.max_action_duration),
+        max_action_duration=r.get("max_action_duration", _pos_duration, d.max_action_duration),
         breaker_failures=r.get("breaker_failures", _int_in(1, 1000), d.breaker_failures),
-        breaker_window=r.get("breaker_window", _duration, d.breaker_window),
-        breaker_cooldown=r.get("breaker_cooldown", _duration, d.breaker_cooldown),
+        breaker_window=r.get("breaker_window", _pos_duration, d.breaker_window),
+        breaker_cooldown=r.get("breaker_cooldown", _pos_duration, d.breaker_cooldown),
     )
     r.finish()
     return out
@@ -231,9 +236,9 @@ def _limits(root: _Reader) -> LimitsConfig:
 def _correlation(root: _Reader) -> CorrelationConfig:
     r, d = _section(root, "correlation"), CorrelationConfig()
     out = CorrelationConfig(
-        retention=r.get("retention", _duration, d.retention),
-        before=r.get("before", _duration, d.before),
-        after=r.get("after", _duration, d.after),
+        retention=r.get("retention", _pos_duration, d.retention),
+        before=r.get("before", _pos_duration, d.before),
+        after=r.get("after", _pos_duration, d.after),
         min_confidence=r.get("min_confidence", _float_in(0, 1), d.min_confidence),
         avc_burst=r.get("avc_burst", _int_in(1, 10**6), d.avc_burst),
     )
@@ -254,14 +259,14 @@ def _redaction(root: _Reader) -> RedactionConfig:
     return out
 
 
-def _url(r: _Reader, allow_http: bool = False) -> str:
+def _url(r: _Reader) -> str:
     url = r.require("url", _str)
-    if not url.startswith("https://") and not (allow_http and url.startswith("http://")):
+    if not url.startswith("https://"):
         raise r.error("url", "must start with https://")
     return url
 
 
-def _sinks(root: _Reader) -> SinksConfig:
+def _sinks(root: _Reader, state_dir: Path) -> SinksConfig:
     r = _section(root, "sinks")
     for name in ("file", "webhook", "syslog", "splunk_hec", "elastic"):
         sub = r.table.get(name)
@@ -269,25 +274,21 @@ def _sinks(root: _Reader) -> SinksConfig:
             _Reader(sub, r.file, r.key(name)).reject_secrets()
 
     fd = FileSinkConfig()
-    f = r.sub("file")
-    file = fd
-    if f:
-        file = FileSinkConfig(
-            dir=f.get("dir", _path, fd.dir),
-            max_age=f.get("max_age", _duration, fd.max_age),
-            max_size=f.get("max_size", _bytes, fd.max_size),
-        )
-        f.finish()
+    f = _section(r, "file")
+    file = FileSinkConfig(
+        dir=f.get("dir", _path, state_dir / "bundles"),
+        max_age=f.get("max_age", _duration, fd.max_age),
+        max_size=f.get("max_size", _bytes, fd.max_size),
+    )
+    f.finish()
 
     webhook = None
     if w := r.sub("webhook"):
-        insecure = w.get("allow_insecure_http", _bool, False)
         webhook = WebhookSinkConfig(
-            url=_url(w, insecure),
-            hmac_key_file=w.get("hmac_key_file", _path, None),
+            url=_url(w),
+            hmac_key_file=w.require("hmac_key_file", _path),
             ca_file=w.get("ca_file", _path, None),
             timeout=w.get("timeout", _duration, 10.0),
-            allow_insecure_http=insecure,
         )
         w.finish()
 
@@ -332,7 +333,7 @@ def _sinks(root: _Reader) -> SinksConfig:
         if has_basic and (elastic.username is None or elastic.password_file is None):
             raise e.error("username", "username and password_file must be given together")
 
-    r.finish()
+    r.finish("section")
     return SinksConfig(
         file=file, webhook=webhook, syslog=syslog, splunk_hec=splunk, elastic=elastic
     )
@@ -363,7 +364,7 @@ def _control(root: _Reader) -> ControlConfig:
 # --- policies ------------------------------------------------------------------------
 
 
-_THRESHOLD = re.compile(r"^(\w+)/(\w+)$")
+_THRESHOLD = re.compile(r"^([^/]+)/([^/]+)$")
 
 
 def _threshold(v: object) -> tuple[int, int]:
@@ -379,9 +380,9 @@ def _threshold(v: object) -> tuple[int, int]:
 
 
 def _only_protected(patterns: tuple[str, ...], extra: tuple[str, ...]) -> bool:
-    return bool(patterns) and all(
-        is_protected(p.removeprefix("system.slice/"), extra) for p in patterns
-    )
+    # Static sanity check on the unit-name part only; the runtime is_protected
+    # check on the resolved target is the real guard.
+    return bool(patterns) and all(is_protected(p.rsplit("/", 1)[-1], extra) for p in patterns)
 
 
 def _patterns(r: _Reader, name: str, protected: tuple[str, ...]) -> tuple[str, ...]:
@@ -486,7 +487,7 @@ def load_config(main: Path, policies_dir: Path) -> Config:
     protection = ProtectionConfig(protected=pr.get("protected", _strs, _NO_STRS))
     pr.finish()
     correlation, redaction = _correlation(root), _redaction(root)
-    sinks, metrics, control = _sinks(root), _metrics(root), _control(root)
+    sinks, metrics, control = _sinks(root, daemon.state_dir), _metrics(root), _control(root)
     root.finish("section")
 
     policies: list[Policy] = []
@@ -496,7 +497,6 @@ def load_config(main: Path, policies_dir: Path) -> Config:
         fr = _Reader(_toml(file), file)
         policies.extend(_policy(t, limits, protection.protected, seen) for t in fr.tables("policy"))
         fr.finish("section")
-    policies = [replace(p, mode=effective_mode(daemon.mode, p.mode)) for p in policies]
     return Config(
         daemon, limits, protection, correlation, redaction, sinks, metrics, control, tuple(policies)
     )

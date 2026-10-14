@@ -6,10 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from .policy import Policy
+from .policy import Mode, Policy
 from .units import parse_duration
-
-Mode = Literal["dry-run", "enforce"]
 
 
 @dataclass(frozen=True)
@@ -69,7 +67,6 @@ class WebhookSinkConfig:
     hmac_key_file: Path | None = None
     ca_file: Path | None = None
     timeout: float = 10.0
-    allow_insecure_http: bool = False
 
 
 @dataclass(frozen=True)

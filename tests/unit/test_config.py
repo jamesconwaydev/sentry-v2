@@ -72,7 +72,7 @@ def test_policies_load() -> None:
     names = [p.name for p in cfg.policies]
     assert names == ["memory-hog", "crashloop", "denials"]
     mem, crash, den = cfg.policies
-    assert mem.mode == "dry-run" and mem.cooldown == 600.0
+    assert mem.mode == "enforce" and mem.cooldown == 600.0
     assert mem.when == PsiWhen(
         "memory", "full", 150_000, 1_000_000, 10.0, ("system.slice/*.service",)
     )
@@ -81,11 +81,6 @@ def test_policies_load() -> None:
     assert crash.when == UnitFailedWhen(("batch-*.service",), ("watchdog", "timeout"))
     assert crash.actions == (Freeze(120.0, 5.0), BackupReload((Path("/etc/batch"),)))
     assert den.when == AvcWhen(("httpd_t",), 3)
-
-
-def test_global_dry_run_forces_policies(tmp_path: Path) -> None:
-    cfg = load(tmp_path, '[daemon]\nmode = "dry-run"', a=policy_text(extra='mode = "enforce"'))
-    assert cfg.policies[0].mode == "dry-run"
 
 
 def test_unknown_section(tmp_path: Path) -> None:
@@ -166,6 +161,14 @@ def test_bad_thresholds(tmp_path: Path, window: str) -> None:
     [
         ('[sinks.webhook]\nurl = "http://a.example"', "sinks.webhook.url"),
         ("[sinks.webhook]", "sinks.webhook.url"),
+        ('[sinks.webhook]\nurl = "https://a.example"', "sinks.webhook.hmac_key_file"),
+        (
+            '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "/k"\nallow_insecure_http = true',
+            "sinks.webhook.allow_insecure_http",
+        ),
+        ('[sinks.pager]\nurl = "https://a"', "sinks.pager"),
+        ('[limits]\nbreaker_cooldown = "0s"', "limits.breaker_cooldown"),
+        ('[correlation]\nbefore = "0s"', "correlation.before"),
         ('[sinks.splunk_hec]\nurl = "https://a"', "sinks.splunk_hec.token_file"),
         ('[sinks.elastic]\nurl = "https://a"\nindex = "i"', "sinks.elastic.api_key_file"),
         (
@@ -192,11 +195,6 @@ def test_bad_thresholds(tmp_path: Path, window: str) -> None:
 def test_global_errors(tmp_path: Path, main: str, key: str) -> None:
     got = err(tmp_path, main)
     assert got.startswith(f"main.toml: {key}:"), got
-
-
-def test_insecure_http_opt_in(tmp_path: Path) -> None:
-    cfg = load(tmp_path, '[sinks.webhook]\nurl = "http://a.example"\nallow_insecure_http = true')
-    assert cfg.sinks.webhook and cfg.sinks.webhook.allow_insecure_http
 
 
 @pytest.mark.parametrize(
@@ -235,23 +233,12 @@ def test_unreadable_files(tmp_path: Path) -> None:
     assert "(file): cannot read" in err(tmp_path, "[daemon")
 
 
-@pytest.mark.parametrize(
-    ("daemon", "pol", "expected"),
-    [
-        ("dry-run", "dry-run", "dry-run"),
-        ("dry-run", "enforce", "dry-run"),
-        ("enforce", "dry-run", "dry-run"),
-        ("enforce", "enforce", "enforce"),
-    ],
-)
-def test_effective_mode(tmp_path: Path, daemon: str, pol: str, expected: str) -> None:
-    from sentry_v2.policy import effective_mode
-
-    assert effective_mode(daemon, pol) == expected  # type: ignore[arg-type]
-    cfg = load(tmp_path, f'[daemon]\nmode = "{daemon}"', a=policy_text(extra=f'mode = "{pol}"'))
-    assert cfg.policies[0].mode == expected
-
-
-def test_daemon_defaults_to_dry_run_even_with_enforcing_policy(tmp_path: Path) -> None:
+def test_policy_mode_kept_as_configured(tmp_path: Path) -> None:
     cfg = load(tmp_path, "", a=policy_text(extra='mode = "enforce"'))
-    assert cfg.daemon.mode == "dry-run" and cfg.policies[0].mode == "dry-run"
+    assert cfg.daemon.mode == "dry-run" and cfg.policies[0].mode == "enforce"
+
+
+def test_file_sink_dir_follows_state_dir(tmp_path: Path) -> None:
+    assert load(tmp_path, '[daemon]\nstate_dir = "/x"').sinks.file.dir == Path("/x/bundles")
+    cfg = load(tmp_path, '[daemon]\nstate_dir = "/x"\n[sinks.file]\ndir = "/y"')
+    assert cfg.sinks.file.dir == Path("/y")
