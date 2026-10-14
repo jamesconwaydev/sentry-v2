@@ -394,7 +394,7 @@ def _patterns(r: _Reader, name: str, protected: tuple[str, ...]) -> tuple[str, .
     return patterns
 
 
-def _when(r: _Reader, protected: tuple[str, ...]) -> When:
+def _when(r: _Reader, protected: tuple[str, ...], avc_burst: int) -> When:
     signal = r.require("signal", _choice("psi", "unit_failed", "avc"))
     when: When
     if signal == "psi":
@@ -416,6 +416,10 @@ def _when(r: _Reader, protected: tuple[str, ...]) -> When:
             scontext_types=r.get("scontext_types", _strs, _NO_STRS),
             min_count=r.get("min_count", _int_in(1, 10**6), 1),
         )
+        # a burst incident is raised once avc_burst denials are seen, so a
+        # higher min_count could never be met
+        if when.min_count > avc_burst:
+            raise r.error("min_count", f"must be at most correlation.avc_burst ({avc_burst})")
     r.finish()
     return when
 
@@ -451,7 +455,11 @@ def _action(r: _Reader, limits: LimitsConfig) -> ActionSpec:
 
 
 def _policy(
-    r: _Reader, limits: LimitsConfig, protected: tuple[str, ...], seen: dict[str, Path]
+    r: _Reader,
+    limits: LimitsConfig,
+    protected: tuple[str, ...],
+    seen: dict[str, Path],
+    avc_burst: int,
 ) -> Policy:
     name = r.require("name", _str)
     if name in seen:
@@ -464,7 +472,7 @@ def _policy(
     when_reader = r.sub("when")
     if when_reader is None:
         raise r.error("when", "is required")
-    when = _when(when_reader, protected)
+    when = _when(when_reader, protected, avc_burst)
     actions = tuple(_action(a, limits) for a in r.tables("do"))
     if not actions:
         raise r.error("do", "needs at least one action")
@@ -495,7 +503,10 @@ def load_config(main: Path, policies_dir: Path) -> Config:
     files = sorted(policies_dir.glob("*.toml")) if policies_dir.is_dir() else []
     for file in files:
         fr = _Reader(_toml(file), file)
-        policies.extend(_policy(t, limits, protection.protected, seen) for t in fr.tables("policy"))
+        policies.extend(
+            _policy(t, limits, protection.protected, seen, correlation.avc_burst)
+            for t in fr.tables("policy")
+        )
         fr.finish("section")
     return Config(
         daemon, limits, protection, correlation, redaction, sinks, metrics, control, tuple(policies)

@@ -227,6 +227,14 @@ def test_policy_errors(tmp_path: Path, text: str, key: str) -> None:
     assert got.startswith(f"x.toml: {key}:"), got
 
 
+def test_avc_min_count_capped_by_burst_size(tmp_path: Path) -> None:
+    when = 'signal = "avc"\nmin_count = 6'
+    got = err(tmp_path, x=policy_text(when=when))
+    assert got == "x.toml: policy[0].when.min_count: must be at most correlation.avc_burst (5)"
+    cfg = load(tmp_path, "[correlation]\navc_burst = 6", x=policy_text(when=when))
+    assert cfg.policies[0].when == AvcWhen(min_count=6)
+
+
 def test_unreadable_files(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match=r"nope.toml: \(file\): cannot read"):
         load_config(tmp_path / "nope.toml", tmp_path)

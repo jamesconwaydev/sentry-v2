@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from sentry_v2.config_types import CorrelationConfig
 from sentry_v2.correlate import Correlator, score
 from sentry_v2.events import AvcEvent, PsiEvent, UnitEvent
-from sentry_v2.policy import PsiWhen
+from sentry_v2.policy import Notify, Policy, PolicyEngine, PsiWhen
 
 T = 1_700_000_000_000_000  # µs
 S = 1_000_000
@@ -239,6 +240,19 @@ def test_duplicate_failure_after_finalisation_ignored() -> None:
     assert len(c.tick(T + 5 * S)) == 1
 
 
+def test_unit_failed_replaces_pending_start_failed() -> None:
+    c = correlator()
+    job = UnitEvent(
+        ts_us=T, unit="web.service", kind="start_failed", result="failed", invocation_id="abc"
+    )
+    unit = failed(T + 10, invocation_id="abc")
+    c.ingest(job)
+    c.ingest(unit)
+    [inc] = c.tick(T + 2 * S)
+    assert inc.trigger == unit
+    assert inc.related == (job,)
+
+
 def test_start_failed_creates_incident() -> None:
     c = correlator()
     c.ingest(UnitEvent(ts_us=T, unit="a.service", kind="start_failed", result="failed"))
@@ -307,6 +321,34 @@ def test_psi_sustained_threshold() -> None:
     assert inc.kind == "psi"
     assert inc.target == "system.slice/batch-1.service"
     assert inc.ts_us == T + 10 * S
+    assert inc.sustained == 10.0
+
+
+def test_psi_each_sustained_value_fires_at_its_own_time() -> None:
+    clock = Clock()
+    long = PsiWhen("memory", "some", 150_000, 1_000_000, 30.0, ("batch-*.service",))
+    c = Correlator(CorrelationConfig(), [WHEN, long, WHEN], clock)
+    fired = {}
+    for i in range(41):
+        clock.now_us = T + i * S
+        for inc in c.ingest(psi(T + i * S)):
+            fired[inc.sustained] = inc.ts_us
+    assert fired == {10.0: T + 10 * S, 30.0: T + 30 * S}
+
+
+def test_psi_incident_matches_only_its_own_threshold_policy() -> None:
+    fast = Policy("fast", "enforce", 0, WHEN, (Notify(),), Path("p.toml"))
+    slow_when = PsiWhen("memory", "some", 500_000, 1_000_000, 10.0, ("batch-*.service",))
+    slow = Policy("slow", "enforce", 0, slow_when, (Notify(),), Path("p.toml"))
+    engine = PolicyEngine([fast, slow], lambda: 0.0)
+    clock = Clock()
+    c = Correlator(CorrelationConfig(), [WHEN, slow_when], clock)
+    assert psi_run(c, clock, T, 9) == []
+    [inc_fast] = c.ingest(psi(T + 10 * S))
+    assert [p.name for p, _ in engine.plan(inc_fast)] == ["fast"]
+    assert psi_run(c, clock, T, 9, stall_us=500_000) == []
+    [inc_slow] = c.ingest(psi(T + 10 * S, stall_us=500_000))
+    assert [p.name for p, _ in engine.plan(inc_slow)] == ["slow"]
 
 
 def test_psi_one_incident_per_episode_then_rearm() -> None:

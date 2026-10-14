@@ -99,6 +99,7 @@ class Incident:
     trigger: Event
     related: tuple[Event, ...]
     correlations: tuple[Correlation, ...]
+    sustained: float | None = None  # psi only: the policy period the stall outlasted
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

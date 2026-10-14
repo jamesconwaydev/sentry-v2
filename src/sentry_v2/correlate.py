@@ -13,7 +13,7 @@ import bisect
 import math
 from collections import deque
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from itertools import islice
 
 from .config_types import CorrelationConfig
@@ -72,7 +72,7 @@ def score(
 class _Episode:
     start_us: int
     last_us: int
-    fired: bool = False
+    fired: set[float] = field(default_factory=set)  # sustained periods already reported
 
 
 def _is_self_or_ancestor(candidate: str, cgroup: str) -> bool:
@@ -156,6 +156,13 @@ class Correlator:
     def _on_unit(self, ev: UnitEvent) -> None:
         if ev.kind == "exited":
             return
+        # The "unit failed" message carries the result policies filter on, so it
+        # takes over from a "job failed" for the same invocation still pending.
+        if ev.kind == "failed":
+            for i, p in enumerate(self._pending):
+                if p.kind == "start_failed" and self._same_invocation(p, ev):
+                    self._pending[i] = ev
+                    return
         # systemd logs both "unit failed" and "job failed" for one failed start
         if any(
             isinstance(e, UnitEvent) and e.kind != "exited" and self._same_invocation(e, ev)
@@ -205,9 +212,11 @@ class Correlator:
         known = self._domains.get(unit)
         if known is not None and known[0] < before_us:
             return known[1]
-        # ponytail: linear scan of the buffer; runs only for AVCs in a failure window
-        for ev in reversed(self._events):
-            if isinstance(ev, AvcEvent) and ev.ts_us < before_us and ev.unit_at_receipt == unit:
+        i = bisect.bisect_left(self._events, before_us, key=_ts)
+        # ponytail: walks back through older events; runs only for AVCs in a failure window
+        for k in range(i - 1, -1, -1):
+            ev = self._events[k]
+            if isinstance(ev, AvcEvent) and ev.unit_at_receipt == unit:
                 return ev.scontext_type
         return None
 
@@ -256,11 +265,16 @@ class Correlator:
         if ep is None or ev.ts_us - ep.last_us > gap_us:
             ep = self._episodes[key] = _Episode(ev.ts_us, ev.ts_us)
         ep.last_us = max(ep.last_us, ev.ts_us)
-        sustained_us = int(min(w.sustained for w in whens) * _S)
-        if ep.fired or ev.ts_us - ep.start_us < sustained_us:
+        elapsed_us = ev.ts_us - ep.start_us
+        due = sorted(
+            s for s in {w.sustained for w in whens} if s not in ep.fired and elapsed_us >= s * _S
+        )
+        if not due:
             return []
-        ep.fired = True
+        ep.fired.update(due)
         related = tuple(
             s for (cg, _, _), s in self._samples.items() if _is_self_or_ancestor(cg, ev.cgroup)
         )
-        return [Incident(uuid7(), "psi", ev.ts_us, ev.cgroup, ev, related, ())]
+        return [
+            Incident(uuid7(), "psi", ev.ts_us, ev.cgroup, ev, related, (), sustained=s) for s in due
+        ]

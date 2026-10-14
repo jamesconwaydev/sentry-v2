@@ -33,6 +33,9 @@ def test_event_to_dict() -> None:
     )
     d = inc.to_dict()
     assert d["kind"] == "unit_failed"
+    assert d["sustained"] is None
+    psi_inc = Incident("id", "psi", 3, "/", psi, (), (), 10.0)
+    assert json.loads(json.dumps(psi_inc.to_dict()))["sustained"] == 10.0
     assert d["correlations"][0]["avc"]["perms"] == ("read",)  # type: ignore[index]
     assert AvcEvent(**avc.to_dict()) == avc  # type: ignore[arg-type]
     assert json.loads(json.dumps(inc.to_dict()))["trigger"]["unit"] == "a.service"

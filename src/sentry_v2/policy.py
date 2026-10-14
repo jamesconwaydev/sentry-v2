@@ -122,6 +122,9 @@ def _matches(incident: Incident, when: When) -> bool:
                 and isinstance(trigger, PsiEvent)
                 and trigger.resource == when.resource
                 and trigger.kind == when.kind
+                and trigger.stall_us == when.stall_us
+                and trigger.window_us == when.window_us
+                and incident.sustained == when.sustained
                 and any(target_matches(p, incident.target) for p in when.cgroups)
             )
         case UnitFailedWhen():

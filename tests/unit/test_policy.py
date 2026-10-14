@@ -59,7 +59,12 @@ def test_result_filter_and_replace() -> None:
     assert len(engine.plan(unit_incident("a.service", "timeout"))) == 1
 
 
-def psi_incident(resource: str = "memory") -> Incident:
+def psi_incident(
+    resource: str = "memory",
+    stall_us: int = 150_000,
+    window_us: int = 1_000_000,
+    sustained: float = 5.0,
+) -> Incident:
     ev = PsiEvent(
         ts_us=1,
         cgroup="/system.slice/x.service",
@@ -70,8 +75,10 @@ def psi_incident(resource: str = "memory") -> Incident:
         avg300=1,
         total_us=1,
         triggered=True,
+        stall_us=stall_us,
+        window_us=window_us,
     )
-    return Incident("i", "psi", 1, "/system.slice/x.service", ev, (), ())
+    return Incident("i", "psi", 1, "/system.slice/x.service", ev, (), (), sustained)
 
 
 def test_psi_match() -> None:
@@ -79,6 +86,9 @@ def test_psi_match() -> None:
     engine = PolicyEngine([policy("p", when)], Clock())
     assert engine.plan(psi_incident("cpu")) == []
     assert len(engine.plan(psi_incident())) == 1
+    assert engine.plan(psi_incident(stall_us=500_000)) == []
+    assert engine.plan(psi_incident(window_us=2_000_000)) == []
+    assert engine.plan(psi_incident(sustained=30.0)) == []
     # a unit incident never satisfies a psi policy
     assert engine.plan(unit_incident("x.service")) == []
 
