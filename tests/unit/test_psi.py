@@ -1,5 +1,6 @@
 import asyncio
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -38,7 +39,7 @@ class Opener:
 def collector(base: Path, opener: Opener, queue: EventQueue | None = None) -> PsiCollector:
     return PsiCollector(
         CgroupFS(base / "cgroup", base / "proc"),
-        {PATTERNS: SPEC},
+        [(PATTERNS, SPEC)],
         queue if queue is not None else EventQueue(10),
         clock=lambda: 99,
         open_trigger=opener,
@@ -68,7 +69,7 @@ def test_trigger_specs() -> None:
     when = PsiWhen("memory", "some", 150000, 1000000, 5.0, PATTERNS)
     p = Policy("a", "dry-run", 1.0, when, (), Path("x"))
     q = Policy("b", "dry-run", 1.0, UnitFailedWhen(("x",)), (), Path("x"))
-    assert trigger_specs([p, q]) == {PATTERNS: SPEC}
+    assert trigger_specs([p, q]) == {(PATTERNS, SPEC)}
 
 
 def test_disabled_when_psi_off(tmp_path: Path) -> None:
@@ -88,11 +89,11 @@ def test_sample_once(fake_cgroupfs: Path) -> None:
     ev = asyncio.run(q.get())
     assert isinstance(ev, PsiEvent)
     assert (ev.triggered, ev.avg10, ev.ts_us, ev.resource) == (False, 42.0, 99, "memory")
+    assert (ev.stall_us, ev.window_us) == (None, None)
     assert ev.cgroup.startswith("system.slice/batch-")
     c.close()
 
 
-@linux_only
 def test_resolve_dedupes_and_prunes(fake_cgroupfs: Path) -> None:
     opener = Opener()
     c = collector(fake_cgroupfs, opener)
@@ -100,11 +101,7 @@ def test_resolve_dedupes_and_prunes(fake_cgroupfs: Path) -> None:
     c.resolve()
     assert len(opener.calls) == 2
     assert opener.calls[0] == ("system.slice/batch-1.service", "memory", "some", 150000, 1000000)
-    (fake_cgroupfs / "cgroup/system.slice/batch-2.service/memory.pressure").unlink()
-    (fake_cgroupfs / "cgroup/system.slice/batch-2.service/memory.current").unlink()
-    (fake_cgroupfs / "cgroup/system.slice/batch-2.service/cpu.pressure").unlink()
-    (fake_cgroupfs / "cgroup/system.slice/batch-2.service/io.pressure").unlink()
-    (fake_cgroupfs / "cgroup/system.slice/batch-2.service").rmdir()
+    shutil.rmtree(fake_cgroupfs / "cgroup/system.slice/batch-2.service")
     c.resolve()
     assert c.health()["triggers"] == 1
     c.close()
@@ -116,7 +113,7 @@ def test_resolve_skips_failed_open(fake_cgroupfs: Path) -> None:
 
     c = PsiCollector(
         CgroupFS(fake_cgroupfs / "cgroup", fake_cgroupfs / "proc"),
-        {PATTERNS: SPEC},
+        [(PATTERNS, SPEC)],
         EventQueue(1),
         open_trigger=boom,
     )
@@ -124,7 +121,6 @@ def test_resolve_skips_failed_open(fake_cgroupfs: Path) -> None:
     assert c.health()["triggers"] == 0
 
 
-@linux_only
 def test_dispatch_pri_emits_and_err_closes(fake_cgroupfs: Path) -> None:
     q = EventQueue(10)
     opener = Opener()
@@ -134,6 +130,7 @@ def test_dispatch_pri_emits_and_err_closes(fake_cgroupfs: Path) -> None:
     c._dispatch(fd, EPOLLPRI)
     ev = asyncio.run(q.get())
     assert isinstance(ev, PsiEvent) and ev.triggered and ev.avg10 == 42.0
+    assert (ev.stall_us, ev.window_us) == (150000, 1000000)
     c._dispatch(fd, EPOLLERR)
     assert fd not in c._fds
     c._dispatch(fd, EPOLLERR)  # unknown fd: ignored
@@ -143,7 +140,9 @@ def test_dispatch_pri_emits_and_err_closes(fake_cgroupfs: Path) -> None:
 def test_dispatch_plain_ints(fake_cgroupfs: Path) -> None:
     q = EventQueue(10)
     c = collector(fake_cgroupfs, Opener(), q)
-    c._fds[500] = ("system.slice/nginx.service", "memory", "some")
+    key = ("system.slice/nginx.service", "memory", "some", 150000, 1000000)
+    c._fds[500] = key
+    c._by_trigger[key] = 500
     c._dispatch(500, EPOLLPRI)
     assert q.dropped["psi"] == 0 and len(q) == 1
     c._dispatch(500, 0)  # neither flag: no-op
@@ -167,12 +166,11 @@ def test_epoll_hup_closes_fd(fake_cgroupfs: Path) -> None:
     c.close()
 
 
-@linux_only
 def test_run_samples_and_stops(fake_cgroupfs: Path) -> None:
     q = EventQueue(100)
     c = PsiCollector(
         CgroupFS(fake_cgroupfs / "cgroup", fake_cgroupfs / "proc"),
-        {PATTERNS: SPEC},
+        [(PATTERNS, SPEC)],
         q,
         sample_interval=0.01,
         resolve_interval=0.02,
@@ -189,3 +187,69 @@ def test_run_samples_and_stops(fake_cgroupfs: Path) -> None:
     asyncio.run(main())
     assert len(q) >= 2
     assert c.health()["triggers"] == 0
+
+
+def test_policies_sharing_patterns_keep_distinct_triggers(fake_cgroupfs: Path) -> None:
+    def pol(name: str, res: str, stall: int) -> Policy:
+        when = PsiWhen(res, "some", stall, 1000000, 5.0, PATTERNS)  # type: ignore[arg-type]
+        return Policy(name, "dry-run", 1.0, when, (), Path("x"))
+
+    specs = trigger_specs(
+        [pol("a", "memory", 150000), pol("b", "cpu", 100000), pol("c", "memory", 300000)]
+    )
+    assert len(specs) == 3
+    opener = Opener()
+    c = PsiCollector(
+        CgroupFS(fake_cgroupfs / "cgroup", fake_cgroupfs / "proc"),
+        specs,
+        EventQueue(10),
+        open_trigger=opener,
+    )
+    c.resolve()
+    assert len(opener.calls) == 6  # 2 cgroups x 3 distinct triggers
+    assert c.health()["triggers"] == 6
+    c.close()
+
+
+def test_open_failure_warns_once(fake_cgroupfs: Path, caplog: pytest.LogCaptureFixture) -> None:
+    def boom(*a: object) -> int:
+        raise OSError("denied")
+
+    c = PsiCollector(
+        CgroupFS(fake_cgroupfs / "cgroup", fake_cgroupfs / "proc"),
+        [(PATTERNS, SPEC)],
+        EventQueue(1),
+        open_trigger=boom,
+    )
+    c.resolve()
+    c.resolve()
+    assert len([r for r in caplog.records if "failed" in r.message]) == 2  # two cgroups, once each
+
+
+def test_resolve_noop_without_psi(tmp_path: Path) -> None:
+    opener = Opener()
+    collector(tmp_path, opener).resolve()
+    assert opener.calls == []
+
+
+def test_run_survives_iteration_error(fake_cgroupfs: Path) -> None:
+    c = collector(fake_cgroupfs, Opener())
+    c._sample_interval = 0.01
+    calls = 0
+
+    def bad() -> None:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("boom")
+
+    c.sample_once = bad  # type: ignore[method-assign]
+
+    async def main() -> None:
+        t = asyncio.create_task(c.run())
+        await asyncio.sleep(0.1)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    asyncio.run(main())
+    assert calls >= 2

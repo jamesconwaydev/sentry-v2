@@ -31,6 +31,8 @@ class PsiEvent:
     avg300: float
     total_us: int
     triggered: bool
+    stall_us: int | None = None  # trigger threshold; None on periodic samples
+    window_us: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

@@ -8,7 +8,7 @@ import logging
 import os
 import select
 import time
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -27,7 +27,8 @@ DISABLED_HINT = "PSI is off: run 'grubby --update-kernel=ALL --args=psi=1' and r
 
 Resource = Literal["memory", "cpu", "io"]
 Kind = Literal["some", "full"]
-Key = tuple[str, Resource, Kind]  # (cgroup, resource, kind)
+# (cgroup, resource, kind, stall_us, window_us): one kernel trigger each
+Key = tuple[str, Resource, Kind, int, int]
 
 
 @dataclass(frozen=True)
@@ -38,10 +39,10 @@ class TriggerSpec:
     window_us: int
 
 
-def trigger_specs(policies: Iterable[Policy]) -> dict[tuple[str, ...], TriggerSpec]:
-    """One spec per distinct cgroup-pattern tuple used by a PSI policy."""
+def trigger_specs(policies: Iterable[Policy]) -> set[tuple[tuple[str, ...], TriggerSpec]]:
+    """Distinct (cgroup patterns, spec) pairs across all PSI policies."""
     return {
-        w.cgroups: TriggerSpec(w.resource, w.kind, w.stall_us, w.window_us)
+        (w.cgroups, TriggerSpec(w.resource, w.kind, w.stall_us, w.window_us))
         for p in policies
         if isinstance(w := p.when, PsiWhen)
     }
@@ -51,7 +52,7 @@ class PsiCollector:
     def __init__(
         self,
         fs: CgroupFS,
-        specs: Mapping[tuple[str, ...], TriggerSpec],
+        specs: Iterable[tuple[tuple[str, ...], TriggerSpec]],
         queue: EventQueue,
         clock: Callable[[], int] = lambda: time.time_ns() // 1000,
         sample_interval: float = 5.0,
@@ -59,15 +60,22 @@ class PsiCollector:
         open_trigger: Callable[[str, str, str, int, int], int] | None = None,
     ) -> None:
         self._fs = fs
-        self._specs = specs
+        self._specs = tuple(specs)
         self._queue = queue
         self._clock = clock
         self._sample_interval = sample_interval
         self._resolve_interval = resolve_interval
         self._open = open_trigger or fs.open_trigger
         self._fds: dict[int, Key] = {}
-        self._by_trigger: dict[tuple[str, Resource, Kind, int, int], int] = {}
-        self._ep: Any = select.epoll() if hasattr(select, "epoll") else None
+        self._by_trigger: dict[Key, int] = {}
+        self._warned: set[Key] = set()
+        self._ep: Any = None
+
+    def _epoll(self) -> Any:
+        """The epoll object, created on first use; None where epoll is absent."""
+        if self._ep is None and hasattr(select, "epoll"):
+            self._ep = select.epoll()
+        return self._ep
 
     def health(self) -> dict[str, object]:
         if not self._fs.psi_available():
@@ -76,8 +84,10 @@ class PsiCollector:
 
     def resolve(self) -> None:
         """Open triggers for new matching cgroups and close those that vanished."""
-        wanted: dict[tuple[str, Resource, Kind, int, int], None] = {}
-        for patterns, s in self._specs.items():
+        if not self._fs.psi_available():
+            return
+        wanted: dict[Key, None] = {}
+        for patterns, s in self._specs:
             for rel in self._fs.glob(patterns):
                 wanted[(rel, s.resource, s.kind, s.stall_us, s.window_us)] = None
         for key in [k for k in self._by_trigger if k not in wanted]:
@@ -88,17 +98,18 @@ class PsiCollector:
             try:
                 fd = self._open(*key)
             except OSError as e:
-                log.warning("psi trigger on %s failed: %s", key[0], e)
+                if key not in self._warned:
+                    self._warned.add(key)
+                    log.warning("psi trigger on %s failed: %s", key[0], e)
                 continue
-            self._fds[fd] = key[:3]
+            self._fds[fd] = key
             self._by_trigger[key] = fd
-            if self._ep is not None:
-                self._ep.register(fd, EPOLLPRI)
+            if (ep := self._epoll()) is not None:
+                ep.register(fd, EPOLLPRI)
 
     def _close(self, fd: int) -> None:
-        self._fds.pop(fd, None)
-        for k in [k for k, v in self._by_trigger.items() if v == fd]:
-            del self._by_trigger[k]
+        if (key := self._fds.pop(fd, None)) is not None:
+            del self._by_trigger[key]
         if self._ep is not None:
             with contextlib.suppress(OSError, ValueError):
                 self._ep.unregister(fd)
@@ -108,12 +119,15 @@ class PsiCollector:
     def close(self) -> None:
         for fd in list(self._fds):
             self._close(fd)
+        if self._ep is not None:
+            self._ep.close()
+            self._ep = None
 
     def _emit(self, key: Key, triggered: bool) -> None:
-        rel, resource, kind = key
+        rel, resource, kind, stall_us, window_us = key
         try:
             line = self._fs.read_pressure(rel, resource)[kind]
-        except (OSError, KeyError):
+        except (OSError, KeyError, ValueError):
             return  # cgroup vanished or kind not exposed; resolve() will prune
         self._queue.put_nowait(
             PsiEvent(
@@ -126,6 +140,8 @@ class PsiCollector:
                 avg300=line.avg300,
                 total_us=line.total_us,
                 triggered=triggered,
+                stall_us=stall_us if triggered else None,
+                window_us=window_us if triggered else None,
             )
         )
 
@@ -143,24 +159,28 @@ class PsiCollector:
             self._dispatch(fd, mask)
 
     def sample_once(self) -> None:
-        for key in set(self._fds.values()):
-            self._emit(key, triggered=False)
+        for key in {k[:3] for k in self._fds.values()}:
+            self._emit((*key, 0, 0), triggered=False)
 
     async def run(self) -> None:
         if not self._fs.psi_available():
             log.warning(DISABLED_HINT)
             return
         loop = asyncio.get_running_loop()
-        if self._ep is not None:
-            loop.add_reader(self._ep.fileno(), self._on_epoll)
+        ep = self._epoll()
+        if ep is not None:
+            loop.add_reader(ep.fileno(), self._on_epoll)
         last_resolve = float("-inf")
         try:
             while True:
-                now = time.monotonic()
-                if now - last_resolve >= self._resolve_interval:
-                    self.resolve()
-                    last_resolve = now
-                self.sample_once()
+                try:
+                    now = time.monotonic()
+                    if now - last_resolve >= self._resolve_interval:
+                        self.resolve()
+                        last_resolve = now
+                    self.sample_once()
+                except Exception:
+                    log.exception("psi collector iteration failed")
                 await asyncio.sleep(self._sample_interval)
         finally:
             if self._ep is not None:

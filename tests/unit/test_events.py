@@ -25,6 +25,8 @@ def test_event_to_dict() -> None:
         avg300=0.1,
         total_us=5,
         triggered=True,
+        stall_us=150000,
+        window_us=1000000,
     )
     inc = Incident(
         "id", "unit_failed", 3, "a.service", unit, (avc, psi), (Correlation(avc, 0.9, ("cgroup",)),)
