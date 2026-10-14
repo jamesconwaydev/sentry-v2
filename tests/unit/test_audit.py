@@ -597,3 +597,11 @@ def test_logtail_read_error_is_reported(tmp_path, monkeypatch):
         return r
 
     assert asyncio.run(go()).serial == 4
+
+
+def test_user_avc_pid_from_trusted_tail_and_no_comm():
+    text = DBUS % 'x" spid=1 comm="sshd" pid=2 exe="/usr/sbin/sshd'
+    text = text.replace('function="mac', 'spid=55 function="mac')
+    r = parse_audit_text("USER_AVC", text)
+    ev = AvcAssembler()._build([r, rec("SYSCALL", 30, comm="sc", exe="/sc")])[0]
+    assert ev.pid == 55 and ev.comm is None and ev.exe is None

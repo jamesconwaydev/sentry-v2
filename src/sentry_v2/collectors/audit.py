@@ -104,7 +104,10 @@ def _user_avc_fields(body: str) -> dict[str, str]:
     if v := _VERDICT.match(inner):
         fields["verdict"] = v.group(1)
         fields["perms"] = " ".join(v.group(2).split())
-    fields.pop("permissive", None)
+    for k in ("permissive", "pid", "spid"):
+        fields.pop(k, None)
+        if hits := re.findall(rf"\b{k}=(\d+)", inner):
+            fields[k] = hits[-1]  # caller text comes first; the trusted tail is last
     if ctx := list(_CONTEXTS.finditer(inner)):
         last = ctx[-1]
         fields["scontext"], fields["tcontext"], fields["tclass"] = last.groups()
@@ -153,7 +156,8 @@ class AvcAssembler:
             if r.type not in AVC_TYPES:
                 continue
             f = r.fields
-            pid = (f.get("spid") if r.type == "USER_AVC" else None) or f.get("pid", "")
+            user = r.type == "USER_AVC"  # caller-chosen comm/exe are not attribution
+            pid = (f.get("spid") if user else None) or f.get("pid", "")
             scontext = f.get("scontext", "")
             parts = scontext.split(":")
             perms = tuple(f["perms"].split()) if "perms" in f else ((f["op"],) if "op" in f else ())
@@ -167,8 +171,8 @@ class AvcAssembler:
                     scontext_type=parts[2] if len(parts) > 2 else "",
                     tcontext=f.get("tcontext", ""),
                     tclass=f.get("tclass", ""),
-                    comm=_known(syscall.get("comm")) or _known(f.get("comm")),
-                    exe=_known(syscall.get("exe")) or _known(f.get("exe")),
+                    comm=None if user else _known(syscall.get("comm")) or _known(f.get("comm")),
+                    exe=None if user else _known(syscall.get("exe")) or _known(f.get("exe")),
                     pid=int(pid) if pid.isdigit() else None,
                     permissive=f.get("permissive") == "1",
                     raw=" ".join(f"{k}={v}" for k, v in f.items()),
