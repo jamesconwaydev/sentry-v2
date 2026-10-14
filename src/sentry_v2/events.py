@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections import Counter, deque
 from dataclasses import asdict, dataclass
 from typing import Literal
 
@@ -98,3 +100,31 @@ class Incident:
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+class EventQueue:
+    """Bounded queue between collectors and the correlator.
+
+    A full queue drops its oldest event so collectors never block; drops are
+    counted per source.
+    """
+
+    def __init__(self, maxlen: int = 10_000) -> None:
+        self._q: deque[Event] = deque(maxlen=maxlen)
+        self._ready = asyncio.Event()
+        self.dropped: Counter[str] = Counter()
+
+    def __len__(self) -> int:
+        return len(self._q)
+
+    def put_nowait(self, ev: Event) -> None:
+        if len(self._q) == self._q.maxlen:
+            self.dropped[self._q[0].source] += 1
+        self._q.append(ev)
+        self._ready.set()
+
+    async def get(self) -> Event:
+        while not self._q:
+            self._ready.clear()
+            await self._ready.wait()
+        return self._q.popleft()
