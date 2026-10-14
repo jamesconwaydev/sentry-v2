@@ -6,11 +6,10 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from test_systemd import SystemdContract
 
+from contracts import SystemdContract
 from sentry_v2.systemd import DBusSystemd
 
 pytestmark = pytest.mark.integration
@@ -21,22 +20,42 @@ def _sh(*argv: str, check: bool = False) -> None:
 
 
 class TestDBusSystemd(SystemdContract):
-    @pytest.fixture
-    def unit(self, request: pytest.FixtureRequest) -> Iterator[str]:
+    @staticmethod
+    def _start(request: pytest.FixtureRequest, *props: str, cmd: str = "sleep 300") -> str:
         name = f"sentry-test-dbus-{uuid.uuid4().hex[:8]}.service"
         request.addfinalizer(
-            lambda: (_sh("systemctl", "stop", name), _sh("systemctl", "reset-failed", name))
+            lambda: (
+                _sh("systemctl", "thaw", name),
+                _sh("systemctl", "stop", name),
+                _sh("systemctl", "reset-failed", name),
+            )
         )
+        flags = [a for p in props for a in ("-p", p)]
         _sh(
-            "systemd-run", "--unit", name, "--slice", "sentry-test.slice",
-            "-p", "MemoryMax=64M", "-p", "ExecReload=/bin/true", "sleep", "300",
+            "systemd-run",
+            "--unit",
+            name,
+            "--slice",
+            "sentry-test.slice",
+            *flags,
+            *cmd.split(),
             check=True,
-        )  # fmt: skip
+        )
+        return name
+
+    @pytest.fixture
+    def unit(self, request: pytest.FixtureRequest) -> str:
+        return self._start(request, "MemoryMax=64M", "ExecReload=/bin/true")
+
+    @pytest.fixture
+    def inactive_unit(self, request: pytest.FixtureRequest) -> str:
+        # a failed unit stays loaded, so GetUnit still finds it
+        name = self._start(request, cmd="/bin/false")
         time.sleep(0.5)
-        yield name
+        return name
 
     @pytest.fixture
     def manager(self) -> Iterator[DBusSystemd]:
-        ex = ThreadPoolExecutor(max_workers=1)
-        yield DBusSystemd(ex)
-        ex.shutdown()
+        m = DBusSystemd()
+        yield m
+        m.close()

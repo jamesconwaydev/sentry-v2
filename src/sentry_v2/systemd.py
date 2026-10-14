@@ -21,7 +21,16 @@ UNSET = 2**64 - 1
 
 _DEST = "org.freedesktop.systemd1"
 _NOT_FOUND = {f"{_DEST}.NoSuchUnit", "org.freedesktop.DBus.Error.UnknownObject"}
-_TYPED_IFACE = {".service": "Service", ".scope": "Scope", ".slice": "Slice"}
+_TYPED_IFACE = {
+    ".service": "Service",
+    ".scope": "Scope",
+    ".slice": "Slice",
+    ".socket": "Socket",
+    ".mount": "Mount",
+    ".swap": "Swap",
+}
+_DROP_BUS = {"org.freedesktop.DBus.Error.Disconnected", "org.freedesktop.DBus.Error.NoReply"}
+DBUS_TIMEOUT = 10  # seconds, per method call
 
 
 class UnitNotFound(Exception):
@@ -78,6 +87,14 @@ def _props_from_dbus(unit_props: Mapping[str, Any], typed_props: Mapping[str, An
     )
 
 
+def _iface_for(unit: str) -> str:
+    """The type-specific properties interface; refuse types we cannot read faithfully."""
+    for suffix, iface in _TYPED_IFACE.items():
+        if unit.endswith(suffix):
+            return iface
+    raise SystemdError("org.sentry-v2.UnsupportedUnitType", unit)
+
+
 def _translate(name: str, message: str, unit: str) -> Exception:
     if name in _NOT_FOUND:
         return UnitNotFound(unit)
@@ -85,11 +102,21 @@ def _translate(name: str, message: str, unit: str) -> Exception:
 
 
 class DBusSystemd:
-    """Talks to systemd1 on the system bus from a single-thread executor."""
+    """Talks to systemd1 on the system bus from its own single-thread executor.
 
-    def __init__(self, executor: ThreadPoolExecutor) -> None:
-        self._ex = executor
+    Load semantics differ by direction: get_properties uses GetUnit and never
+    loads anything, so a unit that exists on disk but is not loaded reads as
+    UnitNotFound. set_properties/freeze/thaw/reload go through systemd's normal
+    call path, which may load the unit as a side effect.
+    """
+
+    def __init__(self) -> None:  # pragma: no cover
+        self._ex = ThreadPoolExecutor(max_workers=1, thread_name_prefix="systemd-dbus")
         self._bus: Any = None
+        self._mgr: Any = None
+
+    def close(self) -> None:  # pragma: no cover
+        self._ex.shutdown(wait=False, cancel_futures=True)
 
     async def _run(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:  # pragma: no cover
         loop = asyncio.get_running_loop()
@@ -98,49 +125,63 @@ class DBusSystemd:
     def _call(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:  # pragma: no cover
         import dbus  # distro binding, imported lazily so macOS can import the package
 
-        if self._bus is None:
-            self._bus = dbus.SystemBus()  # created on the worker thread, reused there
-        mgr = dbus.Interface(
-            self._bus.get_object(_DEST, "/org/freedesktop/systemd1"), f"{_DEST}.Manager"
-        )
         try:
-            return fn(mgr, dbus)
+            if self._mgr is None:
+                # private connection, created on the worker thread and reused there
+                self._bus = dbus.SystemBus(private=True)
+                self._mgr = dbus.Interface(
+                    self._bus.get_object(_DEST, "/org/freedesktop/systemd1", introspect=False),
+                    f"{_DEST}.Manager",
+                )
+            return fn(self._mgr, dbus)
         except dbus.exceptions.DBusException as e:
-            raise _translate(e.get_dbus_name(), e.get_dbus_message(), unit) from e
+            name = e.get_dbus_name()
+            if name in _DROP_BUS:
+                self._mgr = self._bus = None  # reconnect on the next call
+            raise _translate(name, e.get_dbus_message(), unit) from e
 
     async def get_properties(self, unit: str) -> UnitProps:  # pragma: no cover
+        iface = _iface_for(unit)
+
         def read(mgr: Any, dbus: Any) -> UnitProps:
             # GetUnit, not LoadUnit: reading must never load arbitrary unit files
-            obj = self._bus.get_object(_DEST, mgr.GetUnit(unit))
+            obj = self._bus.get_object(
+                _DEST, mgr.GetUnit(unit, timeout=DBUS_TIMEOUT), introspect=False
+            )
             props = dbus.Interface(obj, "org.freedesktop.DBus.Properties")
-            typed = {}
-            if iface := next((i for s, i in _TYPED_IFACE.items() if unit.endswith(s)), None):
-                typed = props.GetAll(f"{_DEST}.{iface}")
-            return _props_from_dbus(props.GetAll(f"{_DEST}.Unit"), typed)
+            return _props_from_dbus(
+                props.GetAll(f"{_DEST}.Unit", timeout=DBUS_TIMEOUT),
+                props.GetAll(f"{_DEST}.{iface}", timeout=DBUS_TIMEOUT),
+            )
 
         return await self._run(unit, read)  # type: ignore[no-any-return]
 
     async def set_properties(
         self, unit: str, memory_high: int | None, cpu_weight: int | None
     ) -> None:  # pragma: no cover
+        if memory_high is None and cpu_weight is None:
+            return
+
         def write(mgr: Any, dbus: Any) -> None:
             props = []
             if memory_high is not None:
                 props.append(("MemoryHigh", dbus.UInt64(memory_high)))
             if cpu_weight is not None:
                 props.append(("CPUWeight", dbus.UInt64(cpu_weight)))
-            mgr.SetUnitProperties(unit, True, dbus.Array(props, signature="(sv)"))
+            mgr.SetUnitProperties(
+                unit, True, dbus.Array(props, signature="(sv)"), timeout=DBUS_TIMEOUT
+            )
 
         await self._run(unit, write)
 
     async def freeze(self, unit: str) -> None:  # pragma: no cover
-        await self._run(unit, lambda mgr, _d: mgr.FreezeUnit(unit))
+        await self._run(unit, lambda mgr, _d: mgr.FreezeUnit(unit, timeout=DBUS_TIMEOUT))
 
     async def thaw(self, unit: str) -> None:  # pragma: no cover
-        await self._run(unit, lambda mgr, _d: mgr.ThawUnit(unit))
+        await self._run(unit, lambda mgr, _d: mgr.ThawUnit(unit, timeout=DBUS_TIMEOUT))
 
     async def reload(self, unit: str) -> None:  # pragma: no cover
-        await self._run(unit, lambda mgr, _d: mgr.ReloadUnit(unit, "replace"))
+        await self._run(unit, lambda mgr, _d: mgr.ReloadUnit(unit, "replace", timeout=DBUS_TIMEOUT))
 
 
 @dataclass
@@ -150,6 +191,9 @@ class FakeSystemd:
     units: dict[str, UnitProps] = field(default_factory=dict)
     calls: list[tuple[str, ...]] = field(default_factory=list)
     fail: dict[str, Exception] = field(default_factory=dict)
+    reloadable: dict[str, bool] = field(
+        default_factory=dict
+    )  # unit -> has ExecReload; default True
 
     def _enter(self, method: str, unit: str, *args: object) -> UnitProps:
         self.calls.append((method, unit, *map(str, args)))
@@ -174,6 +218,8 @@ class FakeSystemd:
 
     async def freeze(self, unit: str) -> None:
         cur = self._enter("freeze", unit)
+        if cur.active_state != "active":
+            raise SystemdError(f"{_DEST}.UnitInactive", f"Unit {unit} is not active")
         self.units[unit] = dataclasses.replace(cur, freezer_state="frozen")
 
     async def thaw(self, unit: str) -> None:
@@ -182,3 +228,5 @@ class FakeSystemd:
 
     async def reload(self, unit: str) -> None:
         self._enter("reload", unit)
+        if not self.reloadable.get(unit, True):
+            raise SystemdError(f"{_DEST}.JobTypeNotApplicable", f"reload not applicable to {unit}")
