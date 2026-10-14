@@ -1,0 +1,42 @@
+name: Bug report
+description: Something in Sentry-v2 doesn't work the way it should.
+labels: [bug, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. If Sentry-v2 throttled, froze or skipped something it shouldn't have, use the "Remediation incident" form instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How can we reproduce it?
+      description: Steps, config and commands. The smaller the better.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Sentry-v2 version
+      description: Output of `sentry-v2ctl --version`.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS release and kernel
+      description: For example `Rocky Linux 10.0` and `uname -r`.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`journalctl -u sentry-v2 --since '1 hour ago'`. Remove anything private."
+      render: text

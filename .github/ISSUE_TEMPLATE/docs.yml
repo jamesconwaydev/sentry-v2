@@ -1,0 +1,22 @@
+name: Documentation problem
+description: Something is missing, wrong or confusing in the docs.
+labels: [documentation, needs-triage]
+body:
+  - type: input
+    id: page
+    attributes:
+      label: Where?
+      description: Link or file path.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What would have helped?
+      description: Optional. A rewrite is welcome, and so is a pull request.

@@ -1,0 +1,69 @@
+name: Remediation incident
+description: Sentry-v2 acted when it shouldn't have, or didn't act when it should have.
+labels: [incident, needs-triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for telling us. These reports are the most useful ones we get.
+
+        Bundles can contain unit names, command lines and log lines. Redact hostnames, addresses and anything else private before pasting. If the bundle shows a security problem, stop and use a [private report](https://github.com/jamesconwaydev/sentry-v2/security/advisories/new).
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+      description: And what happened instead? Say which unit was affected and whether it recovered.
+    validations:
+      required: true
+  - type: input
+    id: bundle-id
+    attributes:
+      label: Bundle ID
+      description: The `id` field of the diagnostic bundle, if one was written.
+  - type: textarea
+    id: bundle
+    attributes:
+      label: Redacted bundle JSON
+      description: Contents of the bundle in `/var/lib/sentry-v2/bundles/`.
+      render: json
+  - type: textarea
+    id: policy
+    attributes:
+      label: Policy file
+      description: The policy that matched, from `/etc/sentry-v2/policies.d/`.
+      render: toml
+  - type: textarea
+    id: status
+    attributes:
+      label: "`sentry-v2ctl status --json`"
+      render: json
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Mode
+      options:
+        - dry-run
+        - enforce
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS release
+      description: For example `Rocky Linux 10.0`.
+    validations:
+      required: true
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel
+      description: Output of `uname -r`.
+    validations:
+      required: true
+  - type: input
+    id: selinux
+    attributes:
+      label: SELinux mode
+      description: Output of `getenforce`.
+    validations:
+      required: true

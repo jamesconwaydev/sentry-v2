@@ -1,0 +1,22 @@
+name: Feature request
+description: Suggest something Sentry-v2 should do.
+labels: [enhancement, needs-triage]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you stuck with?
+      description: Describe the situation on your servers, not the feature. We'll work out the shape together.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What do you do today?
+      description: Workarounds, other tools, anything you've tried.
