@@ -46,7 +46,7 @@ class UnitEvent:
     kind: Literal["failed", "exited", "start_failed"]
     result: str | None = None  # e.g. "watchdog", "timeout", "exit-code"
     exit_code: str | None = None
-    exit_status: int | None = None
+    exit_status: str | None = None  # "1", or a signal name such as "SEGV"
     invocation_id: str | None = None
     main_pid: int | None = None
 

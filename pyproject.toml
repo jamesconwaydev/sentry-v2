@@ -46,6 +46,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 markers = ["integration: needs a real EL10 host (run with `make itest`)"]
 addopts = "-m 'not integration'"
 
@@ -54,3 +55,6 @@ source = ["sentry_v2"]
 
 [tool.coverage.report]
 fail_under = 90
+
+[tool.ruff.lint.isort]
+known-first-party = ["sentry_v2", "contracts"]
