@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sentry-v2"
+version = "0.1.0"
+description = "Correlates PSI, journal failures and SELinux denials, and applies reversible remediation."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "AGPL-3.0-or-later" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy"]
+
+[project.scripts]
+sentry-v2 = "sentry_v2.daemon:main"
+sentry-v2ctl = "sentry_v2.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["systemd.*", "dbus.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs a real EL10 host (run with `make itest`)"]
+addopts = "-m 'not integration'"
+
+[tool.coverage.run]
+source = ["sentry_v2"]
+
+[tool.coverage.report]
+fail_under = 90
