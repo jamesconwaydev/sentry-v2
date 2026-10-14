@@ -40,6 +40,11 @@ AVC_TYPES = frozenset({"AVC", "USER_AVC", "SELINUX_ERR"})
 
 _STAMP = re.compile(r"audit\((\d+)\.(\d+):(\d+)\):\s?(.*)", re.S)
 _CONTEXTS = re.compile(r"scontext=(\S+) tcontext=(\S+) tclass=(\S+)")
+# libaudit's own trailing fields, appended after the libselinux text
+_AUDIT_TAIL = re.compile(
+    r""" exe="[^"]*"(?: sauid=\S+)?(?: hostname=\S+)?(?: addr=\S+)?(?: terminal=\S+)?\s*$"""
+)
+TRUNCATION_LIMIT = 1000  # libselinux formats into a 1024-byte buffer
 _PAIR = re.compile(r"""(\w+)=("[^"]*"|'[^']*'|\S+)""")
 _VERDICT = re.compile(r"avc:\s+(denied|granted)\s+\{([^}]*)\}")
 _LOG_LINE = re.compile(r"(?:node=\S+ )?type=(\w+) msg=(audit\(.*)", re.S)
@@ -88,31 +93,37 @@ def parse_audit_text(type_name: str, text: str) -> AuditRecord | None:
 
 
 def _user_avc_fields(body: str) -> dict[str, str]:
-    """Fields of a USER_AVC, whose msg='...' embeds caller-chosen text.
+    """The trusted fields of a USER_AVC, whose msg='...' embeds caller text.
 
     systemd puts cmdline="..." in there, so quoting cannot be trusted. The
     nested record runs to the last quote; userspace object managers append
     scontext/tcontext/tclass after the caller text, so the last match wins.
+    Only fields from that tail are returned, and a record whose tail may have
+    been cut off by the 1024-byte libselinux buffer is marked "truncated".
     """
     start = body.find("msg='")
     end = body.rfind("'")  # anything after the closing quote is enriched data
     if start < 0 or end <= start + 5:
         return {}
     inner = body[start + 5 : end]
-    fields = _pairs(body[:start])
-    fields.update(_pairs(inner))
+    tail = _AUDIT_TAIL.search(inner)
+    if (tail.start() if tail else len(inner)) >= TRUNCATION_LIMIT:
+        return {"truncated": "1"}
+    fields: dict[str, str] = {}
     if v := _VERDICT.match(inner):
         fields["verdict"] = v.group(1)
         fields["perms"] = " ".join(v.group(2).split())
-    for k in ("permissive", "pid", "spid"):
-        fields.pop(k, None)
-        if hits := re.findall(rf"\b{k}=(\d+)", inner):
-            fields[k] = hits[-1]  # caller text comes first; the trusted tail is last
     if ctx := list(_CONTEXTS.finditer(inner)):
         last = ctx[-1]
         fields["scontext"], fields["tcontext"], fields["tclass"] = last.groups()
         if p := re.search(r"\bpermissive=([01])\b", inner[last.end() :]):
             fields["permissive"] = p.group(1)
+        # dbus-daemon's unquoted aux fields (spid=) sit between the last quote
+        # and the contexts; systemd's segment is empty, so it has no trusted pid.
+        segment = inner[inner.rfind('"', 0, last.start()) + 1 : last.start()]
+        for k in ("pid", "spid"):
+            if hits := re.findall(rf"\b{k}=(\d+)", segment):
+                fields[k] = hits[-1]
     return fields
 
 
@@ -134,6 +145,8 @@ class AvcAssembler:
     """Groups records by serial and emits one AvcEvent per AVC record."""
 
     def __init__(self, flush_after: float = 0.1) -> None:
+        self.truncated = 0
+        self._warned_at = float("-inf")
         self._flush_after = flush_after
         self._groups: dict[int, tuple[float, list[AuditRecord]]] = {}
 
@@ -148,14 +161,21 @@ class AvcAssembler:
         due = [s for s, (t, _) in self._groups.items() if now - t >= self._flush_after]
         return [ev for s in due for ev in self._build(self._groups.pop(s)[1])]
 
-    @staticmethod
-    def _build(group: list[AuditRecord]) -> list[AvcEvent]:
+    def _build(self, group: list[AuditRecord]) -> list[AvcEvent]:
         syscall = next((r.fields for r in group if r.type == "SYSCALL"), {})
         events = []
         for r in group:
             if r.type not in AVC_TYPES:
                 continue
             f = r.fields
+            if f.get("truncated"):
+                self.truncated += 1
+                if time.monotonic() - self._warned_at >= 60:
+                    self._warned_at = time.monotonic()
+                    log.warning(
+                        "dropped USER_AVC that may be truncated (%d so far)", self.truncated
+                    )
+                continue
             user = r.type == "USER_AVC"  # caller-chosen comm/exe are not attribution
             pid = (f.get("spid") if user else None) or f.get("pid", "")
             scontext = f.get("scontext", "")
@@ -303,21 +323,24 @@ class LogTailSource:
                     try:
                         data = fh.read()
                     except OSError as e:
+                        # Fall through to the poll sleep: a persistent error
+                        # must not spin the event loop.
                         self._fail(e)
                         fh.close()
                         fh, start_ino = None, st.st_ino if st else None
-                        continue
-                    if discarding:
-                        _, nl, data = data.partition(b"\n")
-                        discarding = not nl
-                    buf += data
-                    *lines, buf = buf.split(b"\n")  # last item is a partial line
-                    for line in lines:
-                        if rec := self._parse(line.decode("utf-8", "replace")):
-                            yield rec
-                    if len(buf) > self.max_partial:
-                        log.warning("audit log line over %d bytes; dropped", self.max_partial)
-                        buf, discarding = b"", True
+                    else:
+                        self.error = None
+                        if discarding:
+                            _, nl, data = data.partition(b"\n")
+                            discarding = not nl
+                        buf += data
+                        *lines, buf = buf.split(b"\n")  # last item is a partial line
+                        for line in lines:
+                            if rec := self._parse(line.decode("utf-8", "replace")):
+                                yield rec
+                        if len(buf) > self.max_partial:
+                            log.warning("audit log line over %d bytes; dropped", self.max_partial)
+                            buf, discarding = b"", True
                 if rotated:
                     if fh is not None:
                         fh.close()
@@ -328,15 +351,13 @@ class LogTailSource:
                         if ino == start_ino:
                             fh.seek(0, os.SEEK_END)
                         start_ino = None
-                        buf, discarding, self.error = b"", False, None
+                        buf, discarding = b"", False
                         continue
                     except OSError as e:
                         if fh is not None:
                             fh.close()
                             fh = None
                         self._fail(e)
-                elif st is not None:
-                    self.error = None
                 await asyncio.sleep(self._interval)
         finally:
             if fh is not None:
@@ -380,7 +401,10 @@ class AuditCollector:
         self._source: Source | None = None
 
     def health(self) -> dict[str, object]:
-        out: dict[str, object] = {"source": self._source.name if self._source else None}
+        out: dict[str, object] = {
+            "source": self._source.name if self._source else None,
+            "user_avc_truncated": self._asm.truncated,
+        }
         if error := getattr(self._source, "error", None):
             out["error"] = error
         return out

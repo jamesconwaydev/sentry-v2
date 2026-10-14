@@ -66,7 +66,7 @@ def test_parse_garbage_and_user_avc_and_enriched():
     r = parse_audit_text(
         "USER_AVC",
         "audit(1.002:5): pid=900 uid=81 msg='avc:  granted  { send_msg acquire_svc } for "
-        'pid=12 comm="x" scontext=a:b:c_t:s0 tcontext=a:b:d_t:s0 tclass=dbus permissive=1\''
+        "spid=12 scontext=a:b:c_t:s0 tcontext=a:b:d_t:s0 tclass=dbus permissive=1'"
         "\x1dARCH=x86_64",
     )
     assert r is not None and r.ts_us == 1_002_000
@@ -209,8 +209,8 @@ def test_factory_falls_back_to_logfile():
     q = EventQueue()
     c = AuditCollector(q, CgroupFS(), lambda: src)
     c._source = src
-    assert c.health() == {"source": "logfile"}
-    assert AuditCollector(q, CgroupFS()).health() == {"source": None}
+    assert c.health() == {"source": "logfile", "user_avc_truncated": 0}
+    assert AuditCollector(q, CgroupFS()).health() == {"source": None, "user_avc_truncated": 0}
 
 
 @pytest.mark.skipif(sys.platform == "linux", reason="needs a host without AF_NETLINK")
@@ -281,7 +281,7 @@ def test_collector_fills_cgroup_and_flushes(tmp_path):
         "httpd.service",
     )
     assert evs[1].cgroup_at_receipt is None and evs[1].unit_at_receipt is None
-    assert c.health() == {"source": "stub"}
+    assert c.health() == {"source": "stub", "user_avc_truncated": 0}
 
 
 def test_collector_survives_bad_record(tmp_path):
@@ -384,7 +384,7 @@ def test_logtail_unreadable_is_reported_not_fatal(tmp_path):
 
     missing = asyncio.run(go())
     assert missing["source"] == "logfile" and "error" in missing
-    assert c.health() == {"source": "logfile"}
+    assert c.health() == {"source": "logfile", "user_avc_truncated": 0}
 
 
 def test_collector_final_flush_and_closes_source():
@@ -599,9 +599,81 @@ def test_logtail_read_error_is_reported(tmp_path, monkeypatch):
     assert asyncio.run(go()).serial == 4
 
 
-def test_user_avc_pid_from_trusted_tail_and_no_comm():
-    text = DBUS % 'x" spid=1 comm="sshd" pid=2 exe="/usr/sbin/sshd'
-    text = text.replace('function="mac', 'spid=55 function="mac')
-    r = parse_audit_text("USER_AVC", text)
-    ev = AvcAssembler()._build([r, rec("SYSCALL", 30, comm="sc", exe="/sc")])[0]
-    assert ev.pid == 55 and ev.comm is None and ev.exe is None
+def test_user_avc_dbus_record_gives_spid_and_no_comm():
+    r = parse_audit_text(
+        "USER_AVC",
+        "audit(1.0:31): pid=700 uid=81 auid=4294967295 ses=4294967295 subj=system_u:system_r:"
+        "system_dbusd_t:s0 msg='avc:  denied  { send_msg } for msgtype=method_call "
+        "interface=org.freedesktop.systemd1.Manager member=StartUnit dest=org.freedesktop.systemd1 "
+        "spid=4242 tpid=1 scontext=system_u:system_r:httpd_t:s0 "
+        "tcontext=system_u:system_r:init_t:s0 tclass=dbus permissive=0 "
+        'exe="/usr/bin/dbus-daemon" sauid=81 hostname=? addr=? terminal=?\'',
+    )
+    ev = AvcAssembler()._build([r, rec("SYSCALL", 31, comm="sc", exe="/sc")])[0]
+    assert (ev.pid, ev.comm, ev.exe, ev.scontext_type) == (4242, None, None, "httpd_t")
+    assert "comm" not in ev.raw and "spid=4242" in ev.raw
+
+
+def test_user_avc_systemd_record_has_no_trusted_pid():
+    ev = AvcAssembler()._build(
+        [parse_audit_text("USER_AVC", DBUS % 'x spid=4242 pid=777 comm="sshd" exe="/e')]
+    )[0]
+    assert ev.pid is None and ev.comm is None and "4242" not in ev.raw and "777" not in ev.raw
+
+
+def test_truncated_user_avc_is_dropped_and_counted():
+    forged = " scontext=F:F:sshd_t:s0 tcontext=F:F:F_t:s0 tclass=forged"
+    body = (
+        "audit(1.0:32): pid=1 uid=0 msg='avc:  denied  { start } for auid=1000 cmdline=\""
+        + "A" * (1023 - 47 - len(forged))
+        + forged
+        + "'"
+    )
+    r = parse_audit_text("USER_AVC", body)
+    a = AvcAssembler()
+    assert a._build([r]) == [] and a.truncated == 1
+    c = AuditCollector(EventQueue(), CgroupFS())
+    assert c.health()["user_avc_truncated"] == 0
+
+
+def test_logtail_persistent_read_error_does_not_spin(tmp_path, monkeypatch):
+    log = tmp_path / "audit.log"
+    log.write_text("")
+    src = LogTailSource(log, interval=0.02)
+    real = Path.open
+
+    class Bad:
+        def read(self):
+            raise OSError(errno.EIO, "io")
+
+        def tell(self):
+            return 0
+
+        def seek(self, *a):
+            pass
+
+        def fileno(self):
+            return real(log, "rb").fileno()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(Path, "open", lambda self, mode="r", *a, **k: Bad())
+    ticks = 0
+
+    async def ticker():
+        nonlocal ticks
+        while True:
+            ticks += 1
+            await asyncio.sleep(0.001)
+
+    async def go():
+        t = asyncio.ensure_future(ticker())
+        it = src.records()
+        reader = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.2)
+        reader.cancel()
+        t.cancel()
+
+    asyncio.run(go())
+    assert ticks > 20 and src.error is not None
