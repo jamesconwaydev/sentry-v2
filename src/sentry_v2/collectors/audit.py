@@ -107,7 +107,7 @@ def _user_avc_fields(body: str) -> dict[str, str]:
         return {}
     inner = body[start + 5 : end]
     tail = _AUDIT_TAIL.search(inner)
-    if (tail.start() if tail else len(inner)) >= TRUNCATION_LIMIT:
+    if len(inner[: tail.start() if tail else len(inner)].encode()) >= TRUNCATION_LIMIT:
         return {"truncated": "1"}
     fields: dict[str, str] = {}
     if v := _VERDICT.match(inner):
@@ -325,6 +325,8 @@ class LogTailSource:
                     except OSError as e:
                         # Fall through to the poll sleep: a persistent error
                         # must not spin the event loop.
+                        # The reopen seeks to EOF, so lines written during the
+                        # error window are skipped; replaying them risks duplicates.
                         self._fail(e)
                         fh.close()
                         fh, start_ino = None, st.st_ino if st else None

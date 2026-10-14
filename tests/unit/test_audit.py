@@ -621,26 +621,39 @@ def test_user_avc_systemd_record_has_no_trusted_pid():
     assert ev.pid is None and ev.comm is None and "4242" not in ev.raw and "777" not in ev.raw
 
 
-def test_truncated_user_avc_is_dropped_and_counted():
-    forged = " scontext=F:F:sshd_t:s0 tcontext=F:F:F_t:s0 tclass=forged"
+@pytest.mark.parametrize("filler", ["A", "\u00e9", "\U0001f600"])
+def test_truncated_user_avc_is_dropped_and_counted(filler):
+    # libselinux cuts at 1024 bytes, not characters: multibyte cmdline filler
+    # must not slip a forged triple and spid past the guard.
+    head = 'avc:  denied  { start } for auid=1000 uid=0 gid=0 cmdline="'
+    forged = " spid=1 scontext=F:F:sshd_t:s0 tcontext=F:F:F_t:s0 tclass=forged permissive=0"
+    n = (1023 - len((head + forged).encode())) // len(filler.encode())
+    selinux = (head + filler * n + forged).encode()[:1023].decode()
+    assert len(selinux) < 1000 or filler == "A"
     body = (
-        "audit(1.0:32): pid=1 uid=0 msg='avc:  denied  { start } for auid=1000 cmdline=\""
-        + "A" * (1023 - 47 - len(forged))
-        + forged
-        + "'"
+        "audit(1.0:32): pid=1 uid=0 auid=4294967295 ses=4294967295 "
+        "subj=system_u:system_r:init_t:s0 msg='"
+        + selinux
+        + ' exe="/usr/lib/systemd/systemd" sauid=0 hostname=? addr=? terminal=?\''
     )
-    r = parse_audit_text("USER_AVC", body)
-    a = AvcAssembler()
-    assert a._build([r]) == [] and a.truncated == 1
-    c = AuditCollector(EventQueue(), CgroupFS())
-    assert c.health()["user_avc_truncated"] == 0
+    q = EventQueue()
+    recs = [parse_audit_text("USER_AVC", body), rec("EOE", 32)]
+    c = AuditCollector(q, CgroupFS(), lambda: Stub(recs), flush_interval=0.01)
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        t.cancel()
+
+    asyncio.run(go())
+    assert not q._q and c.health()["user_avc_truncated"] == 1
 
 
 def test_logtail_persistent_read_error_does_not_spin(tmp_path, monkeypatch):
     log = tmp_path / "audit.log"
     log.write_text("")
     src = LogTailSource(log, interval=0.02)
-    real = Path.open
+    held = Path.open(log, "rb")  # one real fd for os.fstat, closed below
 
     class Bad:
         def read(self):
@@ -653,7 +666,7 @@ def test_logtail_persistent_read_error_does_not_spin(tmp_path, monkeypatch):
             pass
 
         def fileno(self):
-            return real(log, "rb").fileno()
+            return held.fileno()
 
         def close(self):
             pass
@@ -676,4 +689,5 @@ def test_logtail_persistent_read_error_does_not_spin(tmp_path, monkeypatch):
         t.cancel()
 
     asyncio.run(go())
+    held.close()
     assert ticks > 20 and src.error is not None
