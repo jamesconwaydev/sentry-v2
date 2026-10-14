@@ -8,13 +8,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import errno
 import logging
 import os
 import re
 import socket
 import struct
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -38,10 +39,9 @@ NETLINK_TYPES = {
 AVC_TYPES = frozenset({"AVC", "USER_AVC", "SELINUX_ERR"})
 
 _STAMP = re.compile(r"audit\((\d+)\.(\d+):(\d+)\):\s?(.*)", re.S)
-_INNER = re.compile(r"\bmsg='(.*)'", re.S)
 _PAIR = re.compile(r"""(\w+)=("[^"]*"|'[^']*'|\S+)""")
 _VERDICT = re.compile(r"avc:\s+(denied|granted)\s+\{([^}]*)\}")
-_LOG_LINE = re.compile(r"type=(\w+) msg=(audit\(.*)", re.S)
+_LOG_LINE = re.compile(r"(?:node=\S+ )?type=(\w+) msg=(audit\(.*)", re.S)
 _HEX_KEYS = ("comm", "exe", "proctitle", "path", "name")
 
 
@@ -75,10 +75,14 @@ def parse_audit_text(type_name: str, text: str) -> AuditRecord | None:
         return None
     sec, ms, serial, body = m.groups()
     fields: dict[str, str] = {}
-    if inner := _INNER.search(body):  # USER_AVC nests the real record in msg='...'
-        fields.update(_pairs(body[: inner.start()]))
-        body = inner.group(1)
-    if v := _VERDICT.search(body):
+    if type_name == "USER_AVC":
+        # The real record nests in a top-level msg='...'. Tokenising first keeps
+        # a msg='...' inside some other quoted value from being unwrapped.
+        outer = {k: v for k, v in _PAIR.findall(body)}
+        if (nested := outer.pop("msg", "")).startswith("'"):
+            fields.update({k: _decode(k, v) for k, v in outer.items()})
+            body = nested[1:-1]
+    if v := _VERDICT.match(body):
         fields["verdict"] = v.group(1)
         fields["perms"] = " ".join(v.group(2).split())
     fields.update(_pairs(body))
@@ -127,6 +131,7 @@ class AvcAssembler:
             if r.type not in AVC_TYPES:
                 continue
             f = r.fields
+            pid = (f.get("spid") if r.type == "USER_AVC" else None) or f.get("pid", "")
             scontext = f.get("scontext", "")
             parts = scontext.split(":")
             perms = tuple(f["perms"].split()) if "perms" in f else ((f["op"],) if "op" in f else ())
@@ -140,9 +145,9 @@ class AvcAssembler:
                     scontext_type=parts[2] if len(parts) > 2 else "",
                     tcontext=f.get("tcontext", ""),
                     tclass=f.get("tclass", ""),
-                    comm=_known(syscall.get("comm") or f.get("comm")),
-                    exe=_known(syscall.get("exe") or f.get("exe")),
-                    pid=int(f["pid"]) if f.get("pid", "").isdigit() else None,
+                    comm=_known(syscall.get("comm")) or _known(f.get("comm")),
+                    exe=_known(syscall.get("exe")) or _known(f.get("exe")),
+                    pid=int(pid) if pid.isdigit() else None,
                     permissive=f.get("permissive") == "1",
                     raw=" ".join(f"{k}={v}" for k, v in f.items()),
                 )
@@ -157,17 +162,23 @@ def _known(value: str | None) -> str | None:
 class Source(Protocol):
     name: str
 
-    def records(self) -> AsyncIterator[AuditRecord]: ...
+    def records(self) -> AsyncGenerator[AuditRecord, None]: ...
+
+    def close(self) -> None: ...
 
 
 class NetlinkSource:
     name = "netlink"
+    max_batch = 64  # recvs per loop callback, so an audit storm cannot starve the loop
+    max_queued = 10_000
 
     def __init__(self) -> None:
         af = getattr(socket, "AF_NETLINK", None)
         if af is None:
             raise OSError("AF_NETLINK is not available on this platform")
         self._sock = socket.socket(af, socket.SOCK_RAW, NETLINK_AUDIT)
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self.dropped = 0
         try:
             self._sock.setblocking(False)
             self._sock.bind((0, AUDIT_NLGRP_READLOG))  # needs CAP_AUDIT_READ
@@ -175,65 +186,115 @@ class NetlinkSource:
             self._sock.close()
             raise
 
-    async def records(self) -> AsyncIterator[AuditRecord]:
-        loop = asyncio.get_running_loop()
-        q: asyncio.Queue[AuditRecord] = asyncio.Queue()
+    def close(self) -> None:
+        if self._loop is not None:
+            with contextlib.suppress(ValueError, RuntimeError):
+                self._loop.remove_reader(self._sock.fileno())
+            self._loop = None
+        self._sock.close()
+
+    async def records(self) -> AsyncGenerator[AuditRecord, None]:
+        loop = self._loop = asyncio.get_running_loop()
+        q: asyncio.Queue[AuditRecord | OSError] = asyncio.Queue(self.max_queued)
+
+        def push(item: AuditRecord | OSError) -> None:
+            if q.full():
+                q.get_nowait()
+                self.dropped += 1
+                if self.dropped == 1 or self.dropped % 1000 == 0:
+                    log.warning("audit queue full; dropped %d records", self.dropped)
+            q.put_nowait(item)
 
         def on_readable() -> None:
-            while True:
+            for _ in range(self.max_batch):
                 try:
                     buf = self._sock.recv(RECV_SIZE)
                 except BlockingIOError:
                     return
-                except OSError as e:  # ENOBUFS: the kernel dropped messages
-                    log.warning("audit netlink recv failed: %s", e)
+                except OSError as e:
+                    if e.errno == errno.ENOBUFS:  # the kernel dropped messages
+                        log.warning("audit netlink overrun: %s", e)
+                        continue
+                    loop.remove_reader(self._sock.fileno())
+                    push(e)
                     return
                 for mtype, text in parse_netlink(buf):
                     if (name := NETLINK_TYPES.get(mtype)) and (rec := parse_audit_text(name, text)):
-                        q.put_nowait(rec)
+                        push(rec)
 
         loop.add_reader(self._sock.fileno(), on_readable)
         try:
             while True:
-                yield await q.get()
+                item = await q.get()
+                if isinstance(item, OSError):
+                    raise item
+                yield item
         finally:
-            loop.remove_reader(self._sock.fileno())
-            self._sock.close()
+            self.close()
 
 
 class LogTailSource:
     name = "logfile"
+    max_partial = 1 << 20
 
     def __init__(self, path: Path = Path("/var/log/audit/audit.log"), interval: float = 0.25):
         self._path = path
         self._interval = interval
+        self.error: str | None = None
 
-    async def records(self) -> AsyncIterator[AuditRecord]:
+    def close(self) -> None:
+        pass  # the file handle is released when records() is closed
+
+    def _fail(self, e: OSError) -> None:
+        if self.error is None:
+            log.warning("audit log %s unreadable: %s", self._path, e)
+        self.error = str(e)
+
+    async def records(self) -> AsyncGenerator[AuditRecord, None]:
         fh: Any = None
         ino = None
         buf = b""
+        first = True
         try:
-            with contextlib.suppress(OSError):
-                fh = self._path.open("rb")
-                fh.seek(0, os.SEEK_END)
-                ino = os.fstat(fh.fileno()).st_ino
             while True:
+                try:
+                    st: os.stat_result | None = self._path.stat()
+                except OSError as e:
+                    st = None
+                    self._fail(e)
+                # stat before the final read: whatever the old file held when we
+                # noticed the rotation is consumed before we switch.
+                rotated = st is not None and (
+                    fh is None or st.st_ino != ino or st.st_size < fh.tell()
+                )
                 if fh is not None:
                     buf += fh.read()
                     *lines, buf = buf.split(b"\n")  # last item is a partial line
                     for line in lines:
                         if rec := self._parse(line.decode("utf-8", "replace")):
                             yield rec
-                try:
-                    st = self._path.stat()
-                except OSError:
-                    st = None
-                # The old file was drained above, so it is safe to switch.
-                if st and (fh is None or st.st_ino != ino or st.st_size < fh.tell()):
+                    if len(buf) > self.max_partial:
+                        log.warning("audit log line over %d bytes; dropped", self.max_partial)
+                        buf = b""
+                if rotated:
                     if fh is not None:
                         fh.close()
-                    fh, ino, buf = self._path.open("rb"), st.st_ino, b""
-                    continue
+                        fh = None
+                    try:
+                        fh = self._path.open("rb")
+                        if first:
+                            fh.seek(0, os.SEEK_END)
+                        ino = os.fstat(fh.fileno()).st_ino
+                        buf, self.error = b"", None
+                        continue
+                    except OSError as e:
+                        if fh is not None:
+                            fh.close()
+                            fh = None
+                        self._fail(e)
+                elif st is not None:
+                    self.error = None
+                first = False
                 await asyncio.sleep(self._interval)
         finally:
             if fh is not None:
@@ -242,7 +303,7 @@ class LogTailSource:
     @staticmethod
     def _parse(line: str) -> AuditRecord | None:
         m = _LOG_LINE.match(line)
-        if m is None or (m.group(1) not in AVC_TYPES and m.group(1) not in NETLINK_TYPES.values()):
+        if m is None or m.group(1) not in NETLINK_TYPES.values():
             return None
         return parse_audit_text(m.group(1), m.group(2))
 
@@ -277,7 +338,10 @@ class AuditCollector:
         self._source: Source | None = None
 
     def health(self) -> dict[str, object]:
-        return {"source": self._source.name if self._source else None}
+        out: dict[str, object] = {"source": self._source.name if self._source else None}
+        if error := getattr(self._source, "error", None):
+            out["error"] = error
+        return out
 
     def _publish(self, events: list[AvcEvent]) -> None:
         for ev in events:
@@ -299,13 +363,21 @@ class AuditCollector:
                 log.exception("audit flush failed")
 
     async def run(self) -> None:
-        self._source = self._factory()
+        self._source = source = self._factory()
+        # The log file is polled, so a group may legitimately wait a full poll.
+        self._asm = AvcAssembler(0.5 if source.name == "logfile" else 0.1)
         flusher = asyncio.create_task(self._flusher())
         try:
-            async for rec in self._source.records():
-                try:
-                    self._publish(self._asm.feed(rec, self._now()))
-                except Exception:
-                    log.exception("audit record handling failed")
+            async with contextlib.aclosing(source.records()) as records:
+                async for rec in records:
+                    try:
+                        self._publish(self._asm.feed(rec, self._now()))
+                    except Exception:
+                        log.exception("audit record handling failed")
         finally:
             flusher.cancel()
+            source.close()
+            try:
+                self._publish(self._asm.flush(float("inf")))
+            except Exception:
+                log.exception("audit final flush failed")

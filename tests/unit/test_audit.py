@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import errno
 import socket
 import struct
 import sys
@@ -245,6 +246,9 @@ class Stub:
     def __init__(self, recs):
         self.recs = recs
 
+    def close(self):
+        pass
+
     async def records(self):
         for r in self.recs:
             yield r
@@ -282,12 +286,18 @@ def test_collector_fills_cgroup_and_flushes(tmp_path):
 
 def test_collector_survives_bad_record(tmp_path):
     q = EventQueue()
+    calls = []
 
-    class Boom(AuditCollector):
+    class Flaky(AuditCollector):
         def _publish(self, events):
-            raise RuntimeError("x")
+            if events:
+                calls.append(events)
+            if len(calls) == 1 and events:
+                raise RuntimeError("x")
+            super()._publish(events)
 
-    c = Boom(q, CgroupFS(tmp_path, tmp_path), lambda: Stub([rec("EOE", 1)]), flush_interval=0.01)
+    recs = [avc(1), rec("EOE", 1), avc(2), rec("EOE", 2)]
+    c = Flaky(q, CgroupFS(tmp_path, tmp_path), lambda: Stub(recs), flush_interval=0.01)
 
     async def go():
         t = asyncio.ensure_future(c.run())
@@ -295,4 +305,177 @@ def test_collector_survives_bad_record(tmp_path):
         t.cancel()
 
     asyncio.run(go())
-    assert len(q) == 0
+    assert [e.serial for e in q._q] == [2]
+
+
+def test_forged_msg_inside_quoted_value_is_ignored():
+    text = (
+        'audit(1.0:1): avc:  denied  { read } for  pid=7 comm="x" '
+        "name=\"a msg='scontext=system_u:system_r:sshd_t:s0'\" "
+        "scontext=a:b:httpd_t:s0 tcontext=a:b:x_t:s0 tclass=file permissive=0"
+    )
+    r = parse_audit_text("AVC", text)
+    ev = AvcAssembler()._build([r])[0]
+    assert (ev.scontext_type, ev.perms, ev.tclass, ev.tcontext) == (
+        "httpd_t",
+        ("read",),
+        "file",
+        "a:b:x_t:s0",
+    )
+    # the same text is never unwrapped as USER_AVC nesting either
+    r2 = parse_audit_text("USER_AVC", text)
+    assert r2 is not None and r2.fields["scontext"] == "a:b:httpd_t:s0"
+
+
+def test_user_avc_prefers_spid_and_node_prefix_and_known_fallback():
+    r = parse_audit_text(
+        "USER_AVC",
+        "audit(1.0:1): pid=900 msg='avc:  denied  { send_msg } for msgtype=method_call "
+        "spid=55 tpid=56 scontext=a:b:c_t:s0 tcontext=a:b:d_t:s0 tclass=dbus permissive=0'",
+    )
+    assert AvcAssembler()._build([r])[0].pid == 55
+    # SYSCALL comm "(null)" falls back to the AVC's own
+    sc = rec("SYSCALL", 4, comm="(null)", exe="(null)")
+    ev = AvcAssembler()._build([avc(4, comm="real", exe="/bin/real"), sc])[0]
+    assert (ev.comm, ev.exe) == ("real", "/bin/real")
+    line = LogTailSource._parse("node=host1 type=EOE msg=audit(1.0:9): ")
+    assert line is not None and line.serial == 9
+
+
+def test_logtail_rotation_final_read_and_oversize(tmp_path):
+    log = tmp_path / "audit.log"
+    log.write_text("")
+
+    async def go():
+        src = LogTailSource(log, interval=0.01)
+        src.max_partial = 50
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        with log.open("a") as f:
+            f.write("x" * 80)  # oversize partial line is dropped
+        await asyncio.sleep(0.05)
+        with log.open("a") as f:
+            f.write("\ntype=EOE msg=audit(1.0:1): \n")
+        first = await asyncio.wait_for(task, 2)
+        # last record written to the old file in the same breath as the rotation
+        with log.open("a") as f:
+            f.write("type=EOE msg=audit(1.0:2): \n")
+        log.rename(tmp_path / "old")
+        log.write_text("type=EOE msg=audit(1.0:3): \n")
+        got = [await asyncio.wait_for(anext(it), 2) for _ in range(2)]
+        await it.aclose()
+        return first, got
+
+    first, got = asyncio.run(go())
+    assert first.serial == 1 and [r.serial for r in got] == [2, 3]
+
+
+def test_logtail_unreadable_is_reported_not_fatal(tmp_path):
+    log = tmp_path / "audit.log"
+    src = LogTailSource(log, interval=0.01)
+    c = AuditCollector(EventQueue(), CgroupFS(), lambda: src)
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        missing = c.health()
+        log.write_text("")
+        await asyncio.sleep(0.05)
+        t.cancel()
+        return missing
+
+    missing = asyncio.run(go())
+    assert missing["source"] == "logfile" and "error" in missing
+    assert c.health() == {"source": "logfile"}
+
+
+def test_collector_final_flush_and_closes_source():
+    closed = []
+
+    class Src(Stub):
+        def close(self):
+            closed.append(1)
+
+        async def records(self):
+            yield avc(1)
+
+    q = EventQueue()
+    c = AuditCollector(q, CgroupFS(), lambda: Src([]), flush_interval=10)
+    asyncio.run(c.run())
+    assert len(q) == 1 and closed
+
+
+def test_netlink_close_without_iterating():
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+
+    class Fake(NetlinkSource):
+        def __init__(self) -> None:
+            self._sock = a
+            self._loop = None
+
+    Fake().close()
+    assert a.fileno() == -1
+    b.close()
+
+
+def test_netlink_storm_bounded_and_fatal_error_ends_source():
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    a.setblocking(False)
+
+    class Fake(NetlinkSource):
+        max_batch = 4
+        max_queued = 3
+
+        def __init__(self) -> None:
+            self._sock = a
+            self._loop = None
+            self.dropped = 0
+
+    async def go():
+        src = Fake()
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.01)
+        for n in range(10):
+            b.send(nl(1320, f"audit(1.0:{n}): "))
+        await asyncio.wait_for(task, 2)
+        await asyncio.sleep(0.05)
+        drained = []
+        for _ in range(3):
+            drained.append((await asyncio.wait_for(anext(it), 2)).serial)
+        b.close()  # peer gone: the next recv raises nothing for DGRAM, so force an error
+        a.close()
+        return src, drained
+
+    src, drained = asyncio.run(go())
+    assert src.dropped > 0 and drained == sorted(drained)
+
+
+def test_netlink_fatal_recv_error_raises():
+    class Boom:
+        def fileno(self):
+            return 99
+
+        def recv(self, n):
+            raise OSError(errno.EIO, "boom")
+
+        def close(self):
+            pass
+
+    class Fake(NetlinkSource):
+        def __init__(self) -> None:
+            self._sock = Boom()
+            self._loop = None
+            self.dropped = 0
+
+    async def go():
+        loop = asyncio.get_running_loop()
+        removed = []
+        loop.add_reader = lambda fd, cb: cb()  # fire immediately
+        loop.remove_reader = lambda fd: removed.append(fd)
+        with pytest.raises(OSError):
+            await anext(Fake().records())
+        return removed
+
+    assert 99 in asyncio.run(go())
