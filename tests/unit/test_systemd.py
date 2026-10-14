@@ -10,6 +10,7 @@ import pytest
 from contracts import NGINX, SystemdContract
 from sentry_v2.systemd import (
     UNSET,
+    DBusSystemd,
     FakeSystemd,
     SystemdError,
     UnitNotFound,
@@ -101,3 +102,16 @@ def test_iface_for() -> None:
     ]  # fmt: skip
     with pytest.raises(SystemdError, match="UnsupportedUnitType"):
         _iface_for("a.timer")
+
+
+def test_call_after_close_raises_closed() -> None:
+    m = DBusSystemd()
+    m.close()
+    m.close()  # idempotent
+    with pytest.raises(SystemdError, match="Closed"):
+        run(m.freeze("a.service"))
+
+
+def test_fake_refuses_unsupported_suffix() -> None:
+    with pytest.raises(SystemdError, match="UnsupportedUnitType"):
+        run(FakeSystemd().get_properties("a.timer"))

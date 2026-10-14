@@ -15,8 +15,8 @@ from sentry_v2.systemd import DBusSystemd
 pytestmark = pytest.mark.integration
 
 
-def _sh(*argv: str, check: bool = False) -> None:
-    subprocess.run(argv, check=check, capture_output=True)  # noqa: S603
+def _sh(*argv: str, check: bool = False) -> int:
+    return subprocess.run(argv, check=check, capture_output=True).returncode  # noqa: S603
 
 
 class TestDBusSystemd(SystemdContract):
@@ -51,7 +51,9 @@ class TestDBusSystemd(SystemdContract):
     def inactive_unit(self, request: pytest.FixtureRequest) -> str:
         # a failed unit stays loaded, so GetUnit still finds it
         name = self._start(request, cmd="/bin/false")
-        time.sleep(0.5)
+        deadline = time.monotonic() + 5
+        while _sh("systemctl", "is-failed", "--quiet", name) and time.monotonic() < deadline:
+            time.sleep(0.1)
         return name
 
     @pytest.fixture

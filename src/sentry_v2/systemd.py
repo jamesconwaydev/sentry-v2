@@ -8,6 +8,7 @@ stay on the thread that made them). FakeSystemd stands in for tests and for
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -110,17 +111,33 @@ class DBusSystemd:
     call path, which may load the unit as a side effect.
     """
 
-    def __init__(self) -> None:  # pragma: no cover
+    def __init__(self) -> None:
         self._ex = ThreadPoolExecutor(max_workers=1, thread_name_prefix="systemd-dbus")
         self._bus: Any = None
         self._mgr: Any = None
 
-    def close(self) -> None:  # pragma: no cover
-        self._ex.shutdown(wait=False, cancel_futures=True)
+    def _drop(self) -> None:
+        """Forget the connection and close it. Runs on the worker thread."""
+        bus, self._bus, self._mgr = self._bus, None, None
+        if bus is not None:  # pragma: no cover
+            with contextlib.suppress(Exception):
+                bus.close()
 
-    async def _run(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:  # pragma: no cover
+    def close(self) -> None:
+        """Close the bus on its own thread, then stop the worker. Further calls raise Closed."""
+        with contextlib.suppress(RuntimeError):  # already closed
+            self._ex.submit(self._drop)
+        # no cancel_futures: that could cancel the _drop just queued
+        self._ex.shutdown(wait=False)
+
+    async def _run(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(self._ex, self._call, unit, fn)
+        try:
+            return await loop.run_in_executor(self._ex, self._call, unit, fn)
+        except RuntimeError as e:  # executor already shut down
+            if "shutdown" in str(e):
+                raise SystemdError("org.sentry-v2.Closed", unit) from e
+            raise
 
     def _call(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:  # pragma: no cover
         import dbus  # distro binding, imported lazily so macOS can import the package
@@ -136,8 +153,8 @@ class DBusSystemd:
             return fn(self._mgr, dbus)
         except dbus.exceptions.DBusException as e:
             name = e.get_dbus_name()
-            if name in _DROP_BUS:
-                self._mgr = self._bus = None  # reconnect on the next call
+            if name in _DROP_BUS or self._mgr is None:
+                self._drop()  # reconnect on the next call
             raise _translate(name, e.get_dbus_message(), unit) from e
 
     async def get_properties(self, unit: str) -> UnitProps:  # pragma: no cover
@@ -204,6 +221,7 @@ class FakeSystemd:
         return self.units[unit]
 
     async def get_properties(self, unit: str) -> UnitProps:
+        _iface_for(unit)
         return self._enter("get_properties", unit)
 
     async def set_properties(

@@ -55,3 +55,6 @@ source = ["sentry_v2"]
 
 [tool.coverage.report]
 fail_under = 90
+
+[tool.ruff.lint.isort]
+known-first-party = ["sentry_v2", "contracts"]

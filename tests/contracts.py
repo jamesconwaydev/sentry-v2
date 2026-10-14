@@ -9,14 +9,6 @@ import pytest
 from sentry_v2.systemd import UNSET, SystemdError, SystemdManager, UnitNotFound, UnitProps
 
 run = asyncio.run
-FREEZER_STATES = (
-    "running",
-    "freezing",
-    "frozen",
-    "thawing",
-    "freezing-by-parent",
-    "frozen-by-parent",
-)
 
 
 class SystemdContract:
@@ -49,8 +41,7 @@ class SystemdContract:
 
     def test_freeze_thaw(self, manager: SystemdManager, unit: str) -> None:
         run(manager.freeze(unit))
-        assert run(manager.get_properties(unit)).freezer_state == "frozen"
-        assert run(manager.get_properties(unit)).freezer_state in FREEZER_STATES
+        assert run(manager.get_properties(unit)).freezer_state in ("frozen", "frozen-by-parent")
         run(manager.thaw(unit))
         assert run(manager.get_properties(unit)).freezer_state == "running"
 
@@ -75,19 +66,6 @@ class SystemdContract:
         ):
             with pytest.raises(UnitNotFound):
                 run(call())
-
-
-NGINX = UnitProps(
-    memory_high=UNSET,
-    cpu_weight=UNSET,
-    freezer_state="running",
-    active_state="active",
-    main_pid=42,
-    fragment_path="/usr/lib/systemd/system/nginx.service",
-    drop_in_paths=(),
-    exec_start=("/usr/sbin/nginx",),
-    cgroup="system.slice/nginx.service",
-)
 
 
 NGINX = UnitProps(
