@@ -1,0 +1,49 @@
+[[policy]]
+name = "memory-hog"
+mode = "enforce"
+cooldown = "10m"
+
+[policy.when]
+signal = "psi"
+resource = "memory"
+kind = "full"
+threshold = "150ms/1s"
+sustained = "10s"
+cgroups = ["system.slice/*.service"]
+
+[[policy.do]]
+action = "throttle"
+memory_high = "80%"
+cpu_weight = 50
+duration = "5m"
+
+[[policy.do]]
+action = "notify"
+
+[[policy]]
+name = "crashloop"
+
+[policy.when]
+signal = "unit_failed"
+units = ["batch-*.service"]
+results = ["watchdog", "timeout"]
+
+[[policy.do]]
+action = "freeze"
+duration = "2m"
+release_below = 5
+
+[[policy.do]]
+action = "backup_reload"
+paths = ["/etc/batch"]
+
+[[policy]]
+name = "denials"
+
+[policy.when]
+signal = "avc"
+scontext_types = ["httpd_t"]
+min_count = 3
+
+[[policy.do]]
+action = "notify"

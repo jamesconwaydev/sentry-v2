@@ -1,0 +1,43 @@
+[daemon]
+log_level = "debug"
+queue_size = 500
+
+[limits]
+max_action_duration = "10m"
+
+[protection]
+protected = ["nginx.service"]
+
+[correlation]
+min_confidence = 0.7
+
+[redaction]
+patterns = ['secret-\d+']
+
+[sinks.file]
+max_age = "7d"
+max_size = "512M"
+
+[sinks.webhook]
+url = "https://hooks.example.com/sentry"
+hmac_key_file = "/etc/sentry-v2/hmac.key"
+
+[sinks.syslog]
+transport = "tls"
+port = 6514
+
+[sinks.splunk_hec]
+url = "https://splunk.example.com:8088"
+token_file = "/etc/sentry-v2/hec.token"
+
+[sinks.elastic]
+url = "https://es.example.com:9200"
+index = "sentry-v2"
+username = "sentry"
+password_file = "/etc/sentry-v2/es.pass"
+
+[metrics]
+enabled = true
+
+[control]
+group = "ops"
