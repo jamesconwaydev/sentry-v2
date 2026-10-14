@@ -46,6 +46,7 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests/unit"]
 markers = ["integration: needs a real EL10 host (run with `make itest`)"]
 addopts = "-m 'not integration'"
 
