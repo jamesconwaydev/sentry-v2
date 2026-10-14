@@ -6,6 +6,7 @@ import ssl
 import threading
 from pathlib import Path
 
+import pytest
 from sinkfixtures import make_bundle
 
 from sentry_v2.sinks.http import tls_context
@@ -121,3 +122,22 @@ def test_tls_octet_counting(tls_cert: tuple[Path, Path]) -> None:
     length, _, frame = data.partition(b" ")
     assert int(length) == len(frame)
     assert RFC5424.fullmatch(frame.decode())
+
+
+def test_truncation_never_goes_negative() -> None:
+    line = format_message(make_bundle(), "h", "a", max_len=10)
+    assert line.endswith(b'truncated="1"] ')
+
+
+def test_udp_over_ipv6() -> None:
+    try:
+        srv = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
+        srv.bind(("::1", 0))
+    except OSError:
+        pytest.skip("no IPv6 loopback")
+    with srv:
+        srv.settimeout(5)
+        asyncio.run(
+            SyslogSink("::1", srv.getsockname()[1], "udp", hostname="h").send(make_bundle())
+        )
+        assert RFC5424.fullmatch(srv.recv(65535).decode())

@@ -50,7 +50,7 @@ def test_elastic_bulk_ndjson_with_api_key(
     assert req.headers["Content-Type"] == "application/x-ndjson"
     assert req.body.endswith(b"\n")
     action, doc = (json.loads(line) for line in req.body.decode().splitlines())
-    assert action == {"create": {"_index": "sentry-v2"}}
+    assert action == {"create": {"_index": "sentry-v2", "_id": b["id"]}}
     assert doc == {**b, "@timestamp": b["ts"]}
 
 
@@ -58,13 +58,33 @@ def test_elastic_item_error_is_failure(
     https_server: HttpsServer, tls_cert: tuple[Path, Path]
 ) -> None:
     https_server.reply = (
-        b'{"errors":true,"items":[{"create":{"status":409,"error":{"type":"conflict"}}}]}'
+        b'{"errors":true,"items":[{"create":{"status":400,"error":{"type":"mapping"}}}]}'
     )
     sink = ElasticSink(https_server.url, "i", "ApiKey abc", tls_context(tls_cert[0]))
-    with pytest.raises(SinkError, match="conflict") as e:
+    with pytest.raises(SinkError, match="mapping") as e:
         asyncio.run(sink.send(make_bundle()))
-    assert e.value.status == 409
+    assert e.value.status == 400
 
 
 def test_elastic_basic_auth_header() -> None:
     assert ElasticSink.basic("elastic", "pw") == "Basic " + base64.b64encode(b"elastic:pw").decode()
+
+
+def test_elastic_bulk_url_not_doubled_and_id_set(
+    https_server: HttpsServer, tls_cert: tuple[Path, Path]
+) -> None:
+    https_server.reply = b'{"errors":false,"items":[{"create":{"status":201}}]}'
+    sink = ElasticSink(https_server.url + "/_bulk", "i", "ApiKey a", tls_context(tls_cert[0]))
+    b = make_bundle()
+    asyncio.run(sink.send(b))
+    (req,) = https_server.requests
+    assert req.path == "/_bulk"
+    assert json.loads(req.body.splitlines()[0]) == {"create": {"_index": "i", "_id": b["id"]}}
+
+
+def test_elastic_conflict_means_already_indexed(
+    https_server: HttpsServer, tls_cert: tuple[Path, Path]
+) -> None:
+    https_server.reply = b'{"errors":true,"items":[{"create":{"status":409}}]}'
+    sink = ElasticSink(https_server.url, "i", "ApiKey a", tls_context(tls_cert[0]))
+    asyncio.run(sink.send(make_bundle()))

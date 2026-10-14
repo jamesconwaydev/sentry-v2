@@ -33,6 +33,12 @@ def write_atomic(path: Path, data: bytes) -> None:
         os.close(dfd)
 
 
+def remove_stale_tmp(dir: Path, pattern: str = ".*.tmp") -> None:
+    """Delete temp files a crash left behind mid-write_atomic."""
+    for p in dir.glob(pattern):
+        p.unlink(missing_ok=True)
+
+
 class Spool:
     """`<id>.json` files; UUIDv7 ids make filename order delivery order.
 
@@ -46,8 +52,10 @@ class Spool:
         self.max_bytes = max_bytes
         self.dropped = 0
         dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        remove_stale_tmp(dir)
 
-    def _files(self) -> list[Path]:
+    def paths(self) -> list[Path]:
+        """Spooled files, oldest first."""
         return sorted(self.dir.glob("*.json"))
 
     def push(self, bundle: Bundle) -> None:
@@ -56,7 +64,7 @@ class Spool:
 
     def _enforce_cap(self) -> None:
         sized = []
-        for p in self._files():
+        for p in self.paths():
             try:
                 sized.append((p, p.stat().st_size))
             except FileNotFoundError:  # acked meanwhile
@@ -71,16 +79,23 @@ class Spool:
             self.dropped += 1
             log.warning("spool %s full: dropped oldest bundle %s", self.dir, p.stem)
 
+    def load(self, path: Path) -> Bundle | None:
+        """The bundle in `path`; None if it has gone or was unreadable (then discarded)."""
+        try:
+            bundle: Bundle = json.loads(path.read_bytes())
+        except FileNotFoundError:
+            return None
+        except ValueError:
+            log.warning("spool %s: discarding unreadable %s", self.dir, path.name)
+            path.unlink(missing_ok=True)
+            self.dropped += 1
+            return None
+        return bundle
+
     def pending(self) -> Iterator[tuple[Path, Bundle]]:
-        for p in self._files():
-            try:
-                yield p, json.loads(p.read_bytes())
-            except FileNotFoundError:
-                continue
-            except ValueError:
-                log.warning("spool %s: discarding unreadable %s", self.dir, p.name)
-                p.unlink(missing_ok=True)
-                self.dropped += 1
+        for p in self.paths():
+            if (bundle := self.load(p)) is not None:
+                yield p, bundle
 
     def ack(self, path: Path) -> None:
         path.unlink(missing_ok=True)

@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from .base import Bundle, bundle_filename, encode
-from .spool import write_atomic
+from .spool import remove_stale_tmp, write_atomic
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +50,7 @@ class FileSink:
 
     def _prune(self, now: float) -> None:
         """Delete bundles older than max_age, then the oldest until under max_size."""
+        remove_stale_tmp(self.root, "*/*/*/.*.tmp")  # only this thread writes here
         files = []
         for p in sorted(self.root.glob("*/*/*/*.json")):  # date path then UUIDv7: oldest first
             try:

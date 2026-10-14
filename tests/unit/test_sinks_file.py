@@ -64,3 +64,11 @@ def test_prunes_at_most_once_a_minute(tmp_path: Path) -> None:
     asyncio.run(sink.send(make_bundle()))  # first write prunes: dir now empty
     asyncio.run(sink.send(make_bundle()))  # within 60 s: kept
     assert len(_files(tmp_path)) == 1
+
+
+def test_prune_removes_stale_tmp(tmp_path: Path) -> None:
+    day = tmp_path / "2026" / "10" / "13"
+    day.mkdir(parents=True)
+    (day / ".x.tmp").write_text("half")
+    asyncio.run(FileSink(tmp_path, max_age=3600, max_size=10**9).send(make_bundle()))
+    assert not (day / ".x.tmp").exists()

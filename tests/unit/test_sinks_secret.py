@@ -57,3 +57,17 @@ def test_relative_path_without_credentials_directory(monkeypatch: pytest.MonkeyP
     monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
     with pytest.raises(SinkError, match="CREDENTIALS_DIRECTORY"):
         load_secret(Path("key"), check_owner=False)
+
+
+def test_control_characters_are_rejected(tmp_path: Path) -> None:
+    with pytest.raises(SinkError, match="control character"):
+        load_secret(_secret(tmp_path, text="ab\x00c\n"), check_owner=False)
+    with pytest.raises(SinkError, match="control character"):
+        load_secret(_secret(tmp_path, text="line1\nline2\n"), check_owner=False)
+
+
+def test_fifo_is_rejected_without_blocking(tmp_path: Path) -> None:
+    fifo = tmp_path / "fifo"
+    os.mkfifo(fifo, 0o600)
+    with pytest.raises(SinkError, match="regular file"):
+        load_secret(fifo, check_owner=False)

@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from .base import SinkError
 
+MAX_REPLY = 1024**2
+
 # Connection failures that are worth retrying, alongside a 5xx SinkError.
 TRANSIENT = (OSError, http.client.HTTPException)
 
@@ -25,16 +27,17 @@ def post(
 ) -> tuple[int, bytes]:
     """POST `body` to an https URL; return (status, response body). Non-2xx raises SinkError."""
     u = urlsplit(url)
+    where = f"{u.scheme}://{u.netloc.rpartition('@')[2]}"  # paths and userinfo may hold tokens
     if u.scheme != "https" or not u.hostname:
-        raise SinkError(f"not an https URL: {url}")
+        raise SinkError(f"not an https URL: {where}")
     conn = http.client.HTTPSConnection(u.hostname, u.port, timeout=timeout, context=context)
     try:
         target = (u.path or "/") + (f"?{u.query}" if u.query else "")
         conn.request("POST", target, body, headers)
         resp = conn.getresponse()
-        data = resp.read()
+        data = resp.read(MAX_REPLY)
     finally:
         conn.close()
     if not 200 <= resp.status < 300:
-        raise SinkError(f"POST {u.hostname}{u.path}: HTTP {resp.status}", resp.status)
+        raise SinkError(f"POST {where}: HTTP {resp.status}", resp.status)
     return resp.status, data

@@ -53,3 +53,18 @@ def test_corrupt_file_is_discarded(tmp_path: Path) -> None:
     spool.push(good)
     assert [b["id"] for _, b in spool.pending()] == [good["id"]]
     assert spool.dropped == 1
+
+
+def test_stale_tmp_files_are_removed_on_open(tmp_path: Path) -> None:
+    (tmp_path / ".abc.tmp").write_text("half")
+    Spool(tmp_path)
+    assert not (tmp_path / ".abc.tmp").exists()
+
+
+def test_load_tolerates_vanished_file(tmp_path: Path) -> None:
+    spool = Spool(tmp_path)
+    spool.push(b := make_bundle())
+    (path,) = spool.paths()
+    assert spool.load(path) == b
+    spool.ack(path)
+    assert spool.load(path) is None

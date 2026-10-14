@@ -130,3 +130,51 @@ def test_transient_error_retries_then_succeeds(
     asyncio.run(sink.send(make_bundle()))
     assert len(https_server.requests) == 2
     assert t.sleeps == [1]
+
+
+@pytest.mark.parametrize("status", [301, 401, 403, 404])
+def test_auth_or_url_errors_keep_the_spool(
+    status: int, https_server: HttpsServer, tls_cert: tuple[Path, Path], tmp_path: Path
+) -> None:
+    https_server.status = status
+    old = make_bundle()
+    Spool(tmp_path).push(old)
+    new = make_bundle()
+    with pytest.raises(SinkError, match="giving up"):
+        asyncio.run(_sink(https_server.url, tls_cert[0], tmp_path).send(new))
+    # the pass stopped at the oldest bundle; nothing was dropped
+    assert {json.loads(r.body)["id"] for r in https_server.requests} == {old["id"]}
+    assert [b["id"] for _, b in Spool(tmp_path).pending()] == [old["id"], new["id"]]
+
+
+@pytest.mark.parametrize("status", [413, 415, 422])
+def test_permanent_errors_drop_with_warning(
+    status: int,
+    https_server: HttpsServer,
+    tls_cert: tuple[Path, Path],
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    https_server.status = status
+    b = make_bundle()
+    with pytest.raises(SinkError, match="rejected"):
+        asyncio.run(_sink(https_server.url, tls_cert[0], tmp_path).send(b))
+    assert list(Spool(tmp_path).pending()) == []
+    assert any(b["id"] in r.getMessage() and r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_post_caps_response_body(https_server: HttpsServer, tls_cert: tuple[Path, Path]) -> None:
+    https_server.reply = b"x" * (2 * 1024**2)
+    _, body = post(https_server.url, b"{}", {}, tls_context(tls_cert[0]), 5)
+    assert len(body) == 1024**2
+
+
+def test_errors_never_echo_url_path(https_server: HttpsServer, tls_cert: tuple[Path, Path]) -> None:
+    https_server.status = 500
+    with pytest.raises(SinkError) as e:
+        post(https_server.url + "/T0KEN?sig=abc", b"{}", {}, tls_context(tls_cert[0]), 5)
+    assert "T0KEN" not in str(e.value) and "abc" not in str(e.value)
+    assert "https://127.0.0.1" in str(e.value)
+    with pytest.raises(SinkError) as e:
+        post("http://h/T0KEN", b"{}", {}, tls_context(None), 5)
+    assert "T0KEN" not in str(e.value)

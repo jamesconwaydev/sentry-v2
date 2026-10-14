@@ -74,6 +74,8 @@ class SinkManager:
             log.warning("sink %s: queue full, dropping bundle %s", sink.name, bundle.get("id"))
             self.dropped[sink.name] += 1
             return
+        # ponytail: one task per spilled bundle, unbounded; a sustained flood queues
+        # threads on the default executor. Bound with a semaphore if that shows up.
         task = asyncio.create_task(asyncio.to_thread(sink.spool.push, bundle))
         self._spilling.add(task)
         task.add_done_callback(lambda t: self._spilled(sink.name, t))

@@ -44,7 +44,7 @@ def format_message(
     line = head({}) + msg
     if max_len is not None and len(line) > max_len:
         h = head({"truncated": "1"})
-        line = h + msg[: max_len - len(h)]
+        line = h + msg[: max(0, max_len - len(h))]
     return line
 
 
@@ -77,8 +77,11 @@ class SyslogSink:
     def _send(self, bundle: Bundle) -> None:
         if self.transport == "udp":
             line = format_message(bundle, self._hostname, self._app_name, UDP_MAX)
-            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                s.sendto(line, (self.host, self.port))
+            family, type_, proto, _, addr = socket.getaddrinfo(
+                self.host, self.port, type=socket.SOCK_DGRAM
+            )[0]
+            with socket.socket(family, type_, proto) as s:
+                s.sendto(line, addr)
             return
         line = format_message(bundle, self._hostname, self._app_name)
         frame = f"{len(line)} ".encode() + line  # RFC 6587 octet counting

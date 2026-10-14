@@ -21,9 +21,14 @@ RETRY_FOR = 3600.0
 MAX_DELAY = 3600.0
 
 
+# The bundle itself is unacceptable; retrying cannot help. Anything else (3xx,
+# 401, 403, 404, ...) is likely endpoint or credential trouble an operator will
+# fix, so those bundles stay spooled.
+PERMANENT = frozenset({400, 413, 415, 422})
+
+
 def _permanent(e: SinkError) -> bool:
-    """A client error that retrying cannot fix."""
-    return e.status is not None and e.status < 500 and e.status not in (408, 429)
+    return e.status in PERMANENT
 
 
 class WebhookSink:
@@ -31,9 +36,8 @@ class WebhookSink:
 
     Delivery is oldest-first: a send also drains anything spooled earlier.
     A transient failure is retried with backoff for up to an hour, then left
-    in the spool for the next send or the next start. A 4xx other than
-    408/429 will never succeed, so that bundle is dropped rather than left
-    to block the spool.
+    in the spool for the next send or the next start. Only a status in
+    PERMANENT drops a bundle, so it cannot block the spool forever.
     """
 
     name = "webhook"
@@ -65,13 +69,16 @@ class WebhookSink:
     async def flush(self) -> None:
         """Deliver everything in the spool, oldest first; stop at the first bundle that won't go."""
         rejected: SinkError | None = None
-        for path, bundle in await asyncio.to_thread(lambda: list(self.spool.pending())):
+        for path in await asyncio.to_thread(self.spool.paths):
+            bundle = await asyncio.to_thread(self.spool.load, path)
+            if bundle is None:
+                continue
             try:
                 await self._deliver(bundle)
             except SinkError as e:
                 if not _permanent(e):
                     raise
-                log.error("webhook rejected bundle %s, dropping it: %s", bundle["id"], e)
+                log.warning("webhook rejected bundle %s, dropping it: %s", bundle["id"], e)
                 rejected = SinkError(f"webhook rejected bundle {bundle['id']}: {e}", e.status)
             await asyncio.to_thread(self.spool.ack, path)
         if rejected:
