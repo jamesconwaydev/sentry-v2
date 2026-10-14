@@ -37,6 +37,7 @@ from .policy import (
     Throttle,
     UnitFailedWhen,
     When,
+    effective_mode,
     is_protected,
 )
 from .units import Percent, parse_duration, parse_size
@@ -495,8 +496,7 @@ def load_config(main: Path, policies_dir: Path) -> Config:
         fr = _Reader(_toml(file), file)
         policies.extend(_policy(t, limits, protection.protected, seen) for t in fr.tables("policy"))
         fr.finish("section")
-    if daemon.mode == "dry-run":
-        policies = [replace(p, mode="dry-run") for p in policies]
+    policies = [replace(p, mode=effective_mode(daemon.mode, p.mode)) for p in policies]
     return Config(
         daemon, limits, protection, correlation, redaction, sinks, metrics, control, tuple(policies)
     )

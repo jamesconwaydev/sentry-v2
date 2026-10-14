@@ -45,7 +45,7 @@ def policy_text(when: str = "", extra: str = "", do: str = 'action = "notify"') 
 def test_minimal_defaults() -> None:
     cfg = load_config(FIXTURES / "minimal.toml", FIXTURES / "nope")
     assert cfg.policies == ()
-    assert cfg.daemon.mode == "enforce"
+    assert cfg.daemon.mode == "dry-run"
     assert cfg.limits.max_action_duration == 1800.0
     assert cfg.sinks.file.max_age == 30 * 86400 and cfg.sinks.file.max_size == 1024**3
     assert cfg.sinks.webhook is None
@@ -72,7 +72,7 @@ def test_policies_load() -> None:
     names = [p.name for p in cfg.policies]
     assert names == ["memory-hog", "crashloop", "denials"]
     mem, crash, den = cfg.policies
-    assert mem.mode == "enforce" and mem.cooldown == 600.0
+    assert mem.mode == "dry-run" and mem.cooldown == 600.0
     assert mem.when == PsiWhen(
         "memory", "full", 150_000, 1_000_000, 10.0, ("system.slice/*.service",)
     )
@@ -233,3 +233,25 @@ def test_unreadable_files(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match=r"nope.toml: \(file\): cannot read"):
         load_config(tmp_path / "nope.toml", tmp_path)
     assert "(file): cannot read" in err(tmp_path, "[daemon")
+
+
+@pytest.mark.parametrize(
+    ("daemon", "pol", "expected"),
+    [
+        ("dry-run", "dry-run", "dry-run"),
+        ("dry-run", "enforce", "dry-run"),
+        ("enforce", "dry-run", "dry-run"),
+        ("enforce", "enforce", "enforce"),
+    ],
+)
+def test_effective_mode(tmp_path: Path, daemon: str, pol: str, expected: str) -> None:
+    from sentry_v2.policy import effective_mode
+
+    assert effective_mode(daemon, pol) == expected  # type: ignore[arg-type]
+    cfg = load(tmp_path, f'[daemon]\nmode = "{daemon}"', a=policy_text(extra=f'mode = "{pol}"'))
+    assert cfg.policies[0].mode == expected
+
+
+def test_daemon_defaults_to_dry_run_even_with_enforcing_policy(tmp_path: Path) -> None:
+    cfg = load(tmp_path, "", a=policy_text(extra='mode = "enforce"'))
+    assert cfg.daemon.mode == "dry-run" and cfg.policies[0].mode == "dry-run"

@@ -14,11 +14,16 @@ Mode = Literal["dry-run", "enforce"]
 
 @dataclass(frozen=True)
 class DaemonConfig:
+    """Daemon settings.
+
+    `mode` is a master switch. An action is enforced only when `daemon.mode`
+    and the policy's own `mode` are both "enforce"; otherwise it is dry-run.
+    """
+
     log_level: str = "info"
     state_dir: Path = Path("/var/lib/sentry-v2")
     queue_size: int = 10000
-    # Master switch: "dry-run" forces every policy to dry-run.
-    mode: Mode = "enforce"
+    mode: Mode = "dry-run"
 
 
 @dataclass(frozen=True)

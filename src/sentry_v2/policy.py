@@ -93,6 +93,13 @@ class Policy:
     source: Path
 
 
+def effective_mode(
+    daemon_mode: Literal["dry-run", "enforce"], policy_mode: Literal["dry-run", "enforce"]
+) -> Literal["dry-run", "enforce"]:
+    """Enforce only when both the daemon and the policy say so."""
+    return "enforce" if daemon_mode == policy_mode == "enforce" else "dry-run"
+
+
 def _matches(incident: Incident, when: When) -> bool:
     trigger = incident.trigger
     match when:
