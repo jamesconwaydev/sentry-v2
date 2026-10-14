@@ -115,6 +115,7 @@ class DBusSystemd:
         self._ex = ThreadPoolExecutor(max_workers=1, thread_name_prefix="systemd-dbus")
         self._bus: Any = None
         self._mgr: Any = None
+        self._closed = False
 
     def _drop(self) -> None:
         """Forget the connection and close it. Runs on the worker thread."""
@@ -125,16 +126,19 @@ class DBusSystemd:
 
     def close(self) -> None:
         """Close the bus on its own thread, then stop the worker. Further calls raise Closed."""
+        self._closed = True
         with contextlib.suppress(RuntimeError):  # already closed
             self._ex.submit(self._drop)
         # no cancel_futures: that could cancel the _drop just queued
         self._ex.shutdown(wait=False)
 
     async def _run(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:
+        if self._closed:
+            raise SystemdError("org.sentry-v2.Closed", unit)
         loop = asyncio.get_running_loop()
         try:
             return await loop.run_in_executor(self._ex, self._call, unit, fn)
-        except RuntimeError as e:  # executor already shut down
+        except RuntimeError as e:  # closed between the check and the submit
             if "shutdown" in str(e):
                 raise SystemdError("org.sentry-v2.Closed", unit) from e
             raise
@@ -142,6 +146,8 @@ class DBusSystemd:
     def _call(self, unit: str, fn: Callable[[Any, Any], Any]) -> Any:  # pragma: no cover
         import dbus  # distro binding, imported lazily so macOS can import the package
 
+        if self._closed:
+            raise SystemdError("org.sentry-v2.Closed", unit)
         try:
             if self._mgr is None:
                 # private connection, created on the worker thread and reused there
@@ -156,6 +162,10 @@ class DBusSystemd:
             if name in _DROP_BUS or self._mgr is None:
                 self._drop()  # reconnect on the next call
             raise _translate(name, e.get_dbus_message(), unit) from e
+        except Exception:
+            if self._mgr is None:
+                self._drop()  # half-open bus from a failed setup
+            raise
 
     async def get_properties(self, unit: str) -> UnitProps:  # pragma: no cover
         iface = _iface_for(unit)
