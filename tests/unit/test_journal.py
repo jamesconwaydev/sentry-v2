@@ -155,7 +155,9 @@ def test_open_applies_standard_setup():
     ]
 
 
-def test_drain_queues_events_and_hints_once():
+def test_drain_queues_events_and_hints_once(monkeypatch):
+    monkeypatch.setattr(journal, "HINT_INTERVAL", 0.05)
+
     async def go():
         hints: list[int] = []
         c, _, q = make([FAILED, STARTED, STARTED, APP_OUTPUT, START_FAILED], hints)
@@ -163,7 +165,7 @@ def test_drain_queues_events_and_hints_once():
         c._drain()
         assert len(q) == 2
         assert hints == [1]  # second STARTED is inside the debounce window
-        await asyncio.sleep(1.1)  # trailing hint fires
+        await asyncio.sleep(0.1)  # trailing hint fires
         assert hints == [1, 1]
         c.close()
 
@@ -234,3 +236,47 @@ def test_real_reader_api_has_not_drifted():
         assert isinstance(reader.fileno(), int)
     finally:
         reader.close()  # type: ignore[attr-defined]
+
+
+def test_unit_tail_skips_garbled_and_takes_last_of_lists():
+    reader = FakeReader(
+        history=[
+            {"__REALTIME_TIMESTAMP": "1", "MESSAGE": ["first", "second"], "PRIORITY": ["3", "4"]},
+            {"__REALTIME_TIMESTAMP": "2", "MESSAGE": "bad", "PRIORITY": "oops"},
+        ]
+    )
+    assert unit_tail("x.service", 5, lambda: reader) == [
+        {"ts_us": 1, "priority": 4, "message": "second"}
+    ]
+
+
+def test_hint_hook_failure_is_contained():
+    async def go():
+        def boom():
+            raise RuntimeError("x")
+
+        c = JournalCollector(EventQueue(), lambda: FakeReader(), boom)
+        c._fire_hint()  # logged, not raised
+
+    asyncio.run(go())
+
+
+def test_drain_error_schedules_one_retry():
+    async def go():
+        c, reader, _ = make([], [])
+        c._reader = c._open()
+        calls = []
+
+        def flaky():
+            calls.append(1)
+            if len(calls) == 1:
+                raise OSError("bad entry")
+            return {}
+
+        reader.get_next = flaky  # type: ignore[method-assign]
+        c._on_readable()
+        await asyncio.sleep(0)
+        assert len(calls) == 2
+        c.close()
+
+    asyncio.run(go())

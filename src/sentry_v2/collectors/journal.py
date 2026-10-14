@@ -60,6 +60,11 @@ def _text(value: object) -> str:
     return str(value)
 
 
+def _last(value: Any) -> Any:
+    """python-systemd returns a list when a field occurs more than once."""
+    return value[-1] if isinstance(value, list) and value else value
+
+
 def _from_systemd(entry: Mapping[str, object]) -> bool:
     return str(entry.get("_PID")) == "1" and bool(entry.get("UNIT"))
 
@@ -111,7 +116,6 @@ class JournalCollector:
         self._on_unit_change = on_unit_change
         self._monotonic = monotonic
         self._reader: ReaderLike | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
         self._state = "starting"
         self._last_hint = float("-inf")
         self._hint_timer: asyncio.TimerHandle | None = None
@@ -141,7 +145,10 @@ class JournalCollector:
     def _fire_hint(self) -> None:
         self._hint_timer = None
         self._last_hint = self._monotonic()
-        self._on_unit_change()
+        try:
+            self._on_unit_change()
+        except Exception:
+            log.exception("unit change hook failed")
 
     def _drain(self) -> None:
         if (reader := self._reader) is None:
@@ -165,10 +172,12 @@ class JournalCollector:
         if (reader := self._reader) is None:
             return
         try:
+            # process() may report INVALIDATE; sd_journal handles it, so the result is ignored
             reader.process()
             self._drain()
         except Exception:
             log.exception("journal wakeup failed")
+            asyncio.get_running_loop().call_soon(self._drain_safely)  # one retry
 
     def close(self) -> None:
         if self._hint_timer is not None:
@@ -179,10 +188,11 @@ class JournalCollector:
             self._reader = None
 
     async def run(self) -> None:
-        loop = self._loop = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
         try:
             self._reader = self._open()
             loop.add_reader(self._reader.fileno(), self._on_readable)
+            self._drain_safely()  # catch up on entries that arrived during setup
         except Exception:
             log.exception("journal collector could not start")
             self._state = "error"
@@ -215,13 +225,16 @@ def unit_tail(
         for _ in range(n):
             if not (entry := reader.get_previous()):
                 break
-            lines.append(
-                {
-                    "ts_us": _ts_us(entry.get("__REALTIME_TIMESTAMP")) or 0,
-                    "priority": int(entry.get("PRIORITY", 6)),
-                    "message": _text(entry.get("MESSAGE", "")),
-                }
-            )
+            try:
+                lines.append(
+                    {
+                        "ts_us": _ts_us(_last(entry.get("__REALTIME_TIMESTAMP"))) or 0,
+                        "priority": int(_last(entry.get("PRIORITY", 6))),
+                        "message": _text(_last(entry.get("MESSAGE", ""))),
+                    }
+                )
+            except (TypeError, ValueError):
+                continue  # garbled entry (e.g. non-numeric PRIORITY): skip it
         return lines[::-1]
     finally:
         reader.close()
