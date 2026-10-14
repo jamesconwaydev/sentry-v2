@@ -37,19 +37,16 @@ Run them on a throwaway VM, not a machine you care about. They create load insid
 
 Sentry-v2 runs as root and changes how other people's services behave, so a few things matter more here than in most projects.
 
-- **Dry-run stays the default.** Anything new that acts on a system must be off until someone turns it on, and must be reversible and time-boxed.
-- **Protected targets stay protected.** Never weaken the list of units Sentry-v2 refuses to throttle or freeze.
-- **Runtime dependencies come from the Python standard library, `systemd.journal`, `systemd.daemon` and `dbus`.** Nothing from EPEL, and nothing outside BaseOS and AppStream.
-- **No secrets in bundles or logs.**
+- Dry-run stays the default. Anything new that acts on a system must be off until someone turns it on, and must be reversible and time-boxed.
+- Protected targets stay protected. Never weaken the list of units Sentry-v2 refuses to throttle or freeze.
+- Runtime dependencies come from the Python standard library, `systemd.journal`, `systemd.daemon` and `dbus`. Nothing from EPEL, and nothing outside BaseOS and AppStream.
+- No secrets in bundles or logs.
 
 ## Commits and pull requests
 
 We use [Conventional Commits](https://www.conventionalcommits.org/): `fix: stop retrying a revoked throttle`, `feat: add Elastic sink`, `docs: explain policy precedence`. Keep the subject under 72 characters and use the body to say why.
 
-1. Fork the repo and branch from `main`.
-2. Make the change, with tests. A bug fix starts with a test that fails.
-3. Run `make lint typecheck test`.
-4. Open a pull request and fill in the template. Update the docs and CHANGELOG if users will notice.
+Fork the repo, branch from `main`, and make your change with tests; a bug fix starts with a test that fails. Run `make lint typecheck test`, then open a pull request and fill in the template. Update the docs and CHANGELOG if users will notice.
 
 `main` is protected. Every change lands through a pull request that passes CI, and we squash-merge, so the PR title becomes the commit message on `main`. Write it as a Conventional Commit.
 
