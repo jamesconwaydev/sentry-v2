@@ -132,9 +132,12 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: gh release create "$TAG" release/* --title "$TAG" --notes-file artifacts/notes/notes.md
 
+  # Runs once PyPI's trusted publisher is set up for this repository and the
+  # repository variable PYPI_PUBLISH is "true"; until then the wheel and
+  # sdist ship only on the GitHub release.
   pypi:
     needs: release
-    if: github.repository == 'jamesconwaydev/sentry-v2'
+    if: github.repository == 'jamesconwaydev/sentry-v2' && vars.PYPI_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

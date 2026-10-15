@@ -124,6 +124,7 @@ build output.
    `SHA256SUMS`, attests their provenance, and creates the release with
    all of them attached.
 
-   Publishing to PyPI is configured in the same workflow but is waiting for
-   the first upload; until then the Python packages are only on the GitHub
-   release.
+   The same workflow can upload the wheel and sdist to PyPI through trusted
+   publishing. That job runs once the maintainer has set up the trusted
+   publisher on PyPI and set the repository variable `PYPI_PUBLISH` to
+   `true`. Until then the Python packages are only on the GitHub release.
