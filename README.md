@@ -16,7 +16,7 @@ It's 3am and `app-billing.service` has died for the fourth time. The
 journal says "permission denied", `ausearch` hands you two hundred denials
 from the last hour, and on the same box a batch job has been chewing
 through memory since midnight. Was it SELinux? Was it the batch job? You
-find out by hand, one terminal at a time, while the pager keeps going.
+find out by hand, one terminal at a time, while alerts keep coming in.
 
 Sentry-v2 does that legwork for you. It watches cgroup pressure, unit
 failures and SELinux denials on your Rocky, Alma, RHEL or CentOS Stream 10
