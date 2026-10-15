@@ -129,3 +129,6 @@ build output.
    publishing. That job runs once the maintainer has set up the trusted
    publisher on PyPI and set the repository variable `PYPI_PUBLISH` to
    `true`. Until then the Python packages are only on the GitHub release.
+
+   To publish an existing release to PyPI later, run
+   `gh workflow run release.yml -f tag=vX.Y.Z`.

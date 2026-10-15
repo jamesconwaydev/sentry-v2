@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish to PyPI (e.g. v0.1.0)
+        required: true
+        type: string
 
 permissions: {}
 
@@ -12,6 +18,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,6 +59,7 @@ jobs:
           if-no-files-found: error
   rpm:
     needs: check
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:10
     permissions:
@@ -77,6 +85,7 @@ jobs:
 
   python:
     needs: check
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -105,6 +114,7 @@ jobs:
 
   release:
     needs: [rpm, python]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -137,7 +147,7 @@ jobs:
   # sdist ship only on the GitHub release.
   pypi:
     needs: release
-    if: github.repository == 'jamesconwaydev/sentry-v2' && vars.PYPI_PUBLISH == 'true'
+    if: github.event_name == 'push' && github.repository == 'jamesconwaydev/sentry-v2' && vars.PYPI_PUBLISH == 'true'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -148,3 +158,33 @@ jobs:
           name: python
           path: dist
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  # Manual backfill: publish the wheel and sdist of an existing GitHub release.
+  # Running it is the explicit act, so it is not gated on PYPI_PUBLISH.
+  pypi-existing:
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'jamesconwaydev/sentry-v2'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download and verify the release's Python files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag $TAG is not vMAJOR.MINOR.PATCH" >&2
+            exit 1
+          fi
+          gh release download "$TAG" -p '*.whl' -p '*.tar.gz' -p SHA256SUMS -D dist -R "$GITHUB_REPOSITORY"
+          cd dist
+          sha256sum -c SHA256SUMS --ignore-missing
+          v=${TAG#v}
+          [ "$(find . -type f -printf '%f\n' | grep -v '^SHA256SUMS$' | sort)" = "$(printf 'sentry_v2-%s-py3-none-any.whl\nsentry_v2-%s.tar.gz\n' "$v" "$v")" ] \
+            || { echo "expected exactly one wheel and one sdist for $v:" >&2; ls >&2; exit 1; }
+          rm SHA256SUMS
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          packages-dir: dist/
