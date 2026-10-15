@@ -12,7 +12,7 @@ license = { text = "AGPL-3.0-or-later" }
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "cryptography"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "cryptography", "check-jsonschema"]
 
 [project.scripts]
 sentry-v2 = "sentry_v2.daemon:main"

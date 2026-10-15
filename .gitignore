@@ -13,3 +13,4 @@ htmlcov/
 .pytest_cache/
 rpmbuild/
 *.rpm
+tests/fixtures/bundle_sample.json

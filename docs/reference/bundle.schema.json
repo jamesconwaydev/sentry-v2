@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sentry-v2/bundle/1",
+  "title": "Sentry v2 diagnostic bundle",
+  "type": "object",
+  "required": ["schema", "id", "ts", "severity", "host", "incident", "context", "correlations", "decision"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "type": "string", "enum": ["sentry-v2/bundle/1"] },
+    "id": { "type": "string" },
+    "ts": { "type": "string" },
+    "severity": { "type": "string", "enum": ["info", "warning", "critical"] },
+    "host": {
+      "type": "object",
+      "required": ["hostname", "kernel"],
+      "additionalProperties": true,
+      "properties": {
+        "hostname": { "type": "string" },
+        "machine_id": { "type": ["string", "null"] },
+        "kernel": { "type": "string" },
+        "os_release": { "type": ["string", "null"] }
+      }
+    },
+    "incident": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "type": "string", "enum": ["unit_failed", "psi", "avc", "alert"] },
+        "target": { "type": ["string", "null"] },
+        "trigger": { "type": "object" },
+        "related": { "type": "array", "items": { "type": "object" } },
+        "correlations": { "type": "array", "items": { "type": "object" } },
+        "sustained": { "type": ["number", "null"] },
+        "alert": { "type": "string" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "required": ["psi", "unit", "journal"],
+      "additionalProperties": true,
+      "properties": {
+        "psi": { "type": "object" },
+        "unit": { "type": ["object", "null"] },
+        "journal": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "correlations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["avc", "confidence", "reasons"],
+        "additionalProperties": true,
+        "properties": {
+          "avc": { "type": "object" },
+          "confidence": { "type": "number" },
+          "reasons": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "required": ["policy", "mode", "actions"],
+      "additionalProperties": true,
+      "properties": {
+        "policy": { "type": ["string", "null"] },
+        "mode": { "type": ["string", "null"] },
+        "actions": { "type": "array", "items": { "type": "object" } }
+      }
+    }
+  }
+}
