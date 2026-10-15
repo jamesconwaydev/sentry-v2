@@ -38,10 +38,12 @@ ConfigurationDirectory=sentry-v2
 # Secrets can come from systemd credentials instead of files under /etc:
 #LoadCredential=webhook-hmac:/etc/sentry-v2/hmac.key
 
-# Runs as root, but with only these capabilities. CAP_AUDIT_READ reads the
-# audit multicast stream, CAP_SYS_PTRACE reads /proc of other services and
-# CAP_DAC_READ_SEARCH reads unit drop-ins and journals regardless of mode.
-CapabilityBoundingSet=CAP_AUDIT_READ CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+# Runs as root with one capability: CAP_AUDIT_READ, to join the audit
+# multicast group where SELinux denials arrive. Everything it reads or
+# writes is owned by root, so it needs no DAC override; /proc/<pid>/cgroup
+# and status are world-readable, so no CAP_SYS_PTRACE. The integration
+# suite was run with each capability dropped in turn (docs/hardening.md).
+CapabilityBoundingSet=CAP_AUDIT_READ
 NoNewPrivileges=yes
 ProtectSystem=strict
 # PSI triggers are registered by writing to <cgroup>/*.pressure. The state

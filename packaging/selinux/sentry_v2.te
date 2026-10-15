@@ -38,10 +38,8 @@ corenet_port(sentry_v2_metrics_port_t)
 # Local policy
 #
 
-# The capabilities left in CapabilityBoundingSet: reading other services'
-# /proc entries and files regardless of their mode.
-allow sentry_v2_t self:capability { dac_read_search sys_ptrace };
-# Joining the audit multicast group (collectors/audit.py).
+# The one capability left in CapabilityBoundingSet: joining the audit
+# multicast group (collectors/audit.py, test_audit_collector_uses_netlink).
 allow sentry_v2_t self:capability2 audit_read;
 # Thread pool sizing for asyncio.to_thread (sinks, spool). Python 3.12 uses
 # os.cpu_count(), and glibc may call sched_getaffinity behind it; the suite
