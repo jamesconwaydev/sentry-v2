@@ -31,6 +31,9 @@ _US = 1_000_000
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _FULL_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 MIN_SHORT_ID = 6
+# A rollback retries for minutes when systemd is slow to answer (see executor)
+SLOW_COMMANDS = {"rollback", "restore"}
+SLOW_TIMEOUT = 900.0
 _COLOURS = {
     "failed": "31", "rollback_failed": "31", "high": "31", "critical": "31",
     "applied": "32", "ok": "32",
@@ -256,8 +259,13 @@ def _daemon(args: argparse.Namespace) -> int:
     client = ControlClient(Path(args.socket))
     if args.cmd == "top":
         return _top_loop(client, args.sort, args.json, args.once)
-    if args.cmd == "rollback" and not args.all:
-        args.id = _resolve_id(client, args.id)
+    if args.cmd in SLOW_COMMANDS:
+        client.timeout = SLOW_TIMEOUT
+    if args.cmd == "rollback":
+        if not args.all:
+            args.id = _resolve_id(client, args.id)
+        if sys.stderr.isatty():
+            print("Rolling back… this can take a while if systemd is slow", file=sys.stderr)
     result = client.call(args.cmd, **_call_args(args))
     print(json.dumps(result) if args.json else _HUMAN[args.cmd](result))
     return 0

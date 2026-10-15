@@ -2,6 +2,7 @@ import contextlib
 import json
 import shutil
 import socket
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -436,3 +437,28 @@ def test_policies(stub, capsys):
     assert "last reload failed: 99-bad.toml: policy[0].when.bogus" in out
     rc, out, _ = run(stub, capsys, "policies", "--json")
     assert rc == 0 and json.loads(out) == POLICIES
+
+
+def test_rollback_and_restore_wait_longer(stub, capsys, monkeypatch):
+    timeouts: dict[str, float] = {}
+    real_call = ControlClient.call
+
+    def spy(self, cmd, **args):
+        timeouts[cmd] = self.timeout
+        return real_call(self, cmd, **args)
+
+    monkeypatch.setattr(ControlClient, "call", spy)
+    stub.replies |= {
+        "rollback": {"ok": True, "result": {"rolled_back": []}},
+        "restore": {"ok": True, "result": {"restored": [], "skipped": [], "note": "n"}},
+        "pause": {"ok": True, "result": {"paused": True}},
+    }
+    _, _, err = run(stub, capsys, "rollback", "--all")
+    assert err == ""  # not a terminal
+    run(stub, capsys, "restore", "u.service/20260101T000000Z")
+    run(stub, capsys, "pause")
+    assert timeouts == {"rollback": 900.0, "restore": 900.0, "pause": 10.0}
+
+    monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
+    _, _, err = run(stub, capsys, "rollback", "--all")
+    assert err == "Rolling back… this can take a while if systemd is slow\n"

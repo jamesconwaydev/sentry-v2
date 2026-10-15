@@ -171,6 +171,10 @@ rolled back 0199f2b4-1d2e-7a00-8c11-2f3e4d5c6b7a  throttle on batch-report.servi
 
 An unknown id fails with `error: no such action` and exit code 1.
 
+A rollback retries for minutes when systemd is slow to answer, so
+`rollback` and `restore` wait up to 15 minutes for the daemon's reply
+where other commands give up after 10 seconds.
+
 ### pause, resume
 
 `pause` forces dry-run for new actions while everything else keeps running.
