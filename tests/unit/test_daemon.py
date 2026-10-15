@@ -367,6 +367,26 @@ def test_crashing_collector_is_restarted_with_backoff(env: Env) -> None:
     drive(d, body)
 
 
+def test_slow_replay_keeps_extending_the_start_timeout(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(daemon, "EXTEND_EVERY", 0.05)
+    d = env.daemon()
+
+    async def slow_replay() -> None:
+        await asyncio.sleep(0.3)
+
+    monkeypatch.setattr(d.executor, "replay", slow_replay)
+
+    async def body() -> None:
+        await asyncio.sleep(0.2)  # long enough for more pings, had they not stopped
+
+    drive(d, body)
+    ready = env.notes.index("READY=1")
+    assert env.notes[:ready].count(daemon.EXTEND_TIMEOUT) >= 3
+    assert daemon.EXTEND_TIMEOUT not in env.notes[ready:]
+
+
 def test_replay_runs_before_collectors_start(env: Env) -> None:
     order: list[str] = []
     frozen = dataclasses.replace(NGINX, freezer_state="frozen")

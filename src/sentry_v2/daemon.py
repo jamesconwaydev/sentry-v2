@@ -53,6 +53,10 @@ SAMPLE_TTL = 15.0
 INCIDENT_HISTORY = 500
 RECENT_ACTIONS = 100
 MUTATING = {"rollback", "pause", "resume", "reload", "restore"}
+# Replay can outlast TimeoutStartSec (see the executor's worst case), so
+# while it runs systemd is asked for another minute every half minute.
+EXTEND_EVERY = 30.0
+EXTEND_TIMEOUT = "EXTEND_TIMEOUT_USEC=60000000"
 
 
 def sd_notify(state: str) -> None:
@@ -215,7 +219,11 @@ class Daemon:
         for sig, fn in handlers.items():
             loop.add_signal_handler(sig, fn)
         try:
-            await self.executor.replay()
+            extend = asyncio.create_task(self._extend_start_timeout())
+            try:
+                await self.executor.replay()
+            finally:
+                extend.cancel()
             self.sinks.start()
             if self.metrics_server is not None:
                 await self.metrics_server.start()
@@ -266,6 +274,11 @@ class Daemon:
         self._tasks.discard(task)
         if not task.cancelled() and (e := task.exception()) is not None:
             log.error("task %s failed", task.get_name(), exc_info=e)
+
+    async def _extend_start_timeout(self) -> None:
+        while True:
+            self._notify(EXTEND_TIMEOUT)
+            await asyncio.sleep(EXTEND_EVERY)
 
     async def _watchdog(self, interval: float) -> None:
         while True:  # on the main loop, so a hung loop stops the pings

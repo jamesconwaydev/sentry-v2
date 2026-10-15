@@ -18,6 +18,10 @@ RestartSec=5s
 # max_active_actions default) need up to 243s + 5 * 100s = 743s. Raise this
 # if you raise max_active_actions.
 TimeoutStopSec=780s
+# Startup first rolls back whatever a crashed run left active (replay),
+# which has the same worst case as a stop. The daemon sends
+# EXTEND_TIMEOUT_USEC every 30s while replay runs, so this is a backstop.
+TimeoutStartSec=780s
 
 Slice=system.slice
 MemoryMin=48M
