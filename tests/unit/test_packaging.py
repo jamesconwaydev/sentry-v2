@@ -30,7 +30,7 @@ def test_unit_file_hardening() -> None:
     unit.read(PACKAGING / "sentry-v2.service")
     svc = unit["Service"]
     expected = {
-        "Type": "notify",
+        "Type": "notify-reload",
         "NotifyAccess": "main",
         "WatchdogSec": "30s",
         "Restart": "on-failure",
@@ -51,6 +51,7 @@ def test_unit_file_hardening() -> None:
         "OOMScoreAdjust": "-900",
     }
     assert {k: svc.get(k) for k in expected} == expected
+    assert "ExecReload" not in svc  # notify-reload sends SIGHUP itself
     assert set(svc["ReadWritePaths"].split()) == {"/var/lib/sentry-v2", "/sys/fs/cgroup"}
     assert unit["Install"]["WantedBy"] == "multi-user.target"
 
@@ -73,3 +74,8 @@ def test_spec_ships_every_cockpit_file() -> None:
     assert " cockpit " in (ROOT / "Makefile").read_text(), (
         "the source tarball must include cockpit/"
     )
+
+
+def test_spec_import_check_covers_every_module() -> None:
+    spec = (PACKAGING / "sentry-v2.spec").read_text()
+    assert re.search(r"^%pyproject_check_import$", spec, re.MULTILINE)

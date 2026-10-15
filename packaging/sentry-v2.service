@@ -5,10 +5,10 @@ After=dbus.service systemd-journald.service auditd.service
 Wants=dbus.service
 
 [Service]
-Type=notify
+# SIGHUP reloads; the daemon reports RELOADING=1 and READY=1 around it
+Type=notify-reload
 NotifyAccess=main
 ExecStart=/usr/bin/sentry-v2
-ExecReload=/bin/kill -HUP $MAINPID
 WatchdogSec=30s
 Restart=on-failure
 RestartSec=5s

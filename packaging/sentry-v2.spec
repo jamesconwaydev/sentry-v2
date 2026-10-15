@@ -97,9 +97,7 @@ install -pm 0644 cockpit/manifest.json cockpit/index.html cockpit/sentry-v2.js c
     %{buildroot}%{_datadir}/cockpit/sentry-v2/
 
 %check
-# sentry_v2.daemon is the console script's target and doesn't exist yet;
-# drop the exclusion when it lands.
-%pyproject_check_import -e sentry_v2.daemon
+%pyproject_check_import
 %if %{with tests}
 %pytest -m 'not integration'
 %endif
