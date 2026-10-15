@@ -284,7 +284,8 @@ let errorSlot = null;
 let shownError = null;
 
 function showError(text) {
-    if (!errorSlot || text === shownError) return;
+    // Skip re-rendering (and re-announcing) an identical error; clearing always works.
+    if (!errorSlot || (text && text === shownError)) return;
     shownError = text;
     errorSlot.replaceChildren(text ? h("div", { class: "alert danger", role: "alert" },
         h("div", null, h("h2", null, "That didn't work"), h("p", null, text)),
@@ -349,6 +350,7 @@ function overviewView() {
     }
 
     async function mutate(cmd, verb, done) {
+        shownError = null; // a repeated manual failure should be announced again
         try {
             await client.call(cmd);
             showError(null);
@@ -483,6 +485,7 @@ function overviewView() {
 
     async function rollback(rec) {
         confirming = null;
+        shownError = null;
         try {
             const res = await client.call("rollback", { id: rec.id });
             showError(null);
@@ -671,6 +674,7 @@ function policiesView() {
     }
 
     async function reload(button) {
+        shownError = null;
         button.disabled = true;
         try {
             await client.call("reload");
