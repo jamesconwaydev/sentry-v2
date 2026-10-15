@@ -32,7 +32,7 @@ another port, label it too (see [hardening.md](hardening.md#selinux)).
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `sentry_v2_psi_avg10` | gauge | `cgroup`, `resource`, `kind` | The latest 10-second pressure average, in percent, for each watched cgroup, from the 5-second samples. A cgroup with no sample for 5 minutes drops out. |
+| `sentry_v2_psi_avg10` | gauge | `cgroup`, `resource`, `kind` | The latest 10-second pressure average, in percent, for each watched cgroup, from the 5-second samples. A cgroup that misses three samples in a row (15 seconds) drops out, so a stopped unit disappears quickly. |
 | `sentry_v2_actions_total` | counter | `policy`, `action`, `mode`, `result` | Actions attempted. `mode` is the mode actually used (`dry-run` or `enforce`); `result` is the record's status when the incident was handled: `applied`, `failed`, `dry_run`, or `planned` for an apply whose outcome was unknown and is being rolled back. |
 | `sentry_v2_actions_active` | gauge | | Throttles and freezes awaiting rollback. |
 | `sentry_v2_incidents_total` | counter | `kind` | Incidents opened: `unit_failed`, `psi` or `avc`. |
