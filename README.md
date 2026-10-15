@@ -6,6 +6,7 @@
 
 [![CI](https://img.shields.io/github/actions/workflow/status/jamesconwaydev/sentry-v2/ci.yml?branch=main&label=CI)](https://github.com/jamesconwaydev/sentry-v2/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jamesconwaydev/sentry-v2?include_prereleases&sort=semver)](https://github.com/jamesconwaydev/sentry-v2/releases)
+[![PyPI](https://img.shields.io/pypi/v/sentry-v2)](https://pypi.org/project/sentry-v2/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/downloads/release/python-3120/)
 [![EL10](https://img.shields.io/badge/platform-EL10-red)](docs/installation.md)
@@ -64,6 +65,8 @@ flowchart LR
 ```
 
 ## Quickstart
+
+Just want to check policies in CI? `pip install sentry-v2` and run `sentry-v2ctl policy validate`.
 
 Download the RPMs from the
 [v0.1.0 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.1.0)

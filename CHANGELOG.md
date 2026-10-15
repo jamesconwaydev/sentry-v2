@@ -6,6 +6,10 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Published on PyPI as `sentry-v2`.
+
 ## [0.1.0] - 2026-10-15
 
 The first release.

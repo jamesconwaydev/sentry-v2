@@ -116,6 +116,30 @@ The exact dist tag in the file names depends on your EL10 minor release.
 On a machine without `rpmbuild`, `make rpm` builds in a `rockylinux:10`
 container with Podman instead (set `CONTAINER=docker` to use Docker).
 
+## From PyPI
+
+Sentry-v2 is on PyPI as [`sentry-v2`](https://pypi.org/project/sentry-v2/).
+On EL10 the RPM is still the one to use. It brings the unit file, the
+sysusers and tmpfiles entries, the SELinux module and the Cockpit page, and
+pip brings none of them.
+
+pip earns its place in three spots: development, CI policy checks, and your
+own packaging. `sentry-v2ctl policy validate` and `sentry-v2ctl policy test`
+work anywhere, with no daemon and no root.
+
+The daemon imports `systemd` and `dbus`, and pip can't install those, so
+take them from the distro first:
+
+```console
+# dnf install python3-systemd python3-dbus
+# python3 -m venv --system-site-packages /opt/sentry-v2 && /opt/sentry-v2/bin/pip install sentry-v2
+```
+
+Both `sentry-v2` and `sentry-v2ctl` land in `/opt/sentry-v2/bin`. To run the
+daemon from a pip install you supply the unit file, the groups, the runtime
+directory and the SELinux module yourself. The files to start from are in
+[`packaging/`](https://github.com/jamesconwaydev/sentry-v2/tree/main/packaging).
+
 ## Uninstalling
 
 ```console

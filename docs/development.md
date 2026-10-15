@@ -125,10 +125,9 @@ build output.
    `SHA256SUMS`, attests their provenance, and creates the release with
    all of them attached.
 
-   The same workflow can upload the wheel and sdist to PyPI through trusted
-   publishing. That job runs once the maintainer has set up the trusted
-   publisher on PyPI and set the repository variable `PYPI_PUBLISH` to
-   `true`. Until then the Python packages are only on the GitHub release.
+   PyPI publishing is live. The same workflow uploads the wheel and sdist
+   through trusted publishing, automatically on each tag, as long as the
+   repository variable `PYPI_PUBLISH` is `true`.
 
    To publish an existing release to PyPI later, run
    `gh workflow run release.yml -f tag=vX.Y.Z`.
