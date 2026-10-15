@@ -9,7 +9,8 @@
 # The tree is copied to ~/sentry-v2-itest on the host, the RPMs are built
 # there with `make rpm`, installed, configured from tests/integration/config
 # and started. Logs and audit records from the run end up in
-# itest-artifacts/<timestamp>/ locally.
+# itest-artifacts/<timestamp>/ locally. Without KEEP=1 the host is left as
+# it was found, apart from the RPM build dependencies.
 set -euo pipefail
 
 HOST=${HOST:-rocky@198.211.115.158}
@@ -24,7 +25,12 @@ teardown() {
 	sudo dnf remove -y -q sentry-v2 sentry-v2-selinux sentry-v2-cockpit || true
 	sudo systemctl daemon-reload
 	sudo systemctl reset-failed sentry-v2 2>/dev/null || true
-	sudo rm -rf /etc/sentry-v2 /var/lib/sentry-v2 "$VENV"
+	# the tests' units are gone; their slices outlive them until stopped
+	sudo systemctl stop sentry-test.slice sentry.slice 2>/dev/null || true
+	sudo rm -rf /etc/sentry-v2 /var/lib/sentry-v2 "$VENV" /tmp/sv2-rpmbuild.log
+	# the RPM creates these from its sysusers.d file and dnf leaves them
+	sudo groupdel sentry-v2-admin 2>/dev/null || true
+	sudo groupdel sentry-v2 2>/dev/null || true
 }
 
 remote() {
@@ -64,7 +70,10 @@ remote() {
 		systemctl show sentry-v2 -p CapabilityBoundingSet,ActiveState,NRestarts >"$OUT/unit.txt"
 	} || true
 
-	[ "${KEEP:-0}" = 1 ] || teardown
+	if [ "${KEEP:-0}" != 1 ]; then
+		teardown
+		rm -rf ~/"$REMOTE_DIR"
+	fi
 	return "$rc"
 }
 
