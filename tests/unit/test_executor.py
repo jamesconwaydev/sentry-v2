@@ -629,7 +629,11 @@ def test_unexpected_error_compensated_and_plan_continues(h: Harness) -> None:
         del h.mgr.fail["set_properties"]
         await settle()
         final = h.journal.load()[recs[0].id]
-        assert (final.status, final.error) == ("rolled_back", "apply outcome unknown: RuntimeError")
+        # set_properties never took effect, so the values differ from what was written
+        assert (final.status, final.error) == (
+            "rolled_back",
+            "apply outcome unknown: RuntimeError; changed since; left as is",
+        )
 
     run(main)
 
@@ -762,9 +766,12 @@ def test_manual_retry_waits_as_planned(h: Harness) -> None:
     run(main)
 
 
-def test_throttle_left_alone_if_changed_since(h: Harness) -> None:
+def test_throttle_left_alone_if_changed_since(h: Harness, caplog: pytest.LogCaptureFixture) -> None:
+    rec_id: list[str] = []
+
     async def main() -> None:
         [rec] = await h.ex.handle(psi_incident(), [(policy(), Throttle(Percent(50), 30, 60))])
+        rec_id.append(rec.id)
         assert rec.params == {"memory_high": 32 * MiB, "cpu_weight": 30}  # resolved, floored
         # an operator raises the limit by hand while the throttle is active
         h.mgr.units[UNIT] = dataclasses.replace(h.mgr.units[UNIT], memory_high=8 * 1024 * MiB)
@@ -775,6 +782,9 @@ def test_throttle_left_alone_if_changed_since(h: Harness) -> None:
     run(main)
     assert [c[0] for c in h.mgr.calls].count("set_properties") == 1
     assert h.mgr.units[UNIT].memory_high == 8 * 1024 * MiB
+    [warning] = [r for r in caplog.records if "changed since" in r.getMessage()]
+    assert warning.levelname == "WARNING"
+    assert UNIT in warning.getMessage() and rec_id[0] in warning.getMessage()
 
 
 def test_dry_run_reports_limit(fake_cgroupfs: Path) -> None:

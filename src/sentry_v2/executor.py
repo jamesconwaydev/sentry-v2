@@ -388,7 +388,13 @@ class Executor:
                     error = str(e)
                     log.warning("rollback %s attempt %d failed: %s", rec_id, attempt + 1, e)
                     continue
-                return self._close(rec, "rolled_back", rec.error or note)
+                if note == actions.CHANGED_SINCE:
+                    log.warning(
+                        "rollback %s on %s: %s (changed by someone else)", rec_id, rec.target, note
+                    )
+                return self._close(
+                    rec, "rolled_back", "; ".join(e for e in (rec.error, note) if e) or None
+                )
         async with self._lock:
             rec = self._active.get(rec_id)
             if rec is None:  # pragma: no cover - closed while we slept
