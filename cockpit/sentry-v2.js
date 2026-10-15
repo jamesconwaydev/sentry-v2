@@ -5,6 +5,7 @@
 
 const SOCKET = "/run/sentry-v2/control.sock";
 const POLL_MS = 5000;
+const CALL_TIMEOUT_MS = 15000;
 
 const main = document.getElementById("main");
 const announcer = document.getElementById("announce");
@@ -53,11 +54,14 @@ function readLines(channel, onLine) {
             const line = buffer.slice(0, nl).trim();
             buffer = buffer.slice(nl + 1);
             if (!line) continue;
+            let msg;
             try {
-                onLine(JSON.parse(line));
+                msg = JSON.parse(line);
             } catch (e) {
                 console.warn("sentry-v2: unreadable line from daemon", e);
+                continue;
             }
+            onLine(msg);
         }
     });
 }
@@ -75,7 +79,11 @@ const client = {
         if (!this.channel) this.connect();
         const id = this.nextId++;
         return new Promise((resolve, reject) => {
-            this.pending.set(id, { resolve, reject });
+            const timer = setTimeout(() => {
+                if (this.pending.delete(id))
+                    reject(new DaemonError("Sentry-v2 didn't answer within 15 seconds", "timeout"));
+            }, CALL_TIMEOUT_MS);
+            this.pending.set(id, { resolve, reject, timer });
             this.channel.send(JSON.stringify({ id, cmd, args }) + "\n");
         });
     },
@@ -87,30 +95,42 @@ const client = {
             const waiter = this.pending.get(msg.id);
             if (!waiter) return;
             this.pending.delete(msg.id);
+            clearTimeout(waiter.timer);
             if (msg.ok) waiter.resolve(msg.result);
-            else waiter.reject(new DaemonError(msg.error || "The daemon refused the request.", null));
+            else waiter.reject(new DaemonError(msg.error || "the daemon refused the request", null));
         });
         // The daemon closes idle connections; the next call simply reconnects.
         channel.addEventListener("close", (_ev, options) => {
             if (this.channel === channel) this.channel = null;
             const problem = options?.problem || "disconnected";
-            for (const waiter of this.pending.values())
+            for (const waiter of this.pending.values()) {
+                clearTimeout(waiter.timer);
                 waiter.reject(new DaemonError(options?.message || problem, problem));
+            }
             this.pending.clear();
         });
     },
 };
 
-/** Keep a subscribe stream open and call `onEvent` for every pushed event. */
-function subscribe(onEvent) {
+/** Keep a subscribe stream open. `onEvent` gets every pushed event;
+ * `onReconnect` runs after each successful resubscribe, to catch up on what was missed. */
+function subscribe(onEvent, onReconnect) {
     let retry = 2000;
+    let everConnected = false;
     const start = () => {
         const channel = openChannel();
+        let up = false;
+        const connected = () => {
+            if (up) return;
+            up = true;
+            retry = 2000;
+            if (everConnected) onReconnect();
+            everConnected = true;
+        };
+        channel.addEventListener("ready", connected);
         readLines(channel, msg => {
-            if (msg.event) {
-                retry = 2000;
-                onEvent(msg.event);
-            }
+            connected();
+            if (msg.event) onEvent(msg.event);
         });
         channel.addEventListener("close", () => {
             setTimeout(start, retry);
@@ -141,7 +161,7 @@ function h(tag, attrs, ...children) {
 
 function announce(text) {
     announcer.textContent = "";
-    // A fresh text node makes screen readers repeat identical messages too.
+    // Clearing first makes screen readers repeat an identical message too.
     setTimeout(() => { announcer.textContent = text; }, 50);
 }
 
@@ -150,7 +170,7 @@ function table(caption, headers, rows) {
         h("table", null,
             h("caption", { class: "sr-only" }, caption),
             h("thead", null, h("tr", null, headers.map(([label, cls]) =>
-                h("th", { scope: "col", class: cls }, label)))),
+                h("th", { scope: "col", class: cls }, label || h("span", { class: "sr-only" }, "Actions"))))),
             h("tbody", null, rows)));
 }
 
@@ -160,9 +180,15 @@ function facts(pairs) {
         .map(([k, v]) => [h("dt", null, k), h("dd", null, v)]));
 }
 
-function card(title, body, extra) {
-    return h("section", { class: "card", "aria-label": title },
-        h("div", { class: "card-head" }, h("h2", null, title), extra), body);
+let headingSeq = 0;
+
+/** A titled card. `key` makes the heading a focus target: [data-heading=key]. */
+function card(title, body, extra, key) {
+    const id = `card-${++headingSeq}`;
+    return h("section", { class: "card", "aria-labelledby": id },
+        h("div", { class: "card-head" },
+            h("h2", { id, "data-heading": key, tabindex: key ? "-1" : null }, title), extra),
+        body);
 }
 
 function alertBox(kind, title, text, action) {
@@ -171,7 +197,8 @@ function alertBox(kind, title, text, action) {
 }
 
 // ---------------------------------------------------------------------------
-// Formatting
+// Formatting. Every helper copes with missing fields, so a partial record
+// renders a dash rather than "undefined".
 
 const KIND_LABELS = { unit_failed: "Unit failed", psi: "Pressure", avc: "SELinux denial", alert: "Alert" };
 const STATUS_LABELS = {
@@ -180,19 +207,26 @@ const STATUS_LABELS = {
 };
 const STATUS_CLASS = { applied: "warning", failed: "danger", rollback_failed: "danger", rolled_back: "ok", dry_run: "info" };
 const SEVERITY_CLASS = { critical: "danger", warning: "warning", info: "info" };
-
-const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const COLLECTOR_LABELS = { psi: "PSI", journal: "Journal", audit: "SELinux audit" };
-const capitalise = s => (s ? s[0].toUpperCase() + s.slice(1) : s);
-const modeLabel = m => (m === "dry-run" ? "Dry run" : m === "enforce" ? "Enforce" : capitalise(m || "unknown"));
+const ROLLBACK_STATUSES = new Set(["applied", "planned"]);
+
+const isNum = v => typeof v === "number" && Number.isFinite(v);
+const dash = v => (v === null || v === undefined || v === "" ? "–" : String(v));
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const capitalise = s => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : "");
+const modeLabel = m => (m === "dry-run" ? "Dry run" : m === "enforce" ? "Enforce" : capitalise(m) || "Unknown");
+const kindLabel = k => KIND_LABELS[k] || capitalise(k) || "Unknown";
+const fixed = v => (isNum(v) ? v.toFixed(1) : "–");
+const describe = rec => `${rec.action || "action"} on ${rec.target || "an unknown target"}`;
 
 function when(value) {
-    if (value === null || value === undefined) return "";
+    if (value === null || value === undefined || value === "") return "–";
     const d = typeof value === "number" ? new Date(value * 1000) : new Date(value);
     return isNaN(d) ? String(value) : d.toLocaleString();
 }
 
 function relative(epochSeconds) {
+    if (!isNum(epochSeconds)) return "–";
     const mins = Math.round((epochSeconds * 1000 - Date.now()) / 60000);
     if (Math.abs(mins) < 1) return "now";
     const span = Math.abs(mins) < 120 ? `${Math.abs(mins)} min` : `${Math.round(Math.abs(mins) / 60)} h`;
@@ -200,6 +234,7 @@ function relative(epochSeconds) {
 }
 
 function duration(seconds) {
+    if (!isNum(seconds)) return null;
     const d = Math.floor(seconds / 86400);
     const hrs = Math.floor((seconds % 86400) / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -208,8 +243,8 @@ function duration(seconds) {
     return `${m} min`;
 }
 
-const statusLabel = s => h("span", { class: `label ${STATUS_CLASS[s] || ""}` }, STATUS_LABELS[s] || s);
-const severityLabel = s => h("span", { class: `label ${SEVERITY_CLASS[s] || ""}` }, capitalise(s));
+const statusLabel = s => h("span", { class: `label ${STATUS_CLASS[s] || ""}` }, STATUS_LABELS[s] || capitalise(s) || "Unknown");
+const severityLabel = s => h("span", { class: `label ${SEVERITY_CLASS[s] || ""}` }, capitalise(s) || "Unknown");
 
 // ---------------------------------------------------------------------------
 // Failure states
@@ -229,26 +264,28 @@ function explainFailure(err) {
     return h("section", { class: "card empty" },
         h("h2", null, "Couldn't reach Sentry-v2"),
         h("p", null, `The connection to ${SOCKET} failed: ${err?.message || err}.`),
-        h("p", null, "Check that the service is running with systemctl status sentry-v2, then reload this page."));
+        h("p", null, "Check that the service is running with systemctl status sentry-v2. This page keeps trying in the meantime."));
 }
 
 /** Message for a failed mutation (rollback, pause, reload): what went wrong and what to do. */
 function mutationError(verb, err) {
-    const text = err?.message || String(err);
-    const hint = /permission|denied|not allowed|unauthori/i.test(text) || err?.problem === "access-denied"
+    const text = String(err?.message || err).trim().replace(/\.+$/, "");
+    const hint = text.toLowerCase().startsWith("permission denied") || err?.problem === "access-denied"
         ? " Changing Sentry-v2 needs administrative access or the sentry-v2-admin group."
         : "";
     return `Couldn't ${verb}: ${text}.${hint}`;
 }
 
 // ---------------------------------------------------------------------------
-// Views. Each returns {node, refresh?}. A refresh only replaces sections whose
-// data changed, so keyboard focus survives the poll.
+// Views. Each returns {node, refresh, poll?, live?}. A refresh only replaces
+// sections whose data changed, so keyboard focus survives the poll.
 
 let errorSlot = null;
+let shownError = null;
 
 function showError(text) {
-    if (!errorSlot) return;
+    if (!errorSlot || text === shownError) return;
+    shownError = text;
     errorSlot.replaceChildren(text ? h("div", { class: "alert danger", role: "alert" },
         h("div", null, h("h2", null, "That didn't work"), h("p", null, text)),
         h("button", { class: "link", type: "button", onclick: () => showError(null) }, "Dismiss")) : "");
@@ -269,23 +306,46 @@ function slot() {
     };
 }
 
+/** Focus the first match, or the main region if the control went away. */
+function focusOr(root, selector) {
+    (root.querySelector(selector) || main).focus();
+}
+
 // Overview -------------------------------------------------------------------
+
+/** Records whose rollback failed: the latest record per id, active ones last so they win. */
+function rollbackFailures(actions) {
+    const byId = new Map();
+    const recent = [...(actions?.recent || [])].sort((a, b) => (a.ts ?? 0) - (b.ts ?? 0));
+    for (const rec of [...recent, ...(actions?.active || [])]) if (rec?.id) byId.set(rec.id, rec);
+    return [...byId.values()].filter(rec => rec.status === "rollback_failed");
+}
 
 function overviewView() {
     const banners = slot();
     const summary = slot();
+    const attention = slot();
     const actions = slot();
     const pressure = slot();
-    let confirming = null; // action id whose rollback is awaiting confirmation
-    let latest = null;
+    let confirming = null; // {section, id} of a rollback awaiting confirmation
+    let latest = { active: [], failed: [] };
 
     async function refresh() {
-        const [status, psi] = await Promise.all([client.call("status"), client.call("psi")]);
-        latest = status;
+        const [status, psi, recorded] = await Promise.all([
+            client.call("status"), client.call("psi"), client.call("actions")]);
+        latest = {
+            active: (status.active_actions || []).filter(rec => rec.status !== "rollback_failed"),
+            failed: rollbackFailures(recorded),
+        };
         banners.set({ mode: status.mode, paused: status.paused, breaker: status.breaker, err: status.last_reload_error }, renderBanners);
         summary.set(status, renderSummary);
-        if (confirming === null) actions.set(status.active_actions, renderActions);
-        pressure.set(psi.cgroups, renderPressure);
+        if (confirming === null) renderRecords();
+        pressure.set(psi?.cgroups, renderPressure);
+    }
+
+    function renderRecords() {
+        attention.set(latest.failed, renderAttention);
+        actions.set(latest.active, renderActions);
     }
 
     async function mutate(cmd, verb, done) {
@@ -297,17 +357,23 @@ function overviewView() {
         } catch (e) {
             showError(mutationError(verb, e));
         }
+        // Pause and Resume replace each other; keep focus on whichever is there now.
+        focusOr(banners.el, '[data-key="pause"]');
     }
+
+    const pauseButton = () => h("button", { type: "button", "data-key": "pause",
+        onclick: () => mutate("pause", "pause remediation", "Remediation paused.") }, "Pause remediation");
 
     function renderBanners({ mode, paused, breaker, err }) {
         const out = [];
         if (paused)
             out.push(alertBox("warning", "Remediation is paused",
                 "Sentry-v2 is still watching and recording incidents, but won't apply any actions until you resume it.",
-                h("button", { class: "primary", type: "button", onclick: () => mutate("resume", "resume remediation", "Remediation resumed.") }, "Resume")));
+                h("button", { class: "primary", type: "button", "data-key": "pause",
+                    onclick: () => mutate("resume", "resume remediation", "Remediation resumed.") }, "Resume")));
         if (breaker?.open)
             out.push(alertBox("danger", "Too many actions failed, so Sentry-v2 switched to dry run",
-                `${capitalise(plural(breaker.failures, "recent failure"))} opened the breaker. It closes ${breaker.until ? relative(breaker.until) : "after the cooldown"}, and every action until then is recorded but not applied.`));
+                `${capitalise(plural(breaker.failures ?? 0, "recent failure"))} opened the breaker. It closes ${isNum(breaker.until) ? relative(breaker.until) : "after the cooldown"}, and every action until then is recorded but not applied.`));
         if (err)
             out.push(h("div", { class: "alert danger" },
                 h("div", null, h("h2", null, "The last configuration reload failed"),
@@ -315,19 +381,19 @@ function overviewView() {
                     h("pre", null, err))));
         if (!paused && !breaker?.open && mode === "dry-run")
             out.push(alertBox("info", "Dry run",
-                "Sentry-v2 records what it would do and changes nothing on this system.",
-                h("button", { type: "button", onclick: () => mutate("pause", "pause remediation", "Remediation paused.") }, "Pause remediation")));
+                "Sentry-v2 records what it would do and changes nothing on this system."));
         if (!paused && !breaker?.open && mode !== "dry-run")
             out.push(alertBox("warning", "Enforcing",
-                "Policies set to enforce will throttle or freeze units when they trigger. Each action rolls back on its own when its time is up.",
-                h("button", { type: "button", onclick: () => mutate("pause", "pause remediation", "Remediation paused.") }, "Pause remediation")));
+                "Policies set to enforce act on this system when they trigger. Throttles and freezes undo themselves when their time runs out.",
+                pauseButton()));
         return h("div", { class: "stack" }, out);
     }
 
     function renderSummary(s) {
+        const failures = s.breaker?.failures ?? 0;
         const breaker = s.breaker?.open
-            ? h("span", { class: "label danger" }, `Open, ${plural(s.breaker.failures, "failure")}`)
-            : h("span", { class: "label ok" }, s.breaker?.failures ? `Closed, ${plural(s.breaker.failures, "recent failure")}` : "Closed");
+            ? h("span", { class: "label danger" }, `Open, ${plural(failures, "failure")}`)
+            : h("span", { class: "label ok" }, failures ? `Closed, ${plural(failures, "recent failure")}` : "Closed");
         const delivery = Object.entries(s.sinks?.failures || {}).filter(([, n]) => n)
             .map(([sink, n]) => `${sink}: ${n} failed${s.sinks?.dropped?.[sink] ? `, ${s.sinks.dropped[sink]} dropped` : ""}`);
         const dropped = Object.entries(s.events_dropped || {}).filter(([, n]) => n).map(([c, n]) => `${c}: ${n}`);
@@ -335,15 +401,16 @@ function overviewView() {
             ["Mode", modeLabel(s.mode) + (s.paused ? ", paused" : "")],
             ["Breaker", breaker],
             ["Version", s.version],
-            ["Running for", s.uptime_s !== undefined ? duration(s.uptime_s) : null],
+            ["Running for", duration(s.uptime_s)],
             ["Delivery problems", delivery.join("; ") || "None"],
             ["Events dropped", dropped.join("; ") || "None"],
         ]));
-        const rows = Object.entries(s.collectors || {}).map(([name, health]) => {
-            const { state, error, hint, ...rest } = health || {};
-            const shown = error ? "error" : state || (rest.source === null ? "no source" : "ok");
+        const rows = Object.entries(s.collectors || {}).map(([name, raw]) => {
+            const health = raw && typeof raw === "object" ? raw : { state: raw };
+            const { state, error, hint, ...rest } = health;
+            const shown = error ? "error" : state ? String(state) : rest.source === null ? "no source" : "ok";
             const cls = shown === "ok" || shown === "running" ? "ok" : shown === "disabled" || shown === "no source" ? "warning" : "danger";
-            const details = [error, hint, ...Object.entries(rest).map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)].filter(Boolean);
+            const details = [error, hint, ...Object.entries(rest).map(([k, v]) => `${k.replace(/_/g, " ")}: ${dash(v)}`)].filter(Boolean);
             return h("tr", null,
                 h("th", { scope: "row" }, COLLECTOR_LABELS[name] || capitalise(name)),
                 h("td", null, h("span", { class: `label ${cls}` }, shown === "ok" ? "OK" : capitalise(shown))),
@@ -355,41 +422,63 @@ function overviewView() {
         return h("div", { class: "grid" }, daemon, collectors);
     }
 
-    function renderActions(list) {
-        if (!list?.length)
-            return card("Active actions", h("p", { class: "muted" }, "Nothing is throttled or frozen right now."));
-        const rows = list.map(rec => {
-            const isConfirming = confirming === rec.id;
-            let cell;
-            if (isConfirming) {
-                cell = h("td", { class: "fit" }, h("div", { class: "actions-inline" },
-                    h("span", null, `Roll back ${rec.action} on ${rec.target}?`),
-                    h("button", { class: "danger", type: "button", "data-focus": "confirm", onclick: () => rollback(rec) }, "Roll back"),
-                    h("button", { class: "link", type: "button", onclick: () => setConfirming(null, rec.id) }, "Cancel")));
-            } else {
-                cell = h("td", { class: "fit" },
-                    h("button", { type: "button", "data-rollback": rec.id, "aria-label": `Roll back ${rec.action} on ${rec.target}`, onclick: () => setConfirming(rec.id) }, "Roll back"));
-            }
-            return h("tr", { class: isConfirming ? "confirming" : null },
-                h("th", { scope: "row" }, rec.target),
-                h("td", null, rec.action, h("div", { class: "muted" }, rec.policy)),
-                h("td", null, statusLabel(rec.status), h("div", { class: "muted" }, modeLabel(rec.mode))),
-                h("td", null, rec.applied_at ? when(rec.applied_at) : "–"),
-                h("td", null, rec.expires_at ? relative(rec.expires_at) : "–"),
-                cell);
-        });
-        return card("Active actions", table("Active actions",
-            [["Target"], ["Action"], ["Status"], ["Applied"], ["Rolls back"], ["", "fit"]], rows));
+    /** The Roll back / Retry control for one record, with its inline confirmation. */
+    function rollbackCell(rec, section, label, question) {
+        const key = `${section}:${rec.id}`;
+        if (confirming?.section === section && confirming.id === rec.id)
+            return h("td", { class: "fit" },
+                h("div", { class: "actions-inline", role: "group", "aria-label": question,
+                    onkeydown: ev => { if (ev.key === "Escape") { ev.preventDefault(); setConfirming(null, key); } } },
+                h("span", null, question),
+                h("button", { class: "danger", type: "button", "data-focus": "confirm", onclick: () => rollback(rec) }, label),
+                h("button", { class: "link", type: "button", onclick: () => setConfirming(null, key) }, "Cancel")));
+        return h("td", { class: "fit" },
+            h("button", { type: "button", "data-row": key, "aria-label": `${label}: ${describe(rec)}`,
+                onclick: () => setConfirming({ section, id: rec.id }) }, label));
     }
 
-    function setConfirming(id, returnTo) {
-        confirming = id;
+    const isConfirming = (section, rec) => confirming?.section === section && confirming.id === rec.id;
+
+    function renderAttention(list) {
+        if (!list.length) return "";
+        const rows = list.map(rec => h("tr", { class: isConfirming("attention", rec) ? "confirming" : null },
+            h("th", { scope: "row" }, dash(rec.target)),
+            h("td", null, dash(rec.action), h("div", { class: "muted" }, rec.policy)),
+            h("td", null, dash(rec.error)),
+            h("td", null, when(rec.ts)),
+            rollbackCell(rec, "attention", "Retry", `Retry rolling back ${describe(rec)}?`)));
+        const section = card("Needs attention", [
+            h("p", { class: "lead" }, "Sentry-v2 couldn't undo these actions. Each unit is left as it is, still throttled or frozen, until someone retries the rollback."),
+            table("Rollbacks that failed", [["Target"], ["Action"], ["Error"], ["Failed"], ["", "fit"]], rows),
+        ], null, "attention");
+        section.classList.add("attention");
+        return section;
+    }
+
+    function renderActions(list) {
+        if (!list.length)
+            return card("Active actions", h("p", { class: "muted" }, "Nothing is throttled or frozen right now."), null, "actions");
+        const rows = list.map(rec => h("tr", { class: isConfirming("active", rec) ? "confirming" : null },
+            h("th", { scope: "row" }, dash(rec.target)),
+            h("td", null, dash(rec.action), h("div", { class: "muted" }, rec.policy)),
+            h("td", null, statusLabel(rec.status), h("div", { class: "muted" }, modeLabel(rec.mode))),
+            h("td", null, when(rec.applied_at)),
+            h("td", null, relative(rec.expires_at)),
+            ROLLBACK_STATUSES.has(rec.status)
+                ? rollbackCell(rec, "active", "Roll back", `Roll back ${describe(rec)}?`)
+                : h("td", { class: "fit" })));
+        return card("Active actions", table("Active actions",
+            [["Target"], ["Action"], ["Status"], ["Applied"], ["Rolls back"], ["", "fit"]], rows), null, "actions");
+    }
+
+    /** Open (target set) or close (returnTo = the row key to refocus) the inline confirmation. */
+    function setConfirming(target, returnTo) {
+        confirming = target;
+        attention.reset();
         actions.reset();
-        actions.set(latest.active_actions, renderActions);
-        const target = id !== null
-            ? actions.el.querySelector('[data-focus="confirm"]')
-            : actions.el.querySelector(`[data-rollback="${CSS.escape(String(returnTo))}"]`);
-        target?.focus();
+        renderRecords();
+        if (target) focusOr(node, '[data-focus="confirm"]');
+        else focusOr(node, `[data-row="${CSS.escape(returnTo)}"]`);
     }
 
     async function rollback(rec) {
@@ -397,37 +486,43 @@ function overviewView() {
         try {
             const res = await client.call("rollback", { id: rec.id });
             showError(null);
-            announce(res.rolled_back?.length ? `Rolled back ${rec.action} on ${rec.target}.` : "Nothing needed rolling back.");
+            announce(res?.rolled_back?.length ? `Rolled back ${describe(rec)}.` : "Nothing needed rolling back.");
         } catch (e) {
-            showError(mutationError(`roll back ${rec.action} on ${rec.target}`, e));
+            showError(mutationError(`roll back ${describe(rec)}`, e));
         }
+        attention.reset();
         actions.reset();
-        await refresh().catch(() => {});
-        main.focus();
+        await refresh().catch(() => renderRecords());
+        focusOr(node, '[data-heading="actions"]');
     }
 
     function renderPressure(cgroups) {
         if (!cgroups?.length)
             return card("Pressure", h("p", { class: "muted" }, "No cgroups are being watched. Add a PSI policy to watch one."));
-        const sorted = [...cgroups].sort((a, b) => b.avg10 - a.avg10);
+        const sorted = [...cgroups].sort((a, b) => (isNum(b.avg10) ? b.avg10 : -1) - (isNum(a.avg10) ? a.avg10 : -1));
         const rows = sorted.map(c => {
-            const clamp = v => Math.max(0, Math.min(100, Number(v) || 0));
-            const level = c.avg10 >= 40 ? "high" : c.avg10 >= 10 ? "mid" : "";
+            const clamp = v => (isNum(v) ? Math.max(0, Math.min(100, v)) : 0);
+            const level = !isNum(c.avg10) ? "" : c.avg10 >= 40 ? "high" : c.avg10 >= 10 ? "mid" : "";
             const gauge = h("div", { class: `gauge ${level}`, "aria-hidden": "true" },
-                h("div", { class: "fill" }), h("div", { class: "tick t300" }), h("div", { class: "tick t60" }));
+                isNum(c.avg10) && h("div", { class: "fill" }),
+                isNum(c.avg300) && h("div", { class: "tick t300" }),
+                isNum(c.avg60) && h("div", { class: "tick t60" }));
             gauge.style.setProperty("--v10", clamp(c.avg10));
             gauge.style.setProperty("--v60", clamp(c.avg60));
             gauge.style.setProperty("--v300", clamp(c.avg300));
-            const delta = c.avg10 - c.avg300;
-            const trend = Math.abs(delta) < 1 ? "Steady" : delta > 0 ? "Rising" : "Easing";
+            let trend = "No data";
+            if (isNum(c.avg10) && isNum(c.avg300)) {
+                const delta = c.avg10 - c.avg300;
+                trend = Math.abs(delta) < 1 ? "Steady" : delta > 0 ? "Rising" : "Easing";
+            }
             return h("tr", null,
-                h("th", { scope: "row", class: "mono" }, c.cgroup),
-                h("td", null, `${c.resource} ${c.kind}`),
+                h("th", { scope: "row", class: "mono" }, dash(c.cgroup)),
+                h("td", null, [c.resource, c.kind].filter(Boolean).join(" ") || "–"),
                 h("td", null, gauge),
-                h("td", { class: "num" }, c.avg10.toFixed(1)),
-                h("td", { class: "num" }, c.avg60.toFixed(1)),
-                h("td", { class: "num" }, c.avg300.toFixed(1)),
-                h("td", null, h("span", { class: `trend ${trend.toLowerCase()}` }, trend)));
+                h("td", { class: "num" }, fixed(c.avg10)),
+                h("td", { class: "num" }, fixed(c.avg60)),
+                h("td", { class: "num" }, fixed(c.avg300)),
+                h("td", null, h("span", { class: `trend ${trend === "Rising" ? "rising" : ""}` }, trend)));
         });
         return card("Pressure",
             [table("Pressure stall information for watched cgroups",
@@ -439,7 +534,7 @@ function overviewView() {
             h("p", { class: "muted" }, "Updates every 5 seconds"));
     }
 
-    const node = h("div", { class: "stack" }, banners.el, summary.el, actions.el, pressure.el);
+    const node = h("div", { class: "stack" }, banners.el, summary.el, attention.el, actions.el, pressure.el);
     return { node, refresh, poll: true };
 }
 
@@ -452,7 +547,7 @@ function incidentsView() {
     const severity = h("select", { name: "severity" },
         [["", "Any"], ["critical", "Critical"], ["warning", "Warning"], ["info", "Info"]].map(([v, l]) =>
             h("option", { value: v, selected: v === (opts.severity || "") }, l)));
-    const form = h("form", { class: "filters", role: "search", onsubmit: ev => {
+    const form = h("form", { class: "filters", role: "search", "aria-label": "Filter incidents", onsubmit: ev => {
         ev.preventDefault();
         const next = {};
         if (unit.value.trim()) next.unit = unit.value.trim();
@@ -467,7 +562,7 @@ function incidentsView() {
         const args = { limit: 200 };
         if (opts.unit) args.unit = opts.unit;
         const res = await client.call("incidents", args);
-        const shown = (res.incidents || []).filter(i => !opts.severity || i.severity === opts.severity);
+        const shown = (res?.incidents || []).filter(i => !opts.severity || i.severity === opts.severity);
         list.set(shown, render);
     }
 
@@ -479,8 +574,10 @@ function incidentsView() {
         const rows = items.map(i => h("tr", null,
             h("td", null, when(i.ts)),
             h("td", null, severityLabel(i.severity)),
-            h("td", null, KIND_LABELS[i.kind] || i.kind),
-            h("th", { scope: "row" }, h("a", { href: `#/incidents/${encodeURIComponent(i.id)}` }, i.target || "(no target)")),
+            h("td", null, kindLabel(i.kind)),
+            h("th", { scope: "row" }, i.id
+                ? h("a", { href: `#/incidents/${encodeURIComponent(i.id)}` }, i.target || "(no target)")
+                : i.target || "(no target)"),
             h("td", null, i.policy || h("span", { class: "muted" }, "None"))));
         return table("Incidents, newest first", [["Time"], ["Severity"], ["Kind"], ["Target"], ["Policy"]], rows);
     }
@@ -494,14 +591,15 @@ function bundleView(id) {
 
     async function refresh() {
         const res = await client.call("show", { id });
-        body.set(res.bundle, render);
+        body.set(res?.bundle || {}, render);
     }
 
     function avcSummary(avc) {
         const who = avc.comm || avc.exe || "a process";
+        const perms = (avc.perms || []).join(", ") || "access";
         return [
-            h("div", null, `${avc.permissive ? "Would deny" : "Denied"} ${(avc.perms || []).join(", ")} on ${avc.tclass} for ${who}${avc.pid ? ` (pid ${avc.pid})` : ""}`),
-            h("div", { class: "muted mono" }, `${avc.scontext} → ${avc.tcontext}`),
+            h("div", null, `${avc.permissive ? "Would deny" : "Denied"} ${perms} on ${avc.tclass || "an object"} for ${who}${avc.pid ? ` (pid ${avc.pid})` : ""}`),
+            h("div", { class: "muted mono" }, `${dash(avc.scontext)} → ${dash(avc.tcontext)}`),
         ];
     }
 
@@ -509,14 +607,14 @@ function bundleView(id) {
         const inc = b.incident || {};
         const { ts_us: tsUs, source: _source, ...triggerRest } = inc.trigger || {};
         const trigger = Object.entries(triggerRest)
-            .filter(([, v]) => v !== null)
+            .filter(([, v]) => v !== null && v !== undefined)
             .map(([k, v]) => [capitalise(k.replace(/_/g, " ")), typeof v === "object" ? JSON.stringify(v) : String(v)]);
 
         const corr = b.correlations || [];
         const correlations = card("Likely related SELinux denials", corr.length
             ? table("Correlated denials", [["Confidence", "num"], ["Denial"], ["Why they're linked"]],
                 corr.map(c => h("tr", null,
-                    h("td", { class: "num confidence" }, `${Math.round(c.confidence * 100)}%`),
+                    h("td", { class: "num confidence" }, isNum(c.confidence) ? `${Math.round(c.confidence * 100)}%` : "–"),
                     h("td", null, avcSummary(c.avc || {})),
                     h("td", null, h("ul", { class: "reasons" }, (c.reasons || []).map(r => h("li", null, capitalise(r))))))))
             : h("p", { class: "muted" }, "No SELinux denials were linked to this incident."));
@@ -525,35 +623,38 @@ function bundleView(id) {
         const decided = d.actions?.length
             ? table("Actions taken", [["Action"], ["Target"], ["Status"], ["Mode"], ["Error"]],
                 d.actions.map(a => h("tr", null,
-                    h("th", { scope: "row" }, a.action),
-                    h("td", null, a.target),
+                    h("th", { scope: "row" }, dash(a.action)),
+                    h("td", null, dash(a.target)),
                     h("td", null, statusLabel(a.status)),
                     h("td", null, modeLabel(a.mode)),
-                    h("td", null, a.error || "–"))))
+                    h("td", null, dash(a.error)))))
             : h("p", { class: "muted" }, "No actions were planned.");
         const decision = card("Decision", [
             facts([["Policy", d.policy || "None matched"], ["Mode", d.mode ? modeLabel(d.mode) : null]]),
-            h("div", { class: "stack" }, decided),
+            decided,
         ]);
 
-        const journal = b.context?.journal || [];
-        const context = journal.length && card("Journal around the incident",
-            h("pre", { class: "journal mono" }, journal.map(e => e.MESSAGE).join("\n")));
+        const journal = (b.context?.journal || []).map(e => e?.MESSAGE).filter(Boolean);
+        const context = journal.length > 0 && card("Journal around the incident",
+            h("pre", { class: "journal mono" }, journal.join("\n")));
 
+        const time = isNum(tsUs) && tsUs > 0 ? when(tsUs / 1e6) : null;
         return h("div", { class: "stack" },
             h("nav", { class: "crumbs", "aria-label": "Breadcrumb" }, h("a", { href: "#/incidents" }, "All incidents")),
             h("div", { class: "bundle-title" },
-                h("h2", null, `${KIND_LABELS[inc.kind] || inc.kind}: ${inc.target || "no target"}`),
+                h("h2", null, `${kindLabel(inc.kind)}: ${inc.target || "no target"}`),
                 severityLabel(b.severity),
                 h("span", { class: "muted" }, `${when(b.ts)} on ${b.host?.hostname || "this host"}`)),
-            card("What happened", trigger.length ? facts([["Time", tsUs ? when(tsUs / 1e6) : null], ...trigger]) : h("p", { class: "muted" }, inc.alert || "No trigger details recorded.")),
+            card("What happened", trigger.length || time
+                ? facts([["Time", time], ...trigger])
+                : h("p", { class: "muted" }, inc.alert || "No trigger details recorded.")),
             correlations,
             decision,
             context,
             card("Raw bundle", h("details", null,
                 h("summary", null, "Show the bundle as JSON"),
                 h("pre", null, JSON.stringify(b, null, 2))),
-            h("span", { class: "muted mono" }, b.id)));
+            b.id && h("span", { class: "muted mono" }, b.id)));
     }
 
     return { node: body.el, refresh };
@@ -565,7 +666,7 @@ function policiesView() {
     const body = slot();
 
     async function refresh() {
-        body.set(await client.call("policies"), render);
+        body.set(await client.call("policies") || {}, render);
     }
 
     async function reload(button) {
@@ -580,18 +681,19 @@ function policiesView() {
         button.disabled = false;
         body.reset();
         await refresh().catch(() => {});
+        focusOr(body.el, '[data-key="reload"]');
     }
 
     function render(res) {
         const err = res.last_reload_error && h("div", { class: "alert danger", role: "alert" },
             h("div", null, h("h2", null, "The last reload failed, so these are the policies from before it"),
-                h("p", null, "Fix the file named below, then reload."),
+                h("p", null, "Fix the problem below, then reload."),
                 h("pre", null, res.last_reload_error)));
-        const reloadButton = h("button", { type: "button", onclick: ev => reload(ev.currentTarget) }, "Reload configuration");
+        const reloadButton = h("button", { type: "button", "data-key": "reload", onclick: ev => reload(ev.currentTarget) }, "Reload configuration");
         const list = res.policies || [];
         const rows = list.map(p => h("tr", null,
-            h("th", { scope: "row" }, p.name, p.source && h("div", { class: "muted mono" }, p.source)),
-            h("td", null, p.signal),
+            h("th", { scope: "row" }, dash(p.name), p.source && h("div", { class: "muted mono" }, p.source)),
+            h("td", null, dash(p.signal)),
             h("td", null, (p.actions || []).join(", ") || h("span", { class: "muted" }, "Record only")),
             h("td", null, modeLabel(p.mode)),
             h("td", null, p.effective_mode === p.mode
@@ -615,17 +717,22 @@ let pollTimer = null;
 
 function route() {
     const [page, id] = cockpit.location.path;
-    for (const a of document.querySelectorAll(".tabs a"))
-        a.toggleAttribute("aria-current", a.dataset.tab === (page || ""));
-    document.querySelector(".tabs a[aria-current]")?.setAttribute("aria-current", "page");
+    for (const a of document.querySelectorAll(".tabs a")) {
+        if (a.dataset.tab === (page || "")) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+    }
 
+    const first = current === null;
     if (page === "incidents" && id) current = bundleView(id);
     else if (page === "incidents") current = incidentsView();
     else if (page === "policies") current = policiesView();
     else current = overviewView();
 
     errorSlot = h("div");
+    shownError = null;
     main.replaceChildren(errorSlot, current.node);
+    // After in-page navigation, start keyboard and screen reader users at the new content.
+    if (!first) main.focus();
     run(current);
 }
 
@@ -655,11 +762,11 @@ async function run(view) {
 
 let eventTimer = null;
 subscribe(event => {
-    if (event.kind && event.target) announce(`New incident: ${KIND_LABELS[event.kind] || event.kind} on ${event.target}.`);
+    if (event.kind && event.target) announce(`New incident: ${kindLabel(event.kind)} on ${event.target}.`);
     // Coalesce bursts of events into one refresh.
     clearTimeout(eventTimer);
     eventTimer = setTimeout(() => { if (current?.live || current?.poll) run(current); }, 300);
-});
+}, () => { if (current) run(current); });
 
 cockpit.addEventListener("locationchanged", route);
 cockpit.addEventListener("visibilitychange", () => { if (!cockpit.hidden && current) run(current); });

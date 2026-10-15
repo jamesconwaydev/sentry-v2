@@ -14,6 +14,7 @@
   --brand: #0066cc;
   --brand-hover: #004d99;
   --on-brand: #ffffff;
+  --on-danger: #ffffff;
   --link: #0066cc;
   --focus: #0066cc;
   --danger: #b1380b;
@@ -48,6 +49,7 @@
   --brand: #92c5f9;
   --brand-hover: #b9dafc;
   --on-brand: #151515;
+  --on-danger: #151515;
   --link: #92c5f9;
   --focus: #92c5f9;
   --danger: #f89b78;
@@ -90,8 +92,11 @@ a:hover { color: var(--brand-hover); }
 .sr-only {
   position: absolute;
   width: 1px; height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
-  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -106,10 +111,12 @@ a:hover { color: var(--brand-hover); }
 
 .tabs {
   display: flex;
+  overflow-x: auto;
   gap: 0.25rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 .tabs a {
+  flex: none;
   padding: 0.5rem 1rem;
   color: var(--text-subtle);
   text-decoration: none;
@@ -144,6 +151,11 @@ main:focus { outline: none; }
   margin-bottom: 0.75rem;
 }
 .card-head p { margin: 0.25rem 0 0; }
+.card-head h2:focus { outline: none; }
+.card-head h2:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.card.attention { border-color: var(--danger); border-top-width: 3px; }
+.card.attention h2 { color: var(--danger); }
+.lead { margin: 0 0 0.75rem; max-width: 80ch; }
 
 /* buttons */
 
@@ -156,11 +168,13 @@ button {
   background: transparent;
   color: var(--link);
 }
-button:hover { border-width: 1px; background: var(--bg-subtle); }
+button:hover:not(:disabled) { background: var(--bg-subtle); }
 button.primary { background: var(--brand); color: var(--on-brand); }
-button.primary:hover { background: var(--brand-hover); border-color: var(--brand-hover); }
-button.danger { background: var(--danger); border-color: var(--danger); color: var(--bg-card); }
+button.primary:hover:not(:disabled) { background: var(--brand-hover); border-color: var(--brand-hover); }
+button.danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+button.danger:hover:not(:disabled) { background: var(--danger); filter: brightness(0.9); }
 button.link { border-color: transparent; padding-inline: 0.5rem; }
+button.link:hover:not(:disabled) { background: transparent; text-decoration: underline; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .actions-inline { display: inline-flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 
@@ -223,6 +237,7 @@ dl.facts dd { margin: 0; overflow-wrap: anywhere; }
 .label::before {
   content: "";
   width: 0.625rem; height: 0.625rem;
+  flex: none;
   border-radius: 50%;
   background: var(--text-subtle);
 }
@@ -246,6 +261,7 @@ th { font-weight: 600; white-space: nowrap; }
 thead th { border-bottom-color: var(--border); }
 tbody tr:last-child > * { border-bottom: 0; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+th.mono { font-weight: 500; }
 td.fit, th.fit { width: 1%; white-space: nowrap; }
 tr.confirming > * { background: var(--warning-bg); }
 
@@ -267,7 +283,7 @@ input, select {
   border-radius: var(--radius-small);
   padding: 0 0.625rem;
   height: 2.25rem;
-  min-width: 12rem;
+  min-width: min(12rem, 100%);
 }
 
 /* The pressure gauge: one track per cgroup. The fill is avg10; the solid tick
@@ -343,6 +359,5 @@ details pre {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; animation: none !important; }
+  *, *::before, *::after { transition: none !important; animation: none !important; }
 }
-th.mono { font-weight: 500; }
