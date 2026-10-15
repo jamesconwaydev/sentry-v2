@@ -24,6 +24,12 @@ counted per sink in `sentry-v2ctl status` and in
 When the daemon stops, sinks get 5 s to deliver what's queued. After that,
 the webhook spools what's left and the others drop it.
 
+On an SELinux host, the policy module may refuse a sink on an unusual
+port even when the network allows it: the sink fails with a permission
+error and the audit log has a denial. See
+[hardening.md](hardening.md#sinks-on-other-ports) to label the port or add
+a local rule.
+
 All HTTPS sinks verify the server certificate against the system trust
 store, or against `ca_file` if you give one, and require TLS 1.2 or later.
 Plain `http://` URLs are rejected at load time.

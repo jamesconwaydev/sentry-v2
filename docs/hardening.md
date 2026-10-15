@@ -169,22 +169,82 @@ system_u:system_r:sentry_v2_t:s0   1234 ?        00:00:03 sentry-v2
 
 Two things the policy allows that are worth knowing:
 
-- Unit control covers every unit. The module lets the daemon start
-  (`SetUnitProperties`), stop (freeze and thaw) and reload any unit, file-backed
-  or transient. systemd checks transient units, such as `systemd-run`
-  services and scopes, against its own context, so the module also grants
-  `init_t:system { start stop }`. Which units the daemon actually touches is
-  decided by your policies and the protected list, not by SELinux.
+- Unit control covers every unit. For file-backed units the module lets the
+  daemon start (`SetUnitProperties` is checked as start), stop (freeze and
+  thaw) and reload. Transient units, such as `systemd-run` services and
+  scopes, have no unit file, so systemd checks them against its own context.
+  The module grants `init_t:system { start stop }` so they can be throttled
+  and frozen, but not reload, so `backup_reload` on a transient unit is
+  refused. Which units the daemon actually touches is decided by your
+  policies and the protected list, not by SELinux.
 - Restore can write any unit file. `sentry-v2ctl restore` writes files back
   under `/etc/systemd/system` and `/run/systemd/system`, so the module allows
   managing unit files. The unit's `ReadWritePaths=` keeps that to those two
   directories.
 
-The paths the suite doesn't reach yet are the outbound sinks (webhook,
-syslog, Splunk HEC, Elasticsearch). Their rules are written from the ports
-they use but haven't been run enforcing. If a sink fails with a permission
+### What the module doesn't stop
+
+The module confines files, sockets and capabilities: a compromised daemon
+can't read home directories, connect to arbitrary ports or load kernel
+modules. It can't stop the daemon reaching root through systemd, because
+the remediation itself needs the grants that make that possible. With
+`init_t:system start` it can ask systemd for a transient unit
+(`StartTransientUnit`) that runs any command as root, outside
+`sentry_v2_t`. With the unit-file rules it can write a unit under
+`/etc/systemd/system` and then start it. Moving restore elsewhere wouldn't
+close this, since the transient-unit path remains.
+
+So treat `sentry_v2_t` as a domain that can become root, and guard what
+reaches it: the configuration in `/etc/sentry-v2`, membership of
+`sentry-v2-admin`, and the hosts its sinks talk to. What SELinux adds is
+that anything outside the daemon's normal file and network access is
+refused and logged as a denial.
+
+Sink secrets given as systemd credentials (`LoadCredential=`, see
+[configuration.md](configuration.md)) were checked once by hand, enforcing:
+a webhook `hmac_key_file` loaded from `/run/credentials`, and the webhook
+connecting out to port 8443. The automated suite doesn't reach the outbound
+sinks (webhook, syslog, Splunk HEC, Elasticsearch); their rules are written
+from the ports they use. If a sink fails with a permission
 error, look for a denial; see
 [troubleshooting.md](troubleshooting.md#selinux-denials-from-sentry_v2_t).
+
+### Sinks on other ports
+
+The module lets the daemon connect to HTTPS ports (`http_port_t`: 80, 443,
+8443 and a few more), Elasticsearch's 9200, syslog's 514/udp, 601 and 6514,
+and any port nobody has labelled in 1024–32767 or 61000–65535. A sink on a
+port that already has another label is denied: 8080 is `http_cache_port_t`,
+and 514/tcp is `rsh_port_t`. Check a port with:
+
+```console
+# semanage port -l | grep -w 8080
+http_cache_port_t              tcp      8080, 8118, 8123, 10001-10010
+```
+
+A port with no label can be given one the daemon may use:
+
+```console
+# semanage port -a -t http_port_t -p tcp 40443
+```
+
+For a port the base policy already labels, `semanage port -a` fails with
+`already defined`, and `semanage port -m` would relabel it for every other
+service as well. Allow the daemon that one type with a small local module
+instead:
+
+```text
+# sentry_v2_local.te
+module sentry_v2_local 1.0;
+require { type sentry_v2_t; type http_cache_port_t; class tcp_socket name_connect; }
+allow sentry_v2_t http_cache_port_t:tcp_socket name_connect;
+```
+
+```console
+# checkmodule -M -m -o sentry_v2_local.mod sentry_v2_local.te
+# semodule_package -o sentry_v2_local.pp -m sentry_v2_local.mod
+# semodule -i sentry_v2_local.pp
+```
 
 ### Using another metrics port
 

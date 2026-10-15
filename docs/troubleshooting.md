@@ -203,8 +203,11 @@ D-Bus calls, and those carry systemd's own context as the sender, so
 
 ```console
 # ausearch -m AVC,USER_AVC -ts today | grep 'scontext=system_u:system_r:sentry_v2_t'
-# ausearch -m AVC,USER_AVC -ts today | audit2allow
+# ausearch -m AVC,USER_AVC -ts today --raw | grep 'scontext=system_u:system_r:sentry_v2_t' | audit2allow
 ```
+
+Keep the `grep` in the second command: without it, `audit2allow` writes
+rules for every denial on the host since midnight, not just the daemon's.
 
 Please open an issue with the `ausearch` output and what the daemon was
 doing at the time. Don't load the `audit2allow` output as a local module
