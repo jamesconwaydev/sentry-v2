@@ -44,6 +44,8 @@ async def prepare(
                 previous["cpu_weight"] = props.cpu_weight
             return previous, {"memory_high": mh, "cpu_weight": spec.cpu_weight}
         case Freeze():
+            if props.active_state != "active":
+                raise Refused("unit inactive")
             if props.freezer_state != "running":
                 raise Refused(f"already {props.freezer_state}")
             return {"freezer_state": props.freezer_state}, {"cgroup": props.cgroup}
@@ -54,6 +56,17 @@ async def prepare(
             return {}, {}
 
 
+def describe(spec: ActionSpec) -> dict[str, Any]:
+    """What a dry-run would write, without touching systemd (a Percent stays "90%")."""
+    if not isinstance(spec, Throttle):
+        return {}
+    mh = spec.memory_high
+    return {
+        "memory_high": f"{mh.value:g}%" if isinstance(mh, Percent) else mh,
+        "cpu_weight": spec.cpu_weight,
+    }
+
+
 def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     """Copy `files` under `backups_dir/<unit>/<ts>/files/<abs path>` with a sha256 manifest.
 
@@ -61,12 +74,15 @@ def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     """
     backup_id = f"{unit}/{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}"
     bdir = backups_dir / backup_id
-    bdir.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    backups_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    bdir.parent.mkdir(mode=0o700, exist_ok=True)
     bdir.mkdir(mode=0o700)
     manifest = []
     for src in files:
         rel = Path("files") / Path(src).relative_to("/")
         dest = bdir / rel
+        if not dest.resolve().is_relative_to(bdir.resolve()):
+            raise ValueError(f"{src}: escapes the backup directory")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         manifest.append(f"{hashlib.sha256(dest.read_bytes()).hexdigest()}  {rel}\n")

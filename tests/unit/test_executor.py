@@ -36,32 +36,43 @@ WHEN = PsiWhen("memory", "some", 150_000, 1_000_000, 0.0, ("system.slice/batch-*
 
 
 class FakeClock:
-    """Wall clock that only moves when a test calls advance()."""
+    """Wall and monotonic clocks that only move when a test calls advance().
+
+    Sleepers wake on the monotonic timeline, like asyncio.sleep; a test can
+    step `now` (wall time) on its own to simulate a clock change.
+    """
 
     def __init__(self, now: float = 1_000_000.0) -> None:
         self.now = now
+        self.mono = 0.0
         self._sleepers: list[tuple[float, asyncio.Future[None]]] = []
 
     def __call__(self) -> float:
         return self.now
 
+    def monotonic(self) -> float:
+        return self.mono
+
     async def sleep(self, delay: float) -> None:
         fut = asyncio.get_running_loop().create_future()
-        self._sleepers.append((self.now + delay, fut))
+        self._sleepers.append((self.mono + delay, fut))
         await fut
 
     async def advance(self, delta: float) -> None:
-        """Move time forward, waking each sleeper in deadline order."""
-        target = self.now + delta
+        """Move both clocks forward, waking each sleeper in deadline order."""
+        target = self.mono + delta
         await settle()
         while due := sorted((s for s in self._sleepers if s[0] <= target), key=lambda s: s[0]):
             deadline, fut = due[0]
             self._sleepers.remove(due[0])
-            self.now = max(self.now, deadline)
+            step = max(0.0, deadline - self.mono)
+            self.mono += step
+            self.now += step
             if not fut.done():  # cancelled sleepers leave a done future
                 fut.set_result(None)
             await settle()
-        self.now = target
+        self.now += target - self.mono
+        self.mono = target
         await settle()
 
 
@@ -109,6 +120,7 @@ class Harness:
             self.mgr, self.fs, self.journal, LimitsConfig(**limits),
             ProtectionConfig(("extra-*.service",)), self.notify, self.alert,
             self.clock, base / "state" / "backups", daemon_mode=mode, sleep=self.clock.sleep,
+            monotonic=self.clock.monotonic,
         )  # fmt: skip
 
     async def notify(self, inc: Incident, recs: list[ActionRecord]) -> None:
@@ -189,6 +201,7 @@ def test_dry_run_makes_no_dbus_calls(fake_cgroupfs: Path, mode: Mode) -> None:
         recs = await h.ex.handle(psi_incident(), [(pol, a) for a in pol.actions])
         assert {r.status for r in recs} == {"dry_run"}
         assert recs[0].configured_mode == pol.mode
+        assert recs[0].params == {"memory_high": 64 * MiB, "cpu_weight": None}
         assert h.notified == [(psi_incident(), recs)]
 
     run(main)
@@ -294,17 +307,18 @@ def test_rollback_failing_ten_times_alerts_once(h: Harness) -> None:
 
 
 def test_breaker_forces_dry_run_then_closes(h: Harness) -> None:
-    h.mgr.fail["set_properties"] = SystemdError("org.freedesktop.DBus.Error.AccessDenied", "no")
-    plan = [(policy(), Throttle(64 * MiB, None, 60))]
+    h.mgr.fail["freeze"] = SystemdError("org.freedesktop.DBus.Error.AccessDenied", "no")
+    plan = [(policy(), Freeze(60))]
 
     async def main() -> None:
         for _ in range(3):
             [rec] = await h.ex.handle(psi_incident(), plan)
-            assert rec.status == "failed" and "AccessDenied" in (rec.error or "")
+            assert rec.status == "planned" and "AccessDenied" in (rec.error or "")
             await h.clock.advance(60)
+            assert h.journal.load()[rec.id].status == "rolled_back"
         assert h.ex.breaker_state()["open"] is True
         assert [a[0] for a in h.alerts] == ["breaker_open"]
-        del h.mgr.fail["set_properties"]
+        del h.mgr.fail["freeze"]
         [rec] = await h.ex.handle(psi_incident(), plan)
         assert (rec.status, rec.mode, rec.configured_mode) == ("dry_run", "dry-run", "enforce")
         await h.clock.advance(15 * 60)
@@ -317,13 +331,28 @@ def test_breaker_forces_dry_run_then_closes(h: Harness) -> None:
 
 
 def test_breaker_ignores_failures_outside_window(h: Harness) -> None:
-    h.mgr.fail["freeze"] = SystemdError("org.freedesktop.systemd1.UnitInactive", "inactive")
+    h.mgr.fail["freeze"] = SystemdError("org.freedesktop.DBus.Error.NoReply", "timeout")
 
     async def main() -> None:
         for _ in range(3):
             await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
             await h.clock.advance(301)
         assert h.ex.breaker_state() == {"open": False, "until": None, "failures": 2}
+        await h.clock.advance(600)
+        assert h.ex.breaker_state()["failures"] == 0
+
+
+def test_known_no_effect_errors_skip_breaker(h: Harness) -> None:
+    async def main() -> None:
+        for name in ("org.freedesktop.systemd1.UnitInactive", "org.sentry-v2.Closed"):
+            h.mgr.fail["freeze"] = SystemdError(name, "x")
+            [rec] = await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
+            assert rec.status == "failed" and name in (rec.error or "")
+        assert h.ex.breaker_state()["failures"] == 0
+        assert h.ex.active() == []
+
+    run(main)
+    assert "thaw" not in [c[0] for c in h.mgr.calls]
 
     run(main)
 
@@ -417,15 +446,22 @@ def test_unit_missing_at_prepare(h: Harness) -> None:
     run(main)
 
 
-def test_freeze_thaws_early_when_pressure_drops(h: Harness, fake_cgroupfs: Path) -> None:
-    pressure = fake_cgroupfs / "cgroup" / CG / "memory.pressure"
+def set_pressure(path: Path, avg10: float) -> None:
+    path.write_text(PRESSURE.format(k="some", a=avg10) + PRESSURE.format(k="full", a=0))
+
+
+def test_freeze_thaws_early_when_parent_pressure_drops(h: Harness, fake_cgroupfs: Path) -> None:
+    parent = fake_cgroupfs / "cgroup" / "system.slice" / "memory.pressure"
+    set_pressure(parent, 42)
 
     async def main() -> None:
         [rec] = await h.ex.handle(psi_incident(), [(policy(), Freeze(600))])
+        # the frozen child itself reads calm; the parent is what the freeze relieves
+        set_pressure(fake_cgroupfs / "cgroup" / CG / "memory.pressure", 0)
         await h.clock.advance(5)
         assert h.mgr.units[UNIT].freezer_state == "frozen"
         # release_below defaults to half of 150ms/1s = 7.5%
-        pressure.write_text(PRESSURE.format(k="some", a=7.4) + PRESSURE.format(k="full", a=0))
+        set_pressure(parent, 7.4)
         await h.clock.advance(5)
         assert h.mgr.units[UNIT].freezer_state == "running"
         assert h.journal.load()[rec.id].status == "rolled_back"
@@ -436,16 +472,32 @@ def test_freeze_thaws_early_when_pressure_drops(h: Harness, fake_cgroupfs: Path)
 def test_freeze_explicit_release_below_and_unreadable_pressure(
     h: Harness, fake_cgroupfs: Path
 ) -> None:
-    pressure = fake_cgroupfs / "cgroup" / CG / "memory.pressure"
+    pressure = fake_cgroupfs / "cgroup" / "system.slice" / "memory.pressure"
 
     async def main() -> None:
         await h.ex.handle(psi_incident(), [(policy(), Freeze(600, release_below=50))])
-        pressure.unlink()
+        assert not pressure.exists()  # unreadable: treated as still high
         await h.clock.advance(5)
         assert h.mgr.units[UNIT].freezer_state == "frozen"
-        pressure.write_text(PRESSURE.format(k="some", a=42) + PRESSURE.format(k="full", a=0))
+        set_pressure(pressure, 42)
         await h.clock.advance(5)
         assert h.mgr.units[UNIT].freezer_state == "running"
+
+    run(main)
+
+
+def test_top_level_unit_watches_system_pressure(h: Harness, fake_cgroupfs: Path) -> None:
+    h.mgr.units["top.service"] = dataclasses.replace(NGINX, cgroup="top.service")
+    system = fake_cgroupfs / "proc" / "pressure" / "memory"
+    set_pressure(system, 42)
+
+    async def main() -> None:
+        await h.ex.handle(psi_incident("top.service"), [(policy(), Freeze(600))])
+        await h.clock.advance(5)
+        assert h.mgr.units["top.service"].freezer_state == "frozen"
+        set_pressure(system, 1)
+        await h.clock.advance(5)
+        assert h.mgr.units["top.service"].freezer_state == "running"
 
     run(main)
 
@@ -516,5 +568,175 @@ def test_prepare_failures(h: Harness, fake_cgroupfs: Path) -> None:
         [rec] = await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
         assert rec.status == "failed" and "NoReply" in (rec.error or "")
         assert h.ex.breaker_state()["failures"] == 1
+
+    run(main)
+
+
+def test_ambiguous_apply_failure_is_compensated(h: Harness) -> None:
+    real = h.mgr.freeze
+
+    async def took_effect_then_failed(unit: str) -> None:
+        await real(unit)
+        raise SystemdError("org.freedesktop.DBus.Error.NoReply", "timeout")
+
+    h.mgr.freeze = took_effect_then_failed  # type: ignore[method-assign]
+
+    async def main() -> None:
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
+        assert rec.status == "planned"
+        await settle()
+        final = h.journal.load()[rec.id]
+        assert final.status == "rolled_back"
+        assert final.error == "apply outcome unknown: org.freedesktop.DBus.Error.NoReply"
+
+    run(main)
+    assert h.mgr.units[UNIT].freezer_state == "running"
+    assert [c[0] for c in h.mgr.calls].count("thaw") == 1
+
+
+def test_unexpected_error_compensated_and_plan_continues(h: Harness) -> None:
+    h.mgr.fail["set_properties"] = RuntimeError("boom")
+    pol = policy(Throttle(64 * MiB, None, 60), Notify())
+
+    async def main() -> None:
+        recs = await h.ex.handle(psi_incident(), [(pol, a) for a in pol.actions])
+        assert [r.status for r in recs] == ["planned", "applied"]
+        assert len(h.notified) == 1
+        del h.mgr.fail["set_properties"]
+        await settle()
+        final = h.journal.load()[recs[0].id]
+        assert (final.status, final.error) == ("rolled_back", "apply outcome unknown: RuntimeError")
+
+    run(main)
+
+
+def test_journal_failure_before_apply_touches_nothing(h: Harness) -> None:
+    real = h.journal.append
+
+    def broken(rec: ActionRecord) -> None:
+        if rec.status == "planned":
+            raise OSError("disk full")
+        real(rec)
+
+    h.journal.append = broken  # type: ignore[method-assign]
+
+    async def main() -> None:
+        recs = await h.ex.handle(psi_incident(), [(policy(), Freeze(60)), (policy(), Notify())])
+        assert [(r.status, r.error) for r in recs] == [
+            ("failed", "internal error: disk full"),
+            ("applied", None),
+        ]
+
+    run(main)
+    assert [c[0] for c in h.mgr.calls] == ["get_properties"]
+
+
+def test_cancelled_mid_apply_compensates_and_notifies(h: Harness) -> None:
+    gate = asyncio.Event()
+    real = h.mgr.freeze
+
+    async def slow(unit: str) -> None:
+        await real(unit)
+        await gate.wait()
+
+    h.mgr.freeze = slow  # type: ignore[method-assign]
+
+    async def main() -> None:
+        task = asyncio.create_task(h.ex.handle(psi_incident(), [(policy(), Freeze(60))]))
+        await settle()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await settle()
+        assert h.notified == [(psi_incident(), [])]  # cut off before the record was returned
+        assert h.mgr.units[UNIT].freezer_state == "running"
+        [final] = h.journal.load().values()
+        assert (final.status, final.error) == (
+            "rolled_back",
+            "apply outcome unknown: CancelledError",
+        )
+
+    run(main)
+
+
+def test_shutdown_during_apply_rolls_back_and_refuses_new(h: Harness) -> None:
+    gate = asyncio.Event()
+    real = h.mgr.freeze
+
+    async def slow(unit: str) -> None:
+        await gate.wait()
+        await real(unit)
+
+    h.mgr.freeze = slow  # type: ignore[method-assign]
+
+    async def main() -> None:
+        handling = asyncio.create_task(h.ex.handle(psi_incident(), [(policy(), Freeze(600))]))
+        await settle()
+        stopping = asyncio.create_task(h.ex.shutdown())
+        await settle()
+        assert not stopping.done()  # waits for the in-flight apply
+        gate.set()
+        [rec] = await handling
+        await stopping
+        assert h.journal.load()[rec.id].status == "rolled_back"
+        [late] = await h.ex.handle(
+            psi_incident("system.slice/batch-2.service"), [(policy(), Freeze(600))]
+        )
+        assert (late.status, late.error) == ("failed", "shutting down")
+
+    run(main)
+    assert h.mgr.units[UNIT].freezer_state == "running"
+    assert ("freeze", "batch-2.service") not in h.mgr.calls
+
+
+def test_stuck_target_refused_until_manual_rollback(h: Harness) -> None:
+    async def main() -> None:
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
+        h.mgr.fail["thaw"] = SystemdError("org.freedesktop.DBus.Error.NoReply", "x")
+        await h.clock.advance(60 + 243)
+        assert h.journal.load()[rec.id].status == "rollback_failed"
+        [again] = await h.ex.handle(psi_incident(), [(policy(), Throttle(64 * MiB, None, 60))])
+        assert (again.status, again.error) == ("failed", "rollback pending")
+        del h.mgr.fail["thaw"]
+        [done] = await h.ex.rollback(rec.id)
+        assert done.status == "rolled_back"
+        [ok] = await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
+        assert ok.status == "applied"
+        await h.ex.shutdown()
+
+    run(main)
+
+
+def test_replay_retries_earlier_rollback_failed(h: Harness) -> None:
+    h.journal.append(stored(id="s1", action="freeze", status="rollback_failed"))
+
+    async def main() -> None:
+        await h.ex.replay()
+
+    run(main)
+    assert h.mgr.calls == [("thaw", UNIT)]
+    assert h.journal.load()["s1"].status == "rolled_back"
+
+
+def test_dry_run_reports_limit(fake_cgroupfs: Path) -> None:
+    h = Harness(fake_cgroupfs, max_active_actions=1)
+
+    async def main() -> None:
+        await h.ex.handle(psi_incident(), [(policy(), Throttle(64 * MiB, None, 60))])
+        [rec] = await h.ex.handle(
+            psi_incident("system.slice/batch-2.service"), [(policy(mode="dry-run"), Freeze(60))]
+        )
+        assert (rec.status, rec.error) == ("failed", "limit")
+        await h.ex.shutdown()
+
+    run(main)
+
+
+def test_monotonic_deadline_bounds_wall_clock_jump(h: Harness) -> None:
+    async def main() -> None:
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Throttle(64 * MiB, None, 60))])
+        h.clock.now -= 3600  # wall clock steps back an hour
+        await h.clock.advance(60)
+        assert h.journal.load()[rec.id].status == "rolled_back"
 
     run(main)

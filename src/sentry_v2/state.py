@@ -69,6 +69,9 @@ class ActionJournal:
         self.path = path
         self._clock = clock
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not path.exists():
+            os.close(os.open(path, os.O_WRONLY | os.O_CREAT, 0o600))
+            _fsync_dir(path.parent)  # so the new file's entry survives a crash
 
     def append(self, rec: ActionRecord) -> None:
         """Write `rec` as one line stamped with wall time `ts`, durably."""
@@ -122,8 +125,12 @@ class ActionJournal:
         finally:
             os.close(fd)
         os.replace(tmp, self.path)
-        dfd = os.open(self.path.parent, os.O_RDONLY)
-        try:
-            os.fsync(dfd)
-        finally:
-            os.close(dfd)
+        _fsync_dir(self.path.parent)
+
+
+def _fsync_dir(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)

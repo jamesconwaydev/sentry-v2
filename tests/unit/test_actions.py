@@ -87,6 +87,36 @@ def test_rollback_unit_gone_and_inactive() -> None:
         run(actions.rollback(rec("freeze", {}), mgr))
 
 
+def test_freeze_refuses_inactive_unit(tmp_path: Path) -> None:
+    with pytest.raises(actions.Refused, match="unit inactive"):
+        run(actions.prepare(Freeze(60), UNIT, fake(active_state="failed"), CgroupFS(tmp_path)))
+
+
+def test_describe_dry_run_params() -> None:
+    assert actions.describe(Throttle(Percent(90), 20, 60)) == {
+        "memory_high": "90%",
+        "cpu_weight": 20,
+    }
+    assert actions.describe(Throttle(64 * MiB, None, 60)) == {
+        "memory_high": 64 * MiB,
+        "cpu_weight": None,
+    }
+    assert actions.describe(Freeze(60)) == {}
+
+
+def test_backup_refuses_path_escaping_backup_dir(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="escapes"):
+        actions.backup(UNIT, ["/../../etc/passwd"], tmp_path / "b", now=0.0)
+
+
+def test_backup_dirs_are_private(tmp_path: Path) -> None:
+    src = tmp_path / "f"
+    src.write_text("x")
+    actions.backup(UNIT, [str(src)], tmp_path / "b", now=0.0)
+    for d in (tmp_path / "b", tmp_path / "b" / UNIT, tmp_path / "b" / UNIT / "19700101T000000Z"):
+        assert d.stat().st_mode & 0o777 == 0o700
+
+
 def test_prepare_unknown_unit(tmp_path: Path) -> None:
     with pytest.raises(UnitNotFound):
         run(actions.prepare(Freeze(60), UNIT, FakeSystemd(), CgroupFS(tmp_path)))

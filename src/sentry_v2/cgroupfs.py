@@ -47,6 +47,10 @@ class CgroupFS:
     def read_pressure(self, rel: str, resource: str) -> dict[str, PressureLine]:
         return parse_pressure((self.root / rel / f"{resource}.pressure").read_text())
 
+    def read_system_pressure(self, resource: str) -> dict[str, PressureLine]:
+        """System-wide pressure from /proc/pressure, for the root cgroup."""
+        return parse_pressure((self.proc / "pressure" / resource).read_text())
+
     def memory_current(self, rel: str) -> int:
         return int((self.root / rel / "memory.current").read_text())
 

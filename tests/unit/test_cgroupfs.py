@@ -71,3 +71,11 @@ def test_open_trigger_writes_spec(fake_cgroupfs: Path) -> None:
     os.close(fd)
     text = (fake_cgroupfs / "cgroup/system.slice/nginx.service/memory.pressure").read_bytes()
     assert text.startswith(b"some 150000 1000000\0")
+
+
+def test_read_system_pressure(fake_cgroupfs: Path) -> None:
+    (fake_cgroupfs / "proc" / "pressure" / "io").write_text(
+        "some avg10=3.50 avg60=0.00 avg300=0.00 total=1\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=1\n"
+    )
+    fs = CgroupFS(fake_cgroupfs / "cgroup", fake_cgroupfs / "proc")
+    assert fs.read_system_pressure("io")["some"].avg10 == 3.5
