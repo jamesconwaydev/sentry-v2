@@ -1,0 +1,20 @@
+# Tell someone when a service falls over, with the journal lines and any
+# SELinux denials from the same moment already in the bundle.
+
+[[policy]]
+name = "unit-failure-notify"
+# notify never changes anything, but the mode still decides whether the
+# bundle is marked as a dry run.
+mode = "dry-run"
+# One bundle per unit every 15 minutes, so a crash loop doesn't flood the sink.
+cooldown = "15m"
+
+[policy.when]
+signal = "unit_failed"
+units = ["app-*.service", "batch-*.service"]
+# Leave this out to catch every failure. These four are the ones worth
+# waking up for. Plain "exit-code" is often a job that knows it failed.
+results = ["signal", "core-dump", "watchdog", "timeout"]
+
+[[policy.do]]
+action = "notify"

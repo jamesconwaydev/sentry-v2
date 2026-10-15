@@ -1,0 +1,28 @@
+# A batch job hammering the disk can stall a database for seconds at a time.
+# Freezing the job pauses every process in its cgroup, nothing is lost, and
+# once the queue drains it carries on where it left off.
+
+[[policy]]
+name = "io-pressure-freeze-batch"
+mode = "dry-run"
+cooldown = "30m"
+
+[policy.when]
+signal = "psi"
+resource = "io"
+kind = "some"
+# 200ms of every second spent waiting on I/O, for 15 seconds running.
+threshold = "200ms/1s"
+sustained = "15s"
+cgroups = ["system.slice/batch-*.service", "system.slice/backup-*.service"]
+
+[[policy.do]]
+action = "freeze"
+# Thawed after two minutes at most. The daemon checks pressure every 5s and
+# thaws early once avg10 drops below 10%. Leave release_below out and it
+# uses half the trigger threshold.
+duration = "2m"
+release_below = 10
+
+[[policy.do]]
+action = "notify"

@@ -1,0 +1,104 @@
+# /etc/sentry-v2/sentry-v2.toml
+#
+# Every value below is the default unless a comment says otherwise, so you
+# can delete any line you don't want to think about. Policies live in
+# policies.d/ next to this file. After an edit, check it with
+# `sentry-v2ctl policy validate` and apply it with `systemctl reload sentry-v2`.
+# A bad file is rejected and the running config stays in place.
+
+[daemon]
+# debug, info, warning or error.
+log_level = "info"
+state_dir = "/var/lib/sentry-v2"
+# Events waiting for the correlator. If this fills up, events are dropped and
+# counted in sentry_v2_events_dropped_total, so raise it before you lower it.
+queue_size = 10000
+# The master switch. Nothing is throttled or frozen unless this AND the
+# policy's own mode both say "enforce". Leave it on dry-run for a week, read
+# the bundles, then decide.
+mode = "dry-run"
+
+[limits]
+# How many throttles and freezes can be in force at once, across all policies.
+max_active_actions = 5
+# Freezing stops a unit dead. One at a time is plenty.
+max_concurrent_freezes = 1
+# No policy can ask for a longer throttle or freeze than this.
+max_action_duration = "30m"
+# Three failed actions inside ten minutes trips the breaker: everything drops
+# to dry-run for fifteen minutes while you work out what went wrong.
+breaker_failures = 3
+breaker_window = "10m"
+breaker_cooldown = "15m"
+
+[protection]
+# Units that are never throttled or frozen, on top of the built-in list
+# (init.scope, sshd, journald, dbus, logind, auditd, systemd-* and this
+# daemon). The default is an empty list; nginx is here as an example. Add
+# whatever would hurt most if it stalled for a minute.
+protected = ["nginx.service"]
+
+[correlation]
+# How long events stay in memory for matching.
+retention = "60s"
+# An AVC denial counts towards a unit failure if it arrived up to 5s before
+# the failure or 1s after it.
+before = "5s"
+after = "1s"
+# Matches scoring below this are left out of the bundle.
+min_confidence = 0.5
+# This many denials from one source raise their own incident.
+avc_burst = 5
+
+[redaction]
+# Bearer tokens, URL passwords, AWS keys, PEM private keys and password=
+# pairs are scrubbed by default. Add your own regexes here; the default is
+# none, and this one is an example.
+patterns = ['internal-api-key-[A-Za-z0-9]{32}']
+use_defaults = true
+
+# The file sink is always on. Bundles land in <dir>/YYYY/MM/DD/<id>.json and
+# the oldest go first once either limit is hit.
+[sinks.file]
+dir = "/var/lib/sentry-v2/bundles"
+max_age = "30d"
+max_size = "1G"
+
+# The other sinks stay off until you uncomment them. Secrets are never
+# written inline: point at a root-owned file with mode 0600.
+
+# [sinks.webhook]
+# url = "https://hooks.example.com/sentry-v2"
+# hmac_key_file = "/etc/sentry-v2/webhook.key"
+# ca_file = "/etc/pki/tls/certs/internal-ca.pem"
+# timeout = "10s"
+
+# [sinks.syslog]
+# host = "logs.example.com"
+# port = 6514
+# transport = "tls"     # udp, tcp or tls
+# ca_file = "/etc/pki/tls/certs/internal-ca.pem"
+
+# [sinks.splunk_hec]
+# url = "https://splunk.example.com:8088"
+# token_file = "/etc/sentry-v2/hec.token"
+# index = "linux"
+
+# [sinks.elastic]
+# url = "https://es.example.com:9200"
+# index = "sentry-v2"
+# api_key_file = "/etc/sentry-v2/es.key"   # or username + password_file
+
+[metrics]
+# Prometheus text format on http://127.0.0.1:9787/metrics. Off by default.
+# If you turn it on, keep it on localhost and scrape through a proxy.
+enabled = false
+host = "127.0.0.1"
+port = 9787
+
+[control]
+# Members of `group` can read status. Members of `admin_group` can also roll
+# back, pause and reload. Add yourself with `usermod -aG sentry-v2 <you>`.
+socket = "/run/sentry-v2/control.sock"
+group = "sentry-v2"
+admin_group = "sentry-v2-admin"

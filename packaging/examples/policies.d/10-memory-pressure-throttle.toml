@@ -1,0 +1,36 @@
+# A batch job that eats memory makes everything else on the box wait for
+# reclaim. This policy spots that and squeezes the job, not its neighbours.
+
+[[policy]]
+name = "memory-pressure-throttle"
+# Dry-run logs what it would have done and writes a bundle. Switch to
+# "enforce" once those bundles look right to you.
+mode = "dry-run"
+# After acting, leave the same unit alone for this long.
+cooldown = "10m"
+
+[policy.when]
+signal = "psi"
+resource = "memory"
+# "some" fires when at least one task is stalled, "full" only when every task
+# in the cgroup is. "full" is quieter and a better sign of real trouble.
+kind = "full"
+# Fire when tasks spend 150ms of any 1s window stalled on memory...
+threshold = "150ms/1s"
+# ...and keep doing so for 10 seconds straight. One spike isn't a problem.
+sustained = "10s"
+# Matched against the cgroup path under /sys/fs/cgroup.
+cgroups = ["system.slice/batch-*.service"]
+
+[[policy.do]]
+action = "throttle"
+# Set MemoryHigh to 80% of what the unit is using right now. The kernel then
+# reclaims from it first instead of from everyone. "512M" works too.
+memory_high = "80%"
+# The default weight is 100, so 50 gives it half a share of CPU meanwhile.
+cpu_weight = 50
+# The old values come back after this, or straight away if the daemon stops.
+duration = "5m"
+
+[[policy.do]]
+action = "notify"
