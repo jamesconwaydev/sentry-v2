@@ -20,7 +20,7 @@ rollback   id?: str, all?: bool        {rolled_back: [record]}
 pause      -                           {paused: true}
 resume     -                           {paused: false}
 reload     -                           {reloaded: true}
-restore    backup_id: <unit>/<ts>      {restored: [path], note: str}
+restore    backup_id: <unit>/<ts>      {restored: [path], skipped: [path], note: str}
 policies   -                           {policies: [{name, mode, effective_mode,
                                        signal, actions: [kind], source}],
                                        last_reload_error}
@@ -57,6 +57,9 @@ if TYPE_CHECKING:
 
 _BACKUP_ID = re.compile(r"([A-Za-z0-9:_.@\\-]+)/(\d{8}T\d{6}Z)")
 _TYPE_NAMES = {str: "a string", int: "an integer", bool: "true or false"}
+# The unit directories the service may write (ReadWritePaths in the unit).
+# Anything else, a package's unit under /usr/lib among them, is read-only.
+RESTORE_ROOTS = (Path("/etc/systemd/system"), Path("/run/systemd/system"))
 
 
 def _arg[T](args: dict[str, Any], name: str, kind: type[T], default: T | None = None) -> T | None:
@@ -83,6 +86,15 @@ def _check_private(path: Path) -> None:
         raise CommandError("no such backup") from None
     if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0, os.geteuid()) or st.st_mode & 0o022:
         raise CommandError(f"{path}: must be a directory owned by root, writable only by it")
+
+
+def _make_dirs(path: Path) -> None:
+    """Create `path` and any missing parents as 0755, whatever the umask."""
+    if path.is_dir():
+        return
+    _make_dirs(path.parent)
+    path.mkdir()
+    path.chmod(0o755)
 
 
 def _parse_ts(text: str) -> dt.datetime:
@@ -202,7 +214,12 @@ class Commands:
         return {"reloaded": True}
 
     async def restore(self, args: dict[str, Any]) -> dict[str, Any]:
-        """Put backed-up unit files back after checking every hash in the manifest."""
+        """Put backed-up unit files back after checking every hash in the manifest.
+
+        Nothing is written unless all of it can be: files that still match
+        the backup are skipped, and a changed file outside RESTORE_ROOTS
+        refuses the whole restore up front.
+        """
         backup_id = _required(args, "backup_id", str)
         m = _BACKUP_ID.fullmatch(backup_id)
         if m is None or m.group(1) in (".", ".."):
@@ -216,6 +233,7 @@ class Commands:
         except FileNotFoundError:
             raise CommandError("no such backup") from None
         copies: list[tuple[Path, bytes, Path]] = []
+        skipped: list[str] = []
         for line in manifest.splitlines():
             digest, _, rel = line.partition("  ")
             parts = PurePosixPath(rel).parts
@@ -228,11 +246,29 @@ class Commands:
                 raise CommandError(f"{rel}: {e.strerror}") from None
             if hashlib.sha256(data).hexdigest() != digest:
                 raise CommandError(f"{rel}: checksum mismatch")
-            copies.append((src, data, Path("/", *parts[1:])))
+            dest = Path("/", *parts[1:])
+            try:
+                unchanged = hashlib.sha256(dest.read_bytes()).hexdigest() == digest
+            except FileNotFoundError:
+                unchanged = False
+            except OSError as e:
+                raise CommandError(f"{dest}: {e.strerror}") from None
+            if unchanged:
+                skipped.append(str(dest))
+            else:
+                copies.append((src, data, dest))
+        if outside := [str(d) for _, _, d in copies if not _restorable(d)]:
+            raise CommandError(
+                "nothing restored: changed since the backup and outside "
+                f"{' and '.join(map(str, RESTORE_ROOTS))}, where sentry-v2 cannot "
+                f"write: {', '.join(outside)}. Copy them back by hand from "
+                f"{bdir}/files and run the restore again."
+            )
         restored: list[str] = []
         for src, data, dest in copies:
             tmp = dest.with_name(f".{dest.name}.sentry-v2-restore")
             try:
+                _make_dirs(dest.parent)  # a drop-in directory removed since the backup
                 # the bytes that were verified, not whatever the file holds now
                 tmp.unlink(missing_ok=True)  # a leftover from an interrupted restore
                 fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -243,9 +279,11 @@ class Commands:
             except OSError as e:
                 raise CommandError(f"restoring {dest} failed ({e}); restored {restored}") from None
             restored.append(str(dest))
-        unit = m.group(1)
-        note = f"run systemctl daemon-reload && systemctl reload {unit}"
-        return {"restored": restored, "note": note}
+        if restored:
+            note = f"run systemctl daemon-reload && systemctl reload {m.group(1)}"
+        else:
+            note = "every file already matches the backup; nothing to do"
+        return {"restored": restored, "skipped": skipped, "note": note}
 
     async def policies(self, args: dict[str, Any]) -> dict[str, Any]:
         mode = self.d.cfg.daemon.mode
@@ -261,6 +299,10 @@ class Commands:
             for p in self.d.cfg.policies
         ]
         return {"policies": rows, "last_reload_error": self.d.last_reload_error}
+
+
+def _restorable(path: Path) -> bool:
+    return any(path.is_relative_to(root) for root in RESTORE_ROOTS)
 
 
 def _signal(when: object) -> str:

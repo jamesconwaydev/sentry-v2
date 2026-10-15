@@ -113,7 +113,10 @@ def test_simple_commands(stub, capsys):
         "pause": {"ok": True, "result": {"paused": True}},
         "resume": {"ok": True, "result": {"paused": False}},
         "reload": {"ok": True, "result": {"reloaded": True}},
-        "restore": {"ok": True, "result": {"restored": ["/etc/x"], "note": "reload it"}},
+        "restore": {
+            "ok": True,
+            "result": {"restored": ["/etc/x"], "skipped": ["/usr/y"], "note": "reload it"},
+        },
         "psi": {
             "ok": True,
             "result": {
@@ -170,6 +173,8 @@ def test_simple_commands(stub, capsys):
     ]:
         rc, out, _ = run(stub, capsys, *argv)
         assert rc == 0 and needle in out, argv
+    _, out, _ = run(stub, capsys, "restore", "u.service/20260101T000000Z")
+    assert out == "restored:\n/etc/x\nalready matched the backup:\n/usr/y\nreload it\n"
     rc, out, _ = run(stub, capsys, "top", "--once", "--sort", "cgroup")
     assert out.index("\na ") < out.index("\nb ")
     assert stub.seen[-1]["cmd"] == "psi"

@@ -198,6 +198,13 @@ def _rolled_back(r: dict[str, Any]) -> str:
     return "\n".join(lines) or "nothing to roll back"
 
 
+def _restored(r: dict[str, Any]) -> str:
+    lines = ["restored:", *r["restored"]] if r["restored"] else []
+    if r.get("skipped"):
+        lines += ["already matched the backup:", *r["skipped"]]
+    return "\n".join(_clean(x) for x in [*lines, r["note"]])
+
+
 _HUMAN: dict[str, Callable[[dict[str, Any]], str]] = {
     "status": _status,
     "incidents": _incidents,
@@ -208,7 +215,7 @@ _HUMAN: dict[str, Callable[[dict[str, Any]], str]] = {
     "pause": lambda r: "paused" if r["paused"] else "resumed",
     "resume": lambda r: "paused" if r["paused"] else "resumed",
     "reload": lambda r: "reloaded the configuration",
-    "restore": lambda r: "\n".join(_clean(x) for x in ["restored:", *r["restored"], r["note"]]),
+    "restore": _restored,
 }
 
 

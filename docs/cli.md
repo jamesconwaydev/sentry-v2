@@ -191,22 +191,38 @@ $ sentry-v2ctl restore app-web.service/20261014T031502Z
 
 Before writing anything, the daemon checks every file against the backup's
 `MANIFEST.sha256` and refuses a backup directory that isn't owned by root
-or is writable by anyone else. It then puts each file back atomically and
-prints the paths, followed by what to run next:
+or is writable by anyone else. Files that still match the backup are left
+alone. The rest go back atomically, and a drop-in directory removed since
+the backup is recreated (mode 0755). You get the paths and what to run
+next:
 
 ```text
 restored:
-/etc/systemd/system/app-web.service
 /etc/systemd/system/app-web.service.d/override.conf
+already matched the backup:
+/usr/lib/systemd/system/app-web.service
 run systemctl daemon-reload && systemctl reload app-web.service
 ```
 
-It doesn't reload anything itself. The unit's sandbox only lets the daemon
-write under `/etc/systemd/system` and `/run/systemd/system`. A backed-up
-file anywhere else, such as one from a policy's `paths`, makes the restore
-stop with `Read-only file system` once it reaches that file; the error
-lists what was restored before it. Copy such files back by hand from the
-backup directory.
+It doesn't reload anything itself.
+
+The unit's sandbox only lets the daemon write under `/etc/systemd/system`
+and `/run/systemd/system`. A package's unit file lives in
+`/usr/lib/systemd/system`, and that's fine as long as it hasn't changed. If
+a file outside those two directories has changed since the backup (a
+package update, or something from a policy's `paths`), the restore writes
+nothing at all and says which files and where the backup is:
+
+```text
+error: nothing restored: changed since the backup and outside
+/etc/systemd/system and /run/systemd/system, where sentry-v2 cannot write:
+/usr/lib/systemd/system/app-web.service. Copy them back by hand from
+/var/lib/sentry-v2/backups/app-web.service/20261014T031502Z/files and run
+the restore again.
+```
+
+Copy those files back, then run the same `restore`; the files you copied
+now match and are skipped.
 
 ## Offline commands
 

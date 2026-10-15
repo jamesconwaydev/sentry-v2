@@ -78,11 +78,16 @@ $ sentry-v2ctl restore app-web.service/20261014T031502Z
 
 The daemon checks every file against the manifest first and refuses the
 whole restore on a mismatch, or if the backup directory isn't owned by root
-or is writable by anyone else. Then it writes each file back atomically and
-tells you what to run next, `systemctl daemon-reload && systemctl reload
-<unit>`. It never reloads anything itself. Restore only writes under
-`/etc/systemd/system` and `/run/systemd/system`; copy anything from `paths`
-back by hand (see [cli.md](cli.md#restore-backup_id)).
+or is writable by anyone else. Files that still match the backup are
+skipped; the rest go back atomically, and you're told what to run next,
+`systemctl daemon-reload && systemctl reload <unit>`. It never reloads
+anything itself.
+
+Restore only writes under `/etc/systemd/system` and `/run/systemd/system`.
+An unchanged package unit in `/usr/lib/systemd/system` is simply skipped.
+If a file elsewhere has changed, though, the restore writes nothing and
+lists those files so you can copy them back by hand from the backup (see
+[cli.md](cli.md#restore-backup_id)).
 
 ## What happens to each action
 

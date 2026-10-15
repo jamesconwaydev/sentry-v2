@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from contracts import NGINX
-from sentry_v2 import __version__, actions, daemon
+from sentry_v2 import __version__, actions, commands, daemon
 from sentry_v2.cgroupfs import CgroupFS
 from sentry_v2.collectors.audit import parse_audit_text
 from sentry_v2.control import CommandError
@@ -551,7 +551,15 @@ def test_incidents_filters_and_show_errors(env: Env) -> None:
     drive(d, body)
 
 
-def test_restore(env: Env) -> None:
+@pytest.fixture
+def unit_roots(env: Env, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Stands in for /etc/systemd/system, the one tree restore may write."""
+    etc = env.root / "etc"
+    monkeypatch.setattr(commands, "RESTORE_ROOTS", (etc,))
+    return etc
+
+
+def test_restore(env: Env, unit_roots: Path) -> None:
     unit_file = env.root / "etc" / "demo.service"
     unit_file.parent.mkdir()
     unit_file.write_text("[Service]\nExecStart=/bin/true\n")
@@ -565,6 +573,7 @@ def test_restore(env: Env) -> None:
         r = await cmd.restore({"backup_id": backup_id})
         assert r == {
             "restored": [str(unit_file)],
+            "skipped": [],
             "note": "run systemctl daemon-reload && systemctl reload demo.service",
         }
         assert unit_file.read_text() == "[Service]\nExecStart=/bin/true\n"
@@ -594,7 +603,9 @@ def test_restore(env: Env) -> None:
     drive(d, body)
 
 
-def test_restore_does_not_copy_the_backups_label(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_restore_does_not_copy_the_backups_label(
+    env: Env, unit_roots: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # copystat would stamp the backup's SELinux label on the restored unit
     # file, and the daemon's domain may not relabel files anyway
     def denied(*_a: object, **_k: object) -> None:
@@ -613,6 +624,70 @@ def test_restore_does_not_copy_the_backups_label(env: Env, monkeypatch: pytest.M
         assert (await d.commands.restore({"backup_id": backup_id}))["restored"] == [str(unit_file)]
         assert unit_file.read_text() == "[Service]\n"
         assert unit_file.stat().st_mtime == 1000
+
+    drive(d, body)
+
+
+def _vendor_unit_with_drop_in(env: Env) -> tuple[Path, Path, Daemon, str]:
+    """A package's unit outside the writable roots plus an admin drop-in, backed up."""
+    fragment = env.root / "usr" / "demo.service"
+    fragment.parent.mkdir()
+    fragment.write_text("[Service]\nExecStart=/bin/true\n")
+    drop_in = env.root / "etc" / "demo.service.d" / "override.conf"
+    drop_in.parent.mkdir(parents=True)
+    drop_in.write_text("[Service]\nNice=5\n")
+    d = env.daemon()
+    files = [str(fragment), str(drop_in)]
+    return fragment, drop_in, d, actions.backup("demo.service", files, d.executor.backups_dir, 0.0)
+
+
+def test_restore_skips_unchanged_files_outside_the_unit_dirs(env: Env, unit_roots: Path) -> None:
+    fragment, drop_in, d, backup_id = _vendor_unit_with_drop_in(env)
+    drop_in.write_text("broken")
+
+    async def body() -> None:
+        r = await d.commands.restore({"backup_id": backup_id})
+        assert r["restored"] == [str(drop_in)]
+        assert r["skipped"] == [str(fragment)]
+        assert drop_in.read_text() == "[Service]\nNice=5\n"
+
+        r = await d.commands.restore({"backup_id": backup_id})
+        assert (r["restored"], r["skipped"]) == ([], [str(fragment), str(drop_in)])
+        assert "nothing to do" in r["note"]
+
+    drive(d, body)
+
+
+def test_restore_refuses_changed_files_outside_the_unit_dirs(env: Env, unit_roots: Path) -> None:
+    fragment, drop_in, d, backup_id = _vendor_unit_with_drop_in(env)
+    fragment.write_text("vendor update")
+    drop_in.write_text("broken")
+
+    async def body() -> None:
+        with pytest.raises(CommandError) as e:
+            await d.commands.restore({"backup_id": backup_id})
+        msg = str(e.value)
+        assert msg.startswith("nothing restored")
+        assert str(fragment) in msg and str(drop_in) not in msg
+        assert f"{d.executor.backups_dir / backup_id}/files" in msg
+        assert (fragment.read_text(), drop_in.read_text()) == ("vendor update", "broken")
+
+    drive(d, body)
+
+
+def test_restore_recreates_a_removed_drop_in_directory(env: Env, unit_roots: Path) -> None:
+    _fragment, drop_in, d, backup_id = _vendor_unit_with_drop_in(env)
+    shutil.rmtree(drop_in.parent)
+
+    async def body() -> None:
+        old = os.umask(0o077)  # the unit's UMask
+        try:
+            r = await d.commands.restore({"backup_id": backup_id})
+        finally:
+            os.umask(old)
+        assert r["restored"] == [str(drop_in)]
+        assert drop_in.read_text() == "[Service]\nNice=5\n"
+        assert drop_in.parent.stat().st_mode & 0o777 == 0o755
 
     drive(d, body)
 
