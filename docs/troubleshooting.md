@@ -22,7 +22,7 @@ unless you ask for it at boot.
 
   ```console
   $ cat /proc/pressure/memory
-  cat: /proc/pressure/memory: Operation not supported
+  cat: /proc/pressure/memory: No such file or directory
   ```
 
 The journal and audit collectors keep working, so unit failures and

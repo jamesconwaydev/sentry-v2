@@ -2,8 +2,7 @@
 
 Sentry-v2 runs as root because it has to: it reads every service's `/proc`
 entries, joins the audit stream and asks systemd to change units. What it
-doesn't need, the unit takes away. This page lists what's on, what's off,
-and why.
+doesn't need, the unit takes away.
 
 Check the result on your host with:
 

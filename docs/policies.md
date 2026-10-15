@@ -262,9 +262,11 @@ Both default to `dry-run`. On top of that, `sentry-v2ctl pause` and a
 tripped circuit breaker force dry-run for every policy until they clear.
 
 Dry-run runs the whole pipeline: matching, cooldowns, protection checks,
-limits and the bundle. It stops just before the D-Bus call. The action
-record says `dry_run` and shows what would have been written, so a dry-run
-bundle is a faithful preview.
+limits and the bundle. It stops just before the D-Bus call, and the action
+record says `dry_run` and shows what would have been written. Matching,
+cooldowns and protection are previewed exactly. Limits are checked against
+actions really in force, and dry-run actions never are, so a dry-run won't
+show the `limit` refusals its own would-be actions would cause.
 
 `sentry-v2 --check` lists every policy with its configured and effective
 mode, `sentry-v2ctl policy test` shows the effective mode for each planned

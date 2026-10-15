@@ -7,7 +7,9 @@ packages from BaseOS and AppStream only. No EPEL.
 ## From the RPM (recommended)
 
 Download the packages for the latest release from
-[GitHub Releases](https://github.com/jamesconwaydev/sentry-v2/releases):
+[GitHub Releases](https://github.com/jamesconwaydev/sentry-v2/releases).
+The first tagged release is on its way; until then, build the RPMs from
+source (see [From source](#from-source)) and install them the same way.
 
 | Package | What it is |
 |---|---|
@@ -61,11 +63,11 @@ for at boot. Check:
 $ cat /proc/pressure/memory
 ```
 
-If that prints `Operation not supported`, turn it on and reboot:
+If that prints `No such file or directory`, turn it on and reboot. The
+guard skips both steps on a host that already has PSI:
 
 ```console
-# grubby --update-kernel=ALL --args=psi=1
-# reboot
+# test -e /proc/pressure/memory || { grubby --update-kernel=ALL --args=psi=1 && reboot; }
 ```
 
 Afterwards the same `cat` prints two lines, `some` and `full`. Without PSI
@@ -83,38 +85,24 @@ The change applies from their next login.
 
 ## From source
 
-To build the RPMs yourself, on an EL10 host or anywhere with Podman:
+On an EL10 box, install the build tools (`pyproject-rpm-macros` is in
+CRB), then build:
 
 ```console
+# dnf install --enablerepo=crb git make rpm-build python3-devel pyproject-rpm-macros \
+    systemd-rpm-macros selinux-policy-devel bzip2 python3-setuptools python3-wheel
 $ git clone https://github.com/jamesconwaydev/sentry-v2.git
 $ cd sentry-v2
 $ make rpm
 $ ls rpmbuild/RPMS/noarch/
+sentry-v2-0.1.0-1.el10.noarch.rpm  sentry-v2-cockpit-0.1.0-1.el10.noarch.rpm  sentry-v2-selinux-0.1.0-1.el10.noarch.rpm
+# dnf install ./rpmbuild/RPMS/noarch/sentry-v2-0.1.0-*.noarch.rpm \
+    ./rpmbuild/RPMS/noarch/sentry-v2-selinux-0.1.0-*.noarch.rpm
 ```
 
-On an EL host `make rpm` calls `rpmbuild` directly. Elsewhere it builds in
-a `rockylinux:10` container (set `CONTAINER=docker` to use Docker).
-
-## From PyPI
-
-Tagged releases publish the Python package to PyPI as `sentry-v2`. It
-gives you the daemon and `sentry-v2ctl` but none of the system pieces:
-no unit, no groups, no SELinux module, no example configuration. Use it for
-running `sentry-v2ctl policy validate` in CI, or if you package things your
-own way.
-
-The two system bindings don't come from PyPI. Install them from the distro
-first, then create a virtual environment that can see them:
-
-```console
-# dnf install python3-systemd python3-dbus
-$ python3 -m venv --system-site-packages ~/.venvs/sentry-v2
-$ ~/.venvs/sentry-v2/bin/pip install sentry-v2
-```
-
-`sentry-v2ctl policy validate` and `policy test` don't need the bindings at
-all, so on a laptop or a CI runner a plain `pip install sentry-v2` is
-enough for those.
+The exact dist tag in the file names depends on your EL10 minor release.
+On a machine without `rpmbuild`, `make rpm` builds in a `rockylinux:10`
+container with Podman instead (set `CONTAINER=docker` to use Docker).
 
 ## Uninstalling
 

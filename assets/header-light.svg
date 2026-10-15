@@ -22,9 +22,9 @@
   <line x1="60" y1="304" x2="1140" y2="304"/>
 </g>
 <text class="w" x="60" y="92">Sentry-v2</text>
-<text class="s" x="62" y="130">Sees memory, CPU and I/O pressure building, and acts before the OOM killer has to.</text>
+<text class="s" x="62" y="130">Sees memory, CPU and I/O pressure building, and can step in before the OOM killer does.</text>
 <line x1="60" y1="212" x2="1140" y2="212" stroke="#B86E05" stroke-width="2" stroke-dasharray="6 7"/>
-<text class="l" x="60" y="200" fill="#B86E05">trigger: memory some &#8805; 150ms/1s</text>
+<text class="l" x="60" y="200" fill="#B86E05">trigger: memory some &#8805; 300ms/2s</text>
 <path class="trace" d="M60,298 C150,298 200,294 260,295 S360,289 420,280 S520,252 570,236 S650,206 690,198 C712,194 726,198 740,206 S800,252 840,272 S930,294 1000,296 S1100,297 1140,297"/>
 <g class="hold">
   <line x1="700" y1="168" x2="700" y2="190" stroke="#C2412F" stroke-width="3"/>

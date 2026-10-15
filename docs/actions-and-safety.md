@@ -1,9 +1,6 @@
 # Actions and safety
 
-Sentry-v2 changes running services, so this page is about what it changes,
-how it puts things back, and what stops it from making a bad night worse.
-
-The short version:
+In short:
 
 - Nothing changes until `daemon.mode` and the policy's `mode` both say
   `enforce`.
@@ -211,8 +208,11 @@ active actions only; a stuck one needs its id.
 The one-per-unit rule matters for rollback: a second throttle would capture
 the first one's values as "previous" and restore the wrong thing.
 
-Limits are checked in dry-run too, so a dry-run bundle shows a `limit`
-refusal exactly where enforce mode would have hit it.
+In dry-run, limits are checked against the actions really in force, which
+dry-run never adds to. So a dry-run bundle shows a `limit` refusal only if
+enforced actions already fill the limit; a burst of dry-run incidents
+doesn't count its own would-be throttles. Protection checks and cooldowns,
+on the other hand, are previewed exactly as enforce mode would apply them.
 
 ## The circuit breaker
 

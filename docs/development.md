@@ -105,5 +105,13 @@ build output.
    $ git push origin v0.1.0
    ```
 
-   The release workflow runs on `v*` tags and publishes the RPMs and Python
-   packages to the GitHub release.
+   The tag builds and publishes the GitHub release. The release workflow
+   accepts only `vMAJOR.MINOR.PATCH` tags, checks that the tag,
+   `__version__` and the spec agree, takes the notes from the matching
+   `CHANGELOG.md` section, builds the RPMs, wheel and sdist, writes
+   `SHA256SUMS`, attests their provenance, and creates the release with
+   all of them attached.
+
+   Publishing to PyPI is configured in the same workflow but is waiting for
+   the first upload; until then the Python packages are only on the GitHub
+   release.

@@ -104,8 +104,11 @@ Clean up:
 ## 7. Let it run, then decide
 
 Leave everything in dry-run for a few days. Each bundle's `decision.actions`
-shows exactly what would have been done, including actions refused for
-hitting a limit or a protected unit.
+shows what would have been done. A protected target shows up as a refused
+action, and a repeat incident inside a policy's cooldown carries no actions
+at all, exactly as in enforce mode. Limits are the one
+thing dry-run can't fully preview: they're checked against actions really
+in force, so dry-run never counts its own would-be throttles and freezes.
 
 When the bundles for a policy look right, turn on both switches: the
 daemon's and that policy's.

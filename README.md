@@ -65,15 +65,25 @@ flowchart LR
 
 ## Quickstart
 
-Grab the RPMs from [Releases](https://github.com/jamesconwaydev/sentry-v2/releases),
-then:
+Grab the RPMs from [Releases](https://github.com/jamesconwaydev/sentry-v2/releases).
+The first tagged release is on its way; until then, build the RPMs from
+source (see [Installation](docs/installation.md#from-source)).
 
 ```console
 # dnf install ./sentry-v2-0.1.0-*.noarch.rpm ./sentry-v2-selinux-0.1.0-*.noarch.rpm
+```
 
-# cat /proc/pressure/memory          # "Operation not supported"? Turn PSI on:
-# grubby --update-kernel=ALL --args=psi=1 && reboot
+EL kernels ship with PSI off. If `cat /proc/pressure/memory` says
+`No such file or directory`, turn it on. The guard below only reboots a
+host that doesn't have PSI yet:
 
+```console
+# test -e /proc/pressure/memory || { grubby --update-kernel=ALL --args=psi=1 && reboot; }
+```
+
+Then add a policy of your own and start the daemon:
+
+```console
 # cd /etc/sentry-v2/policies.d       # three dry-run examples live here
 # cp 20-unit-failure-notify.toml 50-myapp.toml
 # sed -i 's/^name = .*/name = "myapp-notify"/' 50-myapp.toml
@@ -91,21 +101,23 @@ Then break something on purpose and read the bundle; the
 
 Sentry-v2 changes running services, so it's built to be boring about it.
 
-- **Dry-run by default.** The daemon and every shipped policy start in
-  dry-run. Dry-run runs the whole pipeline, limits included, and records
-  exactly what it would have done.
-- **Two switches for enforce.** An action is enforced only when
+- Dry-run by default. The daemon and every shipped policy start in
+  dry-run, which runs the whole pipeline and records what it would have
+  done. Protection and cooldowns are previewed exactly; limits are checked
+  against actions really in force, so dry-run never counts its own
+  would-be actions.
+- Two switches for enforce. An action is enforced only when
   `daemon.mode` and the policy's `mode` both say `enforce`. `sentry-v2ctl
   pause` and the circuit breaker force dry-run on top of that.
-- **Protected units.** SSH, journald, D-Bus, logind, auditd, systemd's own
+- Protected units. SSH, journald, D-Bus, logind, auditd, systemd's own
   services, the top-level slices and Sentry-v2 itself are never throttled,
   frozen or reloaded. Add your own with `protection.protected`.
-- **Rollback guarantees.** Each throttle and freeze is written to disk
+- Rollback guarantees. Each throttle and freeze is written to disk
   with the values it will restore before systemd is touched, then undone at
   expiry, on shutdown, and on the next start after a crash. A throttle you
   changed by hand in the meantime is left alone. A rollback that keeps
   failing raises a critical bundle and blocks new actions on that unit.
-- **Limits.** Five active actions, one freeze at a time and 30 minutes per
+- Limits. Five active actions, one freeze at a time and 30 minutes per
   action by default. Three systemd failures in ten minutes trip the
   breaker for fifteen.
 
@@ -116,7 +128,7 @@ The details, including the worst-case time a stop can take, are in
 
 | Page | What's in it |
 |---|---|
-| [Installation](docs/installation.md) | RPMs, turning on PSI, groups, building from source, PyPI |
+| [Installation](docs/installation.md) | RPMs, turning on PSI, groups, building from source |
 | [Quickstart](docs/quickstart.md) | Fresh install to first bundle, in dry-run |
 | [Configuration](docs/configuration.md) | Every key in `sentry-v2.toml` |
 | [Policies](docs/policies.md) | Signals, matching, thresholds, modes, cooldowns |

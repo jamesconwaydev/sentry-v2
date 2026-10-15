@@ -29,6 +29,11 @@ flowchart LR
     CS --- E
     CS --> CLI["sentry-v2ctl"]
     CS --> CP["Cockpit page"]
+    PSI -. samples .-> M
+    E -. incidents, actions .-> M
+    K -. delivery failures .-> M
+    Q -. dropped events .-> M
+    M --> PR["Prometheus scrape"]
 ```
 
 ## Components

@@ -5,7 +5,10 @@ Sentry-v2 reads one global file, `/etc/sentry-v2/sentry-v2.toml`, and every
 file. Policies have their own page: [policies.md](policies.md).
 
 The RPM installs a commented copy of the global file with every default
-spelled out. You can delete any line and get the same behaviour.
+spelled out, apart from two placeholder examples: `protection.protected`
+ships as `["nginx.service"]` and `redaction.patterns` with one sample
+regex, where the real defaults are empty lists. Any other line can be
+deleted without changing behaviour.
 
 ## How the file is checked
 
