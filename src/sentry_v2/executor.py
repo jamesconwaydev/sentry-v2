@@ -10,12 +10,15 @@ taken effect (a timeout, a dropped bus, an unexpected exception or a
 cancellation) is never just marked failed: it stays active as `planned`
 and is rolled back straight away, since restore and thaw are idempotent.
 
-Worst-case rollback time: one record makes 10 attempts with 243 s of
-backoff in total (1+2+4+8+16+32+60+60+60) plus up to 10 D-Bus timeouts of
-10 s each, so about 343 s. Records retry concurrently, but D-Bus calls are
-serialised by the lock, so N records that all time out take at most
-243 s + N * 100 s. Shutdown can take that long; the unit's TimeoutStopSec
-must allow for it.
+Rollback time: one record makes up to 10 attempts with 243 s of backoff
+in total (1+2+4+8+16+32+60+60+60). An attempt is one D-Bus call for a
+freeze and up to four for a throttle (GetUnit, two GetAll, then
+SetUnitProperties), each with a 10 s timeout. Records retry concurrently
+but D-Bus calls are serialised by the lock, so if systemd stops answering
+altogether N throttles could need 243 s + N * 400 s. The unit's
+TimeoutStopSec is a best-effort budget sized for one timed-out call per
+attempt, not that bound: anything SIGKILL cuts off is still open in the
+journal and is rolled back by replay at the next start.
 """
 
 from __future__ import annotations

@@ -77,7 +77,7 @@ triggers on `*.pressure` files.
 | `WatchdogSec` | `30s` | The event loop pings the watchdog itself, so a hung loop gets the daemon restarted. |
 | `Restart` | `on-failure` | A crash comes back after `RestartSec=5s`, and replay undoes anything left in force. |
 | `RestartPreventExitStatus` | `2` | The daemon exits 2 when it can't load its configuration. Restarting won't fix that, so systemd leaves it failed instead of looping. |
-| `TimeoutStopSec` | `780s` | Room to roll back five stuck actions on stop. See [actions-and-safety.md](actions-and-safety.md#how-long-a-stop-can-take). |
+| `TimeoutStopSec` | `780s` | A best-effort budget for rolling back five stuck actions on stop; anything cut off is rolled back at the next start. See [actions-and-safety.md](actions-and-safety.md#how-long-a-stop-can-take). |
 | `TimeoutStartSec` | `780s` | Start replays the journal first, and rolling back what a crash left behind can take as long as a stop. While replay runs the daemon sends `EXTEND_TIMEOUT_USEC` every 30 s, so systemd waits for it either way; this is the backstop. |
 | `ProtectSystem` | `strict` | The whole filesystem is read-only to the daemon... |
 | `ReadWritePaths` | `/var/lib/sentry-v2 /sys/fs/cgroup -/etc/systemd/system -/run/systemd/system` | ...apart from its state, the cgroup tree where PSI triggers are registered, and the two unit directories `sentry-v2ctl restore` writes back to. |

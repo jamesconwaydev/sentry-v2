@@ -14,11 +14,13 @@ Restart=on-failure
 RestartSec=5s
 # Exit status 2 is a configuration the daemon can't load; restarting won't fix it
 RestartPreventExitStatus=2
-# On stop the daemon rolls back every active throttle and freeze. Each one
-# can take 10 attempts: 243s of backoff plus 10 D-Bus timeouts of 10s. The
-# retries overlap but D-Bus calls are serialised, so 5 active actions (the
-# max_active_actions default) need up to 243s + 5 * 100s = 743s. Raise this
-# if you raise max_active_actions.
+# On stop the daemon rolls back every active throttle and freeze, up to 10
+# attempts each over 243s of backoff. An attempt makes one D-Bus call for a
+# freeze and up to four for a throttle, 10s timeout each, one call at a
+# time. 780s covers the 5 actions max_active_actions allows with one
+# timed-out call per attempt (243s + 5 * 100s = 743s). It's a best-effort
+# budget: whatever SIGKILL cuts off is rolled back at the next start.
+# Raise this if you raise max_active_actions.
 TimeoutStopSec=780s
 # Startup first rolls back whatever a crashed run left active (replay),
 # which has the same worst case as a stop. The daemon sends
