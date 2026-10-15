@@ -34,6 +34,7 @@ def test_unit_file_hardening() -> None:
         "NotifyAccess": "main",
         "WatchdogSec": "30s",
         "Restart": "on-failure",
+        "RestartPreventExitStatus": "2",
         "ExecStart": "/usr/bin/sentry-v2",
         "TimeoutStopSec": "780s",
         "TimeoutStartSec": "780s",

@@ -12,6 +12,8 @@ ExecStart=/usr/bin/sentry-v2
 WatchdogSec=30s
 Restart=on-failure
 RestartSec=5s
+# Exit status 2 is a configuration the daemon can't load; restarting won't fix it
+RestartPreventExitStatus=2
 # On stop the daemon rolls back every active throttle and freeze. Each one
 # can take 10 attempts: 243s of backoff plus 10 D-Bus timeouts of 10s. The
 # retries overlap but D-Bus calls are serialised, so 5 active actions (the
