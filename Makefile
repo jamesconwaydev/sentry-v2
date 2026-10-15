@@ -35,7 +35,7 @@ RPM_BUILDDEPS := rpm-build python3-devel pyproject-rpm-macros systemd-rpm-macros
 # host, otherwise a Rocky 10 container (pyproject-rpm-macros is in CRB).
 rpm:
 	rm -rf $(TOPDIR) && mkdir -p $(TOPDIR)/SOURCES $(TOPDIR)/SPECS $(TOPDIR)/stage/sentry-v2-$(VERSION)
-	tar -cf - --exclude=__pycache__ --exclude='*.egg-info' src tests packaging pyproject.toml README.md LICENSE \
+	tar -cf - --exclude=__pycache__ --exclude='*.egg-info' src tests packaging cockpit pyproject.toml README.md LICENSE \
 		| tar -xf - -C $(TOPDIR)/stage/sentry-v2-$(VERSION)
 	tar -czf $(TOPDIR)/SOURCES/sentry-v2-$(VERSION).tar.gz -C $(TOPDIR)/stage sentry-v2-$(VERSION)
 	rm -rf $(TOPDIR)/stage

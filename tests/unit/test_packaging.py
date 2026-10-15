@@ -5,7 +5,8 @@ from pathlib import Path
 import sentry_v2
 from sentry_v2.config import load_config
 
-PACKAGING = Path(__file__).parents[2] / "packaging"
+ROOT = Path(__file__).parents[2]
+PACKAGING = ROOT / "packaging"
 EXAMPLES = PACKAGING / "examples"
 
 
@@ -59,3 +60,16 @@ def test_spec_version_matches_package() -> None:
     m = re.search(r"^%global upstream_version (\S+)$", spec, re.MULTILINE)
     assert m is not None and m.group(1) == sentry_v2.__version__
     assert re.search(r"^Version:\s+%\{upstream_version\}$", spec, re.MULTILINE)
+
+
+def test_spec_ships_every_cockpit_file() -> None:
+    spec = (PACKAGING / "sentry-v2.spec").read_text()
+    files = spec.split("%files cockpit", 1)[1].split("%changelog", 1)[0]
+    install = re.search(r"^install -pm 0644 (cockpit/.*?)\\?$", spec, re.MULTILINE)
+    assert install is not None
+    for path in sorted((ROOT / "cockpit").iterdir()):
+        assert f"cockpit/{path.name}" in install.group(1).split(), path.name
+        assert f"%{{_datadir}}/cockpit/sentry-v2/{path.name}" in files, path.name
+    assert " cockpit " in (ROOT / "Makefile").read_text(), (
+        "the source tarball must include cockpit/"
+    )

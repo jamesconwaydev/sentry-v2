@@ -51,6 +51,17 @@ Requires(postun): policycoreutils-python-utils
 %description selinux
 Confines the sentry-v2 daemon in the sentry_v2_t domain.
 
+%package cockpit
+Summary:        Cockpit page for sentry-v2
+BuildArch:      noarch
+Requires:       %{name} = %{version}-%{release}
+Requires:       cockpit-system
+
+%description cockpit
+Adds a Sentry-v2 page under Tools in Cockpit: mode, pause and resume,
+active actions with rollback, pressure per watched cgroup, incidents
+with their bundles, and the loaded policies.
+
 %prep
 %autosetup -n %{name}-%{version}
 
@@ -80,6 +91,10 @@ install -Dpm 0644 packaging/selinux/%{modulename}.pp.bz2 \
     %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
 install -Dpm 0644 packaging/selinux/%{modulename}.if \
     %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
+
+install -d -m 0755 %{buildroot}%{_datadir}/cockpit/sentry-v2
+install -pm 0644 cockpit/manifest.json cockpit/index.html cockpit/sentry-v2.js cockpit/sentry-v2.css \
+    %{buildroot}%{_datadir}/cockpit/sentry-v2/
 
 %check
 # sentry_v2.daemon is the console script's target and doesn't exist yet;
@@ -144,6 +159,13 @@ fi
 %{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
 %{_datadir}/selinux/devel/include/distributed/%{modulename}.if
 %ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{modulename}
+
+%files cockpit
+%dir %{_datadir}/cockpit/sentry-v2
+%{_datadir}/cockpit/sentry-v2/manifest.json
+%{_datadir}/cockpit/sentry-v2/index.html
+%{_datadir}/cockpit/sentry-v2/sentry-v2.js
+%{_datadir}/cockpit/sentry-v2/sentry-v2.css
 
 %changelog
 * Wed Oct 14 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.1.0-1
