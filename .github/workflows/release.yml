@@ -59,14 +59,13 @@ jobs:
     steps:
       - name: Install build dependencies
         run: |
-          dnf -y install dnf-plugins-core
-          dnf config-manager --set-enabled crb
-          dnf -y install rpm-build python3-devel pyproject-rpm-macros systemd-rpm-macros \
-            selinux-policy-devel python3-wheel python3-setuptools bzip2 make
+          dnf -y install dnf-plugins-core rpm-build make bzip2 tar
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      # rpmbuild is already here, so make rpm builds in place.
+      # rpmbuild is already here, so make rpm builds in place. It runs
+      # `dnf builddep` (CRB enabled) on the SRPM, so the spec is the only
+      # list of build dependencies.
       - run: make rpm
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

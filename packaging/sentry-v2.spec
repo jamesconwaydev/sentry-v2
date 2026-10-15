@@ -20,6 +20,9 @@ BuildRequires:  pyproject-rpm-macros
 BuildRequires:  systemd-rpm-macros
 BuildRequires:  selinux-policy-devel
 BuildRequires:  bzip2
+# %%selinux_requires adds this at build time, but only after dnf builddep has
+# read the spec, so it has to be spelled out for builddep to install it.
+BuildRequires:  pkgconfig(systemd)
 %if %{with tests}
 BuildRequires:  python3-pytest
 %endif
