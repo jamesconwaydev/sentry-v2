@@ -65,9 +65,23 @@ flowchart LR
 
 ## Quickstart
 
-Grab the RPMs from [Releases](https://github.com/jamesconwaydev/sentry-v2/releases).
-The first tagged release is on its way; until then, build the RPMs from
-source (see [Installation](docs/installation.md#from-source)).
+Download the RPMs from the
+[v0.1.0 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.1.0)
+and check them against `SHA256SUMS` before you install:
+
+```console
+$ sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Every file also carries build provenance. If you have the `gh` CLI, confirm
+a download came from this repository's release workflow:
+
+```console
+$ gh attestation verify <file> --repo jamesconwaydev/sentry-v2
+```
+
+Prefer to build it yourself? See [Installation](docs/installation.md#from-source).
+Then install:
 
 ```console
 # dnf install ./sentry-v2-0.1.0-*.noarch.rpm ./sentry-v2-selinux-0.1.0-*.noarch.rpm

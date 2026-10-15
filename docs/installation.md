@@ -6,10 +6,22 @@ packages from BaseOS and AppStream only. No EPEL.
 
 ## From the RPM (recommended)
 
-Download the packages for the latest release from
-[GitHub Releases](https://github.com/jamesconwaydev/sentry-v2/releases).
-The first tagged release is on its way; until then, build the RPMs from
-source (see [From source](#from-source)) and install them the same way.
+Download the RPMs from the
+[v0.1.0 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.1.0)
+and check them against `SHA256SUMS` before you install:
+
+```console
+$ sha256sum -c SHA256SUMS --ignore-missing
+```
+
+Every file also carries build provenance. If you have the `gh` CLI, confirm
+a download came from this repository's release workflow:
+
+```console
+$ gh attestation verify <file> --repo jamesconwaydev/sentry-v2
+```
+
+Prefer to build it yourself? See [From source](#from-source).
 
 | Package | What it is |
 |---|---|

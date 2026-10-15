@@ -216,9 +216,11 @@ class Commands:
     async def restore(self, args: dict[str, Any]) -> dict[str, Any]:
         """Put backed-up unit files back after checking every hash in the manifest.
 
-        Nothing is written unless all of it can be: files that still match
-        the backup are skipped, and a changed file outside RESTORE_ROOTS
-        refuses the whole restore up front.
+        The pre-flight refuses before anything is written: files that still
+        match the backup are skipped, and a changed file outside
+        RESTORE_ROOTS refuses the whole restore. Writing isn't atomic, so an
+        OS error part-way through can leave a partial restore; the error
+        lists what was restored.
         """
         backup_id = _required(args, "backup_id", str)
         m = _BACKUP_ID.fullmatch(backup_id)

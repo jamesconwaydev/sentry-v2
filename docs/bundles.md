@@ -299,5 +299,9 @@ only yours.
 - A secret that doesn't match a pattern goes out as is. Redaction is a
   safety net, not a guarantee; keep secrets out of command lines and logs
   in the first place.
+- Two shapes slip past the defaults: a JSON-quoted
+  `"Authorization": "Basic …"` value, and a Digest `response=` field. If
+  your logs carry them, add a pattern, for example
+  `'(?i)"authorization"\s*:\s*"[^"]*"'` or `'(?i)\bresponse="[0-9a-f]+"'`.
 - A slow, backtracking pattern runs on every string in every bundle. Keep
   patterns anchored on a literal prefix where you can.
