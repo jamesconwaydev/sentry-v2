@@ -52,7 +52,12 @@ def test_unit_file_hardening() -> None:
     }
     assert {k: svc.get(k) for k in expected} == expected
     assert "ExecReload" not in svc  # notify-reload sends SIGHUP itself
-    assert set(svc["ReadWritePaths"].split()) == {"/var/lib/sentry-v2", "/sys/fs/cgroup"}
+    assert set(svc["ReadWritePaths"].split()) == {
+        "/var/lib/sentry-v2",
+        "/sys/fs/cgroup",
+        "-/etc/systemd/system",
+        "-/run/systemd/system",
+    }
     assert unit["Install"]["WantedBy"] == "multi-user.target"
 
 

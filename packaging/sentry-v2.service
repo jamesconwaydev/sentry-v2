@@ -46,8 +46,11 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 # PSI triggers are registered by writing to <cgroup>/*.pressure. The state
 # directory is writable through StateDirectory= anyway; it's listed so
-# every writable path shows up in one place.
-ReadWritePaths=/var/lib/sentry-v2 /sys/fs/cgroup
+# every writable path shows up in one place. `sentry-v2ctl restore` writes
+# backed-up unit files and drop-ins back to the two unit directories admins
+# edit; a backup_reload `paths` entry elsewhere can be read for the backup
+# but has to be restored by hand.
+ReadWritePaths=/var/lib/sentry-v2 /sys/fs/cgroup -/etc/systemd/system -/run/systemd/system
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
