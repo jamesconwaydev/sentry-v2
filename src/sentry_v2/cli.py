@@ -164,6 +164,18 @@ def _actions(r: dict[str, Any]) -> str:
     )
 
 
+def _policies(r: dict[str, Any]) -> str:
+    rows = [
+        [p["name"], p["mode"], p["effective_mode"], p["signal"], ", ".join(p["actions"]),
+         p["source"]]
+        for p in r["policies"]
+    ]  # fmt: skip
+    out = _table(rows, ["NAME", "MODE", "EFFECTIVE", "SIGNAL", "ACTIONS", "SOURCE"])
+    if r["last_reload_error"]:
+        out += "\n\n" + _clean(f"last reload failed: {r['last_reload_error']}")
+    return out
+
+
 def _top_loop(client: ControlClient, sort: str, as_json: bool, once: bool) -> int:
     live = sys.stdout.isatty() and not once
     try:
@@ -190,6 +202,7 @@ _HUMAN: dict[str, Callable[[dict[str, Any]], str]] = {
     "status": _status,
     "incidents": _incidents,
     "actions": _actions,
+    "policies": _policies,
     "show": lambda r: json.dumps(r["bundle"], indent=2),
     "rollback": _rolled_back,
     "pause": lambda r: "paused" if r["paused"] else "resumed",
@@ -394,6 +407,7 @@ def _parser() -> argparse.ArgumentParser:
     i.add_argument("--limit", type=_positive, help="how many to show (daemon default 50)")
     add("show", "full bundle for one incident").add_argument("id")
     add("actions", "active and recent actions")
+    add("policies", "loaded policies and the last reload error")
     r = add("rollback", "undo an action now")
     g = r.add_mutually_exclusive_group(required=True)
     g.add_argument("id", nargs="?", help="action id")

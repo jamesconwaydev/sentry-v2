@@ -372,3 +372,28 @@ def test_bidi_stripped(stub, capsys):
         "result": {"active": [{"id": "a", "target": "a\u202eb"}], "recent": []},
     }
     assert "\u202e" not in run(stub, capsys, "actions")[1]
+
+
+POLICIES = {
+    "policies": [
+        {
+            "name": "memory-hog",
+            "mode": "enforce",
+            "effective_mode": "dry-run",
+            "signal": "psi",
+            "actions": ["throttle", "notify"],
+            "source": "/etc/sentry-v2/policies.d/10-memory.toml",
+        }
+    ],
+    "last_reload_error": "99-bad.toml: policy[0].when.bogus: unknown key",
+}
+
+
+def test_policies(stub, capsys):
+    stub.replies["policies"] = {"ok": True, "result": POLICIES}
+    rc, out, _ = run(stub, capsys, "policies")
+    assert rc == 0
+    assert "memory-hog" in out and "throttle, notify" in out and "10-memory.toml" in out
+    assert "last reload failed: 99-bad.toml: policy[0].when.bogus" in out
+    rc, out, _ = run(stub, capsys, "policies", "--json")
+    assert rc == 0 and json.loads(out) == POLICIES
