@@ -1,4 +1,6 @@
 %global upstream_version 0.1.0
+%global selinuxtype targeted
+%global modulename sentry_v2
 
 # The unit tests need python3-pytest, which EL10 only ships in CRB/EPEL.
 %bcond_with tests
@@ -16,6 +18,8 @@ BuildArch:      noarch
 BuildRequires:  python3-devel
 BuildRequires:  pyproject-rpm-macros
 BuildRequires:  systemd-rpm-macros
+BuildRequires:  selinux-policy-devel
+BuildRequires:  bzip2
 %if %{with tests}
 BuildRequires:  python3-pytest
 %endif
@@ -32,6 +36,17 @@ fixed time through systemd and always roll the change back. Every policy
 and the daemon itself start in dry-run, and the service is not enabled
 on install.
 
+%package selinux
+Summary:        SELinux policy module for sentry-v2
+Requires:       %{name} = %{version}-%{release}
+Requires:       selinux-policy-%{selinuxtype}
+Requires(post): selinux-policy-%{selinuxtype}
+Requires(post): policycoreutils
+%{?selinux_requires}
+
+%description selinux
+Confines the sentry-v2 daemon in the sentry_v2_t domain.
+
 %prep
 %autosetup -n %{name}-%{version}
 
@@ -40,6 +55,8 @@ on install.
 
 %build
 %pyproject_wheel
+%make_build -C packaging/selinux -f %{_datadir}/selinux/devel/Makefile %{modulename}.pp
+bzip2 -9 packaging/selinux/%{modulename}.pp
 
 %install
 %pyproject_install
@@ -55,6 +72,10 @@ install -pm 0644 packaging/examples/policies.d/*.toml %{buildroot}%{_sysconfdir}
 install -d -m 0700 %{buildroot}%{_sharedstatedir}/sentry-v2
 install -d -m 0750 %{buildroot}/run/sentry-v2
 
+install -Dpm 0644 packaging/selinux/%{modulename}.pp.bz2 \
+    %{buildroot}%{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+install -Dpm 0644 packaging/selinux/%{modulename}.if \
+    %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
 
 %check
 %pyproject_check_import -e sentry_v2.daemon -e sentry_v2.cli
@@ -73,6 +94,20 @@ install -d -m 0750 %{buildroot}/run/sentry-v2
 %postun
 %systemd_postun_with_restart sentry-v2.service
 
+%pre selinux
+%selinux_relabel_pre -s %{selinuxtype}
+
+%post selinux
+%selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+
+%postun selinux
+if [ $1 -eq 0 ]; then
+    %selinux_modules_uninstall -s %{selinuxtype} %{modulename}
+fi
+
+%posttrans selinux
+%selinux_relabel_post -s %{selinuxtype}
+
 %files -f %{pyproject_files}
 %license LICENSE
 %doc README.md
@@ -88,6 +123,11 @@ install -d -m 0750 %{buildroot}/run/sentry-v2
 %config(noreplace) %{_sysconfdir}/sentry-v2/policies.d/*.toml
 %dir %attr(0700,root,root) %{_sharedstatedir}/sentry-v2
 %ghost %dir %attr(0750,root,sentry-v2) /run/sentry-v2
+
+%files selinux
+%{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
+%ghost %verify(not md5 size mode mtime) %{_sharedstatedir}/selinux/%{selinuxtype}/active/modules/200/%{modulename}
 
 %changelog
 * Wed Oct 14 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.1.0-1

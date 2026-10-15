@@ -1,0 +1,20 @@
+## <summary>Sentry-v2 pressure, failure and SELinux denial monitor.</summary>
+
+########################################
+## <summary>
+##	Connect to the sentry-v2 control socket.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`sentry_v2_stream_connect',`
+	gen_require(`
+		type sentry_v2_t, sentry_v2_var_run_t;
+	')
+
+	files_search_pids($1)
+	stream_connect_pattern($1, sentry_v2_var_run_t, sentry_v2_var_run_t, sentry_v2_t)
+')

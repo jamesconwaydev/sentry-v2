@@ -1,0 +1,129 @@
+policy_module(sentry_v2, 0.1.0)
+
+# First draft. Each rule says which part of the daemon needs it; the
+# integration suite on the EL10 host decides what stays.
+
+########################################
+#
+# Declarations
+#
+
+type sentry_v2_t;
+type sentry_v2_exec_t;
+init_daemon_domain(sentry_v2_t, sentry_v2_exec_t)
+
+type sentry_v2_conf_t;
+files_config_file(sentry_v2_conf_t)
+
+type sentry_v2_var_lib_t;
+files_type(sentry_v2_var_lib_t)
+
+type sentry_v2_var_run_t;
+files_pid_file(sentry_v2_var_run_t)
+
+type sentry_v2_unit_file_t;
+systemd_unit_file(sentry_v2_unit_file_t)
+
+########################################
+#
+# Local policy
+#
+
+# The capabilities left in CapabilityBoundingSet: reading other services'
+# /proc entries and files regardless of their mode.
+allow sentry_v2_t self:capability { dac_read_search sys_ptrace };
+# Joining the audit multicast group (collectors/audit.py).
+allow sentry_v2_t self:capability2 audit_read;
+# SIGTERM/SIGHUP handling and the asyncio self-pipe.
+allow sentry_v2_t self:process { getsched signal };
+allow sentry_v2_t self:fifo_file rw_fifo_file_perms;
+allow sentry_v2_t self:unix_dgram_socket create_socket_perms;
+allow sentry_v2_t self:unix_stream_socket { create_stream_socket_perms connectto };
+# Outbound sinks and the optional metrics listener.
+allow sentry_v2_t self:tcp_socket create_stream_socket_perms;
+allow sentry_v2_t self:udp_socket create_socket_perms;
+
+# AVC collector: AF_NETLINK/NETLINK_AUDIT socket bound to the multicast group.
+allow sentry_v2_t self:netlink_audit_socket { create bind read getattr nlmsg_read nlmsg_readpriv };
+# AVC collector fallback: tail /var/log/audit/audit.log when netlink is refused.
+logging_read_audit_log(sentry_v2_t)
+
+# Python itself: the interpreter, the stdlib and its C extensions.
+corecmd_exec_bin(sentry_v2_t)
+libs_use_ld_so(sentry_v2_t)
+libs_use_shared_libs(sentry_v2_t)
+files_read_usr_files(sentry_v2_t)
+miscfiles_read_localization(sentry_v2_t)
+dev_read_urand(sentry_v2_t)
+
+# Config loader: /etc/sentry-v2 and policies.d.
+read_files_pattern(sentry_v2_t, sentry_v2_conf_t, sentry_v2_conf_t)
+list_dirs_pattern(sentry_v2_t, sentry_v2_conf_t, sentry_v2_conf_t)
+# Bundle host section (/etc/os-release, /etc/machine-id) and group lookups
+# for the control socket's peer checks.
+files_read_etc_files(sentry_v2_t)
+auth_use_nsswitch(sentry_v2_t)
+
+# Action journal, bundles, spool and backups under /var/lib/sentry-v2.
+manage_dirs_pattern(sentry_v2_t, sentry_v2_var_lib_t, sentry_v2_var_lib_t)
+manage_files_pattern(sentry_v2_t, sentry_v2_var_lib_t, sentry_v2_var_lib_t)
+files_var_lib_filetrans(sentry_v2_t, sentry_v2_var_lib_t, dir)
+
+# Control socket /run/sentry-v2/control.sock.
+manage_dirs_pattern(sentry_v2_t, sentry_v2_var_run_t, sentry_v2_var_run_t)
+manage_sock_files_pattern(sentry_v2_t, sentry_v2_var_run_t, sentry_v2_var_run_t)
+files_pid_filetrans(sentry_v2_t, sentry_v2_var_run_t, dir)
+
+# PSI collector: read *.pressure, register triggers by writing to them and
+# poll for events; walk the hierarchy to resolve unit cgroups.
+fs_list_cgroup_dirs(sentry_v2_t)
+fs_rw_cgroup_files(sentry_v2_t)
+fs_watch_cgroup_files(sentry_v2_t)
+
+# Journal collector: persistent journal in /var/log/journal, volatile one in
+# /run/log/journal; sd-journal maps the files and watches the directories.
+logging_read_generic_logs(sentry_v2_t)
+logging_read_syslog_pid(sentry_v2_t)
+logging_mmap_journal(sentry_v2_t)
+logging_watch_journal_dir(sentry_v2_t)
+# The daemon's own log output.
+logging_send_syslog_msg(sentry_v2_t)
+
+# Bundle context: /proc/<pid> of the failing unit, /proc/pressure, meminfo.
+domain_read_all_domains_state(sentry_v2_t)
+kernel_read_system_state(sentry_v2_t)
+kernel_read_kernel_sysctls(sentry_v2_t)
+dev_read_sysfs(sentry_v2_t)
+
+# systemd over D-Bus: unit properties, SetUnitProperties (throttle),
+# FreezeUnit/ThawUnit and ReloadUnit (backup_reload).
+dbus_system_bus_client(sentry_v2_t)
+init_dbus_chat(sentry_v2_t)
+init_status(sentry_v2_t)
+systemd_status_all_unit_files(sentry_v2_t)
+systemd_start_all_unit_files(sentry_v2_t)
+gen_require(`
+	attribute systemd_unit_file_type;
+')
+# No interface grants these: FreezeUnit is checked as stop, ReloadUnit as reload.
+allow sentry_v2_t systemd_unit_file_type:service { stop reload };
+# backup_reload copies the unit fragment and its drop-ins.
+systemd_read_unit_files(sentry_v2_t)
+# Type=notify readiness and watchdog pings.
+init_dgram_send(sentry_v2_t)
+
+# Sinks. Webhook and Splunk HEC over HTTPS (443, or HEC's 8088, which is
+# unlabelled), Elastic on 9200, remote syslog on 514/6514.
+sysnet_dns_name_resolve(sentry_v2_t)
+miscfiles_read_generic_certs(sentry_v2_t)
+corenet_tcp_sendrecv_generic_node(sentry_v2_t)
+corenet_tcp_connect_http_port(sentry_v2_t)
+corenet_tcp_connect_unreserved_ports(sentry_v2_t)
+corenet_tcp_connect_wap_wsp_port(sentry_v2_t)
+corenet_tcp_connect_syslogd_port(sentry_v2_t)
+corenet_tcp_connect_syslog_tls_port(sentry_v2_t)
+corenet_udp_send_syslogd_port(sentry_v2_t)
+
+# Optional metrics listener on 127.0.0.1:9787 (unlabelled port).
+corenet_tcp_bind_generic_node(sentry_v2_t)
+corenet_tcp_bind_unreserved_ports(sentry_v2_t)
