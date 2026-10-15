@@ -217,7 +217,8 @@ class Correlator:
         if known is not None and known[0] < before_us:
             return known[1]
         i = bisect.bisect_left(self._events, before_us, key=_ts)
-        # ponytail: walks back through older events; runs only for AVCs in a failure window
+        # Known limit: walks back through older events, but only for AVCs in a
+        # failure window (upgrade path: index the newest denial per unit).
         for k in range(i - 1, -1, -1):
             ev = self._events[k]
             if isinstance(ev, AvcEvent) and ev.unit_at_receipt == unit:

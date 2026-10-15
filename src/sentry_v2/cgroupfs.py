@@ -36,8 +36,8 @@ class CgroupFS:
         """Cgroup directories (relative paths) matching any pattern."""
         pats = tuple(patterns)
         found: list[str] = []
-        # ponytail: walks the whole cgroup tree; ceiling is a few thousand
-        # cgroups per resolve. Upgrade: prune by each pattern's literal prefix.
+        # Known limit: walks the whole cgroup tree, fine up to a few thousand
+        # cgroups per resolve (upgrade path: prune by each pattern's literal prefix).
         for dirpath, _dirs, _files in os.walk(self.root):
             rel = Path(dirpath).relative_to(self.root).as_posix()
             if rel != "." and any(target_matches(p, rel) for p in pats):

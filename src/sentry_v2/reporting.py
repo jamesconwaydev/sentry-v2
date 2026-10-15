@@ -137,7 +137,8 @@ class Reporter:
     async def sinks_notify(self, incident: Incident, records: list[ActionRecord]) -> None:
         """The executor's hook: build and send the bundle in the background."""
         rows = [dataclasses.asdict(r) for r in records]
-        # ponytail: waiting builders are unbounded; an incident flood queues coroutines
+        # Known limit: waiting builders are unbounded, so an incident flood queues
+        # coroutines (upgrade path: a semaphore or a bounded queue).
         self._spawn(self._bundle(incident, rows), f"bundle {incident.id}", self._bundles)
 
     async def alert(self, kind: str, detail: dict[str, Any]) -> None:

@@ -86,7 +86,8 @@ class SyslogSink:
             return
         line = format_message(bundle, self._hostname, self._app_name)
         frame = f"{len(line)} ".encode() + line  # RFC 6587 octet counting
-        # ponytail: a connection per bundle; bundles are rare, keep one open if that changes
+        # Known limit: a connection per bundle, fine while bundles are rare
+        # (upgrade path: keep one connection open).
         with socket.create_connection((self.host, self.port), timeout=self._timeout) as raw:
             if self._context is not None:
                 with self._context.wrap_socket(raw, server_hostname=self.host) as tls:
