@@ -9,6 +9,7 @@ import os
 import select
 import time
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -71,6 +72,8 @@ class PsiCollector:
         self._by_trigger: dict[Key, int] = {}
         self._warned: set[Key] = set()
         self._ep: Any = None
+        self._pool: ThreadPoolExecutor | None = None
+        self._watch_error: str | None = None
 
     def _epoll(self) -> Any:
         """The epoll object, created on first use; None where epoll is absent."""
@@ -81,6 +84,12 @@ class PsiCollector:
     def health(self) -> dict[str, object]:
         if not self._fs.psi_available():
             return {"state": "disabled", "hint": DISABLED_HINT}
+        if self._watch_error is not None:
+            return {
+                "state": "error",
+                "triggers": len(self._fds),
+                "watcher_error": self._watch_error,
+            }
         return {"state": "ok", "triggers": len(self._fds)}
 
     def resolve(self) -> None:
@@ -118,6 +127,10 @@ class PsiCollector:
             os.close(fd)
 
     def close(self) -> None:
+        if self._pool is not None:
+            # a poll() in flight returns within WAIT_TIMEOUT; nobody waits for it
+            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool = None
         for fd in list(self._fds):
             self._close(fd)
         if self._ep is not None:
@@ -166,12 +179,20 @@ class PsiCollector:
         ep = self._ep
         return ep.poll(WAIT_TIMEOUT) if ep is not None else []
 
-    async def _watch(self) -> None:
-        # ponytail: an fd closed and reopened between poll() and dispatch could
-        # take one stray event; resolve() runs every 30s, so that's rare
+    async def _watch(self, pool: ThreadPoolExecutor) -> None:
+        # Known limit: an fd closed and reopened between poll() and dispatch
+        # could take one stray event. resolve() runs every 30s, so that's rare
+        # (upgrade path: tag registrations with a generation number).
+        loop = asyncio.get_running_loop()
         while True:
-            for fd, mask in await asyncio.to_thread(self._wait):
+            for fd, mask in await loop.run_in_executor(pool, self._wait):
                 self._dispatch(fd, mask)
+
+    def _watcher_done(self, task: asyncio.Task[None]) -> None:
+        if task.cancelled() or (e := task.exception()) is None:
+            return
+        log.error("psi trigger watcher failed", exc_info=e)
+        self._watch_error = f"{type(e).__name__}: {e}"
 
     def sample_once(self) -> None:
         for key in {k[:3] for k in self._fds.values()}:
@@ -181,7 +202,12 @@ class PsiCollector:
         if not self._fs.psi_available():
             log.warning(DISABLED_HINT)
             return
-        watcher = asyncio.create_task(self._watch()) if self._epoll() is not None else None
+        watcher = None
+        if self._epoll() is not None:
+            # its own thread, so a blocked poll() never holds up asyncio.to_thread users
+            self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="psi-triggers")
+            watcher = asyncio.create_task(self._watch(self._pool))
+            watcher.add_done_callback(self._watcher_done)
         last_resolve = float("-inf")
         try:
             while True:
@@ -193,6 +219,9 @@ class PsiCollector:
                     self.sample_once()
                 except Exception:
                     log.exception("psi collector iteration failed")
+                if self._watch_error is not None:
+                    # the daemon's supervisor restarts the collector, watcher and all
+                    raise RuntimeError(f"trigger watcher failed: {self._watch_error}")
                 await asyncio.sleep(self._sample_interval)
         finally:
             if watcher is not None:

@@ -309,3 +309,31 @@ def test_run_waits_on_the_trigger_epoll_off_the_loop(fake_cgroupfs: Path) -> Non
 
     asyncio.run(main())
     assert triggered()
+
+
+class BrokenEpoll(BlockingEpoll):
+    def poll(self, timeout: float = -1) -> list[tuple[int, int]]:
+        raise OSError(9, "Bad file descriptor")
+
+
+def test_watcher_failure_is_reported_and_stops_the_collector(
+    fake_cgroupfs: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    c = collector(fake_cgroupfs, Opener())
+    c._sample_interval = 0.01
+    c._ep = BrokenEpoll()
+
+    async def main() -> None:
+        with pytest.raises(RuntimeError, match="trigger watcher failed: OSError"):
+            await asyncio.wait_for(c.run(), 5)
+
+    asyncio.run(main())
+    assert "psi trigger watcher failed" in caplog.text
+    assert c._pool is None  # the worker thread is shut down with the collector
+
+
+def test_health_reports_a_failed_watcher(fake_cgroupfs: Path) -> None:
+    c = collector(fake_cgroupfs, Opener())
+    c._watch_error = "OSError: boom"
+    assert c.health()["state"] == "error"
+    assert c.health()["watcher_error"] == "OSError: boom"
