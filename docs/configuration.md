@@ -95,7 +95,8 @@ before you do.
 The built-in list can't be turned off: `init.scope`, `-.slice`,
 `system.slice`, `user.slice`, `sshd.service`, `systemd-journald.service`,
 `dbus-broker.service`, `dbus.service`, `systemd-logind.service`,
-`auditd.service`, `sentry-v2.service` and `systemd-*.service`.
+`auditd.service`, `sentry-v2.service`, `systemd-*.service`, and the login
+sessions `user-*.slice`, `session-*.scope` and `user@*.service`.
 
 The example config ships with `protected = ["nginx.service"]` as a
 placeholder. Replace it with the services you can least afford to stall.

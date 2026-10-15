@@ -27,6 +27,10 @@ PROTECTED: frozenset[str] = frozenset(
         "auditd.service",
         "sentry-v2.service",
         "systemd-*.service",
+        # people's logins: freezing one locks someone out mid-session
+        "user-*.slice",
+        "session-*.scope",
+        "user@*.service",
     }
 )
 

@@ -24,6 +24,11 @@ def test_is_protected() -> None:
     assert not is_protected("batch-1.service", [])
 
 
+@pytest.mark.parametrize("unit", ["user-1000.slice", "session-3.scope", "user@1000.service"])
+def test_user_sessions_are_protected(unit: str) -> None:
+    assert is_protected(unit, [])
+
+
 class Clock:
     now = 1000.0
 

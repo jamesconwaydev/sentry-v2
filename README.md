@@ -110,8 +110,9 @@ Sentry-v2 changes running services, so it's built to be boring about it.
   `daemon.mode` and the policy's `mode` both say `enforce`. `sentry-v2ctl
   pause` and the circuit breaker force dry-run on top of that.
 - Protected units. SSH, journald, D-Bus, logind, auditd, systemd's own
-  services, the top-level slices and Sentry-v2 itself are never throttled,
-  frozen or reloaded. Add your own with `protection.protected`.
+  services, the top-level slices, everyone's login sessions and Sentry-v2
+  itself are never throttled, frozen or reloaded. Add your own with
+  `protection.protected`.
 - Rollback guarantees. Each throttle and freeze is written to disk
   with the values it will restore before systemd is touched, then undone at
   expiry, on shutdown, and on the next start after a crash. A throttle you

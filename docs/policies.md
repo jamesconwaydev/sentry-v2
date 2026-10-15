@@ -285,8 +285,9 @@ configuration keeps cooldown history.
 Some units are never throttled, frozen or reloaded, whatever a policy says:
 `init.scope`, `-.slice`, `system.slice`, `user.slice`, `sshd.service`,
 `systemd-journald.service`, `dbus-broker.service`, `dbus.service`,
-`systemd-logind.service`, `auditd.service`, `sentry-v2.service` and every
-`systemd-*.service`, plus anything in `protection.protected`.
+`systemd-logind.service`, `auditd.service`, `sentry-v2.service`, every
+`systemd-*.service`, and people's logins: `user-*.slice`, `session-*.scope`
+and `user@*.service`. Add your own with `protection.protected`.
 
 There are two checks:
 
