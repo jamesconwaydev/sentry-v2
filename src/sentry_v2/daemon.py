@@ -47,7 +47,9 @@ log = logging.getLogger(__name__)
 TICK = 0.25  # correlator tick
 HEALTHY_AFTER = 300.0  # a collector that ran this long restarts from the minimum backoff
 BUNDLE_DRAIN = 5.0  # shutdown waits this long for bundles still being built
-SAMPLE_TTL = 300.0
+# The PSI collector samples every live trigger every 5s; three missed samples
+# mean the cgroup is gone, so psi and the metrics stop showing it.
+SAMPLE_TTL = 15.0
 INCIDENT_HISTORY = 500
 RECENT_ACTIONS = 100
 MUTATING = {"rollback", "pause", "resume", "reload", "restore"}
