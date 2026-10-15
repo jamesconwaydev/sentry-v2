@@ -50,9 +50,11 @@ def test_metrics_port_label() -> None:
 
 def test_no_denials_for_the_daemon() -> None:
     start = os.environ.get("SV2_SUITE_START", "boot")
-    r = sh(
-        "env", "LC_ALL=C", "ausearch", "--input-logs", "-i", "-m", "AVC,USER_AVC", "-su", "sentry_v2_t",
+    out = sh(
+        "env", "LC_ALL=C", "ausearch", "--input-logs", "-m", "AVC,USER_AVC,SELINUX_ERR",
         "-ts", *start.split(), check=False,
-    )  # fmt: skip
-    # ausearch exits 1 with "<no matches>" when there is nothing to show
-    assert r.returncode == 1 and "no matches" in r.stderr, r.stdout
+    ).stdout  # fmt: skip
+    # Not `-su sentry_v2_t`: that misses the USER_AVCs systemd raises when
+    # it refuses one of the daemon's D-Bus calls, since systemd sends those.
+    denials = [e for e in out.split("----") if "scontext=system_u:system_r:sentry_v2_t" in e]
+    assert not denials, "\n".join(denials)

@@ -49,7 +49,7 @@ remote() {
 	epoch=$(date +%s)
 	sudo systemctl start sentry-v2
 	# shellcheck disable=SC2086 # PYTEST_ARGS is a list of words on purpose
-	sudo SV2_SUITE_START="$sdate $stime" "$VENV/bin/pytest" -m integration tests/integration \
+	sudo PYTHONDONTWRITEBYTECODE=1 SV2_SUITE_START="$sdate $stime" "$VENV/bin/pytest" -m integration tests/integration \
 		-p no:cacheprovider -o addopts='' -v ${PYTEST_ARGS:-} || rc=$?
 
 	rm -rf "$OUT" && mkdir -p "$OUT"
@@ -59,8 +59,8 @@ remote() {
 		cp /tmp/sv2-rpmbuild.log "$OUT/rpmbuild.log"
 		sudo journalctl -u sentry-v2 --since "@$epoch" --no-pager >"$OUT/journal.txt"
 		sudo env LC_ALL=C ausearch --input-logs -i -m AVC,USER_AVC,SELINUX_ERR -ts "$sdate" "$stime" >"$OUT/avc.txt" 2>&1
-		sudo env LC_ALL=C ausearch --input-logs -i -m AVC,USER_AVC -su sentry_v2_t -ts "$sdate" "$stime" \
-			>"$OUT/avc-sentry_v2_t.txt" 2>&1
+		# systemd sends the USER_AVCs for refused D-Bus calls, so match on scontext
+		grep sentry_v2_t "$OUT/avc.txt" >"$OUT/avc-sentry_v2_t.txt"
 		systemctl show sentry-v2 -p CapabilityBoundingSet,ActiveState,NRestarts >"$OUT/unit.txt"
 	} || true
 

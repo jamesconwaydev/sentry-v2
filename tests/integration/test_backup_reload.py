@@ -9,6 +9,7 @@ active again and ReloadUnit has something to reload.
 from __future__ import annotations
 
 import hashlib
+import os
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -49,6 +50,10 @@ def flaky_unit() -> Iterator[str]:
         sh("systemctl", "daemon-reload")
 
 
+def _label(path: Path) -> str:
+    return os.getxattr(path, "security.selinux").decode().strip("\0").split(":")[2]
+
+
 def test_backup_reload_and_restore(flaky_unit: str) -> None:
     rec = wait_for(
         lambda: next(
@@ -70,7 +75,11 @@ def test_backup_reload_and_restore(flaky_unit: str) -> None:
     drop_in = UNITS / f"{flaky_unit}.d" / "10-itest.conf"
     assert set(copied) == {str(UNITS / flaky_unit), str(drop_in)}
 
+    # copies take the backup directory's label, not the unit file's
+    assert _label(bdir / "files" / str(drop_in).lstrip("/")) == "sentry_v2_var_lib_t"
+
     drop_in.write_text("[Service]\nEnvironment=SENTRY_ITEST=changed\n")
     restored = ctl("restore", backup_id)
     assert sorted(restored["restored"]) == sorted(copied)
     assert drop_in.read_text() == DROP_IN
+    assert _label(drop_in) == "systemd_unit_file_t"
