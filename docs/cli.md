@@ -133,8 +133,9 @@ first. The recent list is kept in memory and starts empty after a
 restart; the full history is in `/var/lib/sentry-v2/state/actions.jsonl`. The `WHEN`
 column shows the expiry when a record has one and the record time
 otherwise.
-The `ID` column shows the first 8 characters; `--json` has the full ids,
-which `rollback` needs.
+The `ID` column shows the last 8 characters of each id. The first ones are
+a timestamp, so actions taken in the same second would look alike; the end
+is random. `--json` has the full ids.
 
 ### policies
 
@@ -152,7 +153,11 @@ unit-failure-notify       dry-run  dry-run    unit_failed  notify            /et
 
 ### rollback ID | --all
 
-Undo an action now. Give either an action id or `--all`.
+Undo an action now. Give either an action id or `--all`. You don't have to
+type the whole id: any 6 or more characters from its start or end will do,
+such as the 8 in the `actions` table, as long as they match just one action
+in the `actions` output. If they match several, you get the full ids to
+choose from. An action older than the last 100 records needs its full id.
 
 | Form | Effect |
 |---|---|
@@ -160,7 +165,7 @@ Undo an action now. Give either an action id or `--all`.
 | `rollback --all` | Roll back every active throttle and freeze. |
 
 ```console
-$ sentry-v2ctl rollback --all
+$ sentry-v2ctl rollback 4d5c6b7a
 rolled back 0199f2b4-1d2e-7a00-8c11-2f3e4d5c6b7a  throttle on batch-report.service
 ```
 

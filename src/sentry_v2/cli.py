@@ -29,6 +29,8 @@ DEFAULT_CONFIG = "/etc/sentry-v2/sentry-v2.toml"
 DEFAULT_POLICIES = "/etc/sentry-v2/policies.d"
 _US = 1_000_000
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+_FULL_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+MIN_SHORT_ID = 6
 _COLOURS = {
     "failed": "31", "rollback_failed": "31", "high": "31", "critical": "31",
     "applied": "32", "ok": "32",
@@ -92,7 +94,7 @@ def _when(v: object) -> str:
 def _action_rows(records: list[dict[str, Any]]) -> list[list[str]]:
     return [
         [
-            str(r.get("id", ""))[:8],
+            str(r.get("id", ""))[-8:],  # a UUIDv7 starts with its timestamp
             str(r.get("policy", "")),
             str(r.get("action", "")),
             str(r.get("target", "")),
@@ -233,10 +235,29 @@ def _call_args(args: argparse.Namespace) -> dict[str, Any]:
     return {}
 
 
+def _resolve_id(client: ControlClient, given: str) -> str:
+    """Expand a unique prefix or suffix of a recent action's id to the full id."""
+    given = given.lower()
+    if _FULL_ID.fullmatch(given):
+        return given
+    if len(given) < MIN_SHORT_ID:
+        raise ControlError(f"give at least {MIN_SHORT_ID} characters of the action id")
+    acts = client.call("actions")
+    ids = {str(r["id"]) for r in acts["active"] + acts["recent"]}
+    matches = sorted(i for i in ids if i.startswith(given) or i.endswith(given))
+    if not matches:
+        raise ControlError(f"no recent action matches {given}; try the full id")
+    if len(matches) > 1:
+        raise ControlError(f"{given} matches more than one action: {', '.join(matches)}")
+    return matches[0]
+
+
 def _daemon(args: argparse.Namespace) -> int:
     client = ControlClient(Path(args.socket))
     if args.cmd == "top":
         return _top_loop(client, args.sort, args.json, args.once)
+    if args.cmd == "rollback" and not args.all:
+        args.id = _resolve_id(client, args.id)
     result = client.call(args.cmd, **_call_args(args))
     print(json.dumps(result) if args.json else _HUMAN[args.cmd](result))
     return 0
@@ -417,7 +438,7 @@ def _parser() -> argparse.ArgumentParser:
     add("policies", "loaded policies and the last reload error")
     r = add("rollback", "undo an action now")
     g = r.add_mutually_exclusive_group(required=True)
-    g.add_argument("id", nargs="?", help="action id")
+    g.add_argument("id", nargs="?", help="action id, or a unique 6+ character start or end of one")
     g.add_argument("--all", action="store_true", help="undo every active action")
     add("pause", "stop applying actions; keep watching")
     add("resume", "start applying actions again")
