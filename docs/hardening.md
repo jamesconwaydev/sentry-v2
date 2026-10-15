@@ -203,7 +203,11 @@ refused and logged as a denial.
 Sink secrets given as systemd credentials (`LoadCredential=`, see
 [configuration.md](configuration.md)) were checked once by hand, enforcing:
 a webhook `hmac_key_file` loaded from `/run/credentials`, and the webhook
-connecting out to port 8443. The automated suite doesn't reach the outbound
+connecting out to port 8443. The rule that allows this,
+`init_read_pid_files`, is wider than credentials: it lets the daemon read
+every `init_var_run_t` file, which includes much of `/run/systemd`. File
+modes still apply, so it can only read what root can read without a DAC
+override. The automated suite doesn't reach the outbound
 sinks (webhook, syslog, Splunk HEC, Elasticsearch); their rules are written
 from the ports they use. If a sink fails with a permission
 error, look for a denial; see

@@ -1,8 +1,9 @@
-"""The daemon runs confined, its files carry their labels, and the suite raised no denials for it.
+"""The daemon runs confined, its files carry their labels, and the suite left no denials.
 
 The denial check is marked `last`, so conftest.py runs it after every other
-test, whatever the file order. The suite's start comes from SV2_SUITE_START, which scripts/itest.sh sets
-in the C locale's `%x %T` form that ausearch expects.
+test, whatever the file order. The suite's start comes from SV2_SUITE_START,
+which scripts/itest.sh sets in the C locale's `%x %T` form that ausearch
+expects.
 """
 
 from __future__ import annotations

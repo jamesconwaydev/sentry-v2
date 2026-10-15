@@ -77,6 +77,8 @@ auth_use_nsswitch(sentry_v2_t)
 # Sink secrets given as systemd credentials (LoadCredential=, a relative
 # *_file path in the config). systemd mounts /run/credentials/<unit> with
 # init_var_run_t files; checked on the host with a webhook hmac_key_file.
+# The interface covers every init_var_run_t file (/run/systemd/* too), not
+# just credentials; DAC still limits it to files root can read by mode.
 init_read_pid_files(sentry_v2_t)
 
 # Action journal, bundles, spool and backups under /var/lib/sentry-v2.
