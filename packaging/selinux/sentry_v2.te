@@ -1,7 +1,8 @@
 policy_module(sentry_v2, 0.1.0)
 
-# First draft. Each rule says which part of the daemon needs it; the
-# integration suite on the EL10 host decides what stays.
+# Each rule says which part of the daemon needs it. The rules for paths the
+# integration suite exercises name the test; scripts/itest.sh runs the suite
+# with this module enforcing and fails on any sentry_v2_t denial.
 
 ########################################
 #
@@ -14,10 +15,6 @@ init_daemon_domain(sentry_v2_t, sentry_v2_exec_t)
 # The unit sets NoNewPrivileges=yes, and on EL10 init_daemon_domain does not
 # grant the nnp_transition that systemd then needs to enter the domain.
 init_nnp_daemon_domain(sentry_v2_t)
-
-# Permissive until the integration suite has run clean against it: denials
-# are logged, nothing is blocked.
-permissive sentry_v2_t;
 
 type sentry_v2_conf_t;
 files_config_file(sentry_v2_conf_t)
@@ -99,8 +96,19 @@ logging_read_generic_logs(sentry_v2_t)
 logging_read_syslog_pid(sentry_v2_t)
 logging_mmap_journal(sentry_v2_t)
 logging_watch_journal_dir(sentry_v2_t)
+# /var/log/journal itself is var_log_t; sd-journal watches it for new files
+# and fstatfs()es each journal's filesystem (test_avc_correlation,
+# test_backup_reload: every unit_failed incident comes through here).
+logging_watch_generic_log_dirs(sentry_v2_t)
+fs_getattr_tmpfs(sentry_v2_t)
+fs_getattr_xattr_fs(sentry_v2_t)
 # The daemon's own log output.
 logging_send_syslog_msg(sentry_v2_t)
+
+# PSI collector and early thaw: /proc/pressure/* for the root cgroup, and the
+# access check that tells whether PSI is on (test_psi_throttle,
+# test_freeze_replay).
+kernel_read_psi(sentry_v2_t)
 
 # Bundle context: /proc/<pid> of the failing unit, /proc/pressure, meminfo.
 domain_read_all_domains_state(sentry_v2_t)
@@ -121,8 +129,17 @@ gen_require(`
 ')
 # No interface grants these: FreezeUnit is checked as stop, ReloadUnit as reload.
 allow sentry_v2_t systemd_unit_file_type:service { stop reload };
+# Transient units (systemd-run, scopes) have no unit file to check against,
+# so systemd checks them against its own context in the system class:
+# SetUnitProperties as start (test_psi_throttle), FreezeUnit and ThawUnit
+# as stop (test_freeze_replay).
+init_start(sentry_v2_t)
+init_stop(sentry_v2_t)
 # backup_reload copies the unit fragment and its drop-ins.
 systemd_read_unit_files(sentry_v2_t)
+# `sentry-v2ctl restore` writes them back through a temporary file and a
+# rename in the same directory (test_backup_reload).
+systemd_manage_all_unit_files(sentry_v2_t)
 # Type=notify readiness and watchdog pings.
 init_dgram_send(sentry_v2_t)
 
