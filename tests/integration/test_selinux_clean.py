@@ -1,7 +1,7 @@
 """The daemon runs confined, its files carry their labels, and the suite raised no denials for it.
 
-Runs after the other daemon tests (pytest collects files in name order).
-The suite's start comes from SV2_SUITE_START, which scripts/itest.sh sets
+The denial check is marked `last`, so conftest.py runs it after every other
+test, whatever the file order. The suite's start comes from SV2_SUITE_START, which scripts/itest.sh sets
 in the C locale's `%x %T` form that ausearch expects.
 """
 
@@ -48,6 +48,7 @@ def test_metrics_port_label() -> None:
     )
 
 
+@pytest.mark.last
 def test_no_denials_for_the_daemon() -> None:
     start = os.environ.get("SV2_SUITE_START", "boot")
     out = sh(

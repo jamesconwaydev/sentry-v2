@@ -62,6 +62,15 @@ def records_for(unit: str) -> list[dict[str, Any]]:
     return [r for r in acts["active"] + acts["recent"] if r["target"] == unit]
 
 
+def pytest_configure(config: pytest.Config) -> None:
+    config.addinivalue_line("markers", "last: run after every other collected test")
+
+
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Move tests marked `last` to the end, whatever file they live in."""
+    items.sort(key=lambda item: item.get_closest_marker("last") is not None)
+
+
 @pytest.fixture
 def transient_unit(request: pytest.FixtureRequest) -> Callable[..., str]:
     """Start `cmd` as a transient service in sentry-test.slice; returns the unit name."""

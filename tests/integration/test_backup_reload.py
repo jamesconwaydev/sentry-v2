@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import shutil
 import uuid
 from collections.abc import Iterator
 from pathlib import Path
@@ -44,9 +45,10 @@ def flaky_unit() -> Iterator[str]:
         yield name
     finally:
         stop_unit(name)
-        for p in (drop_in_dir / "10-itest.conf", fragment, flag):
+        # an interrupted restore can leave .<name>.sentry-v2-restore files behind
+        shutil.rmtree(drop_in_dir, ignore_errors=True)
+        for p in (fragment, UNITS / f".{name}.sentry-v2-restore", flag):
             p.unlink(missing_ok=True)
-        drop_in_dir.rmdir()
         sh("systemctl", "daemon-reload")
 
 

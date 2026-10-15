@@ -16,6 +16,7 @@ OUTSIDER = "sv2-itest"
 
 @pytest.fixture
 def outsider() -> Iterator[str]:
+    sh("userdel", OUTSIDER, check=False)  # left over from an interrupted run
     sh("useradd", "--system", "--no-create-home", "--shell", "/sbin/nologin", OUTSIDER)
     try:
         yield OUTSIDER
