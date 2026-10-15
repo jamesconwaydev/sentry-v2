@@ -59,3 +59,7 @@ Bugs go in [issues](https://github.com/jamesconwaydev/sentry-v2/issues/new/choos
 Security problems do not go in public issues. See [SECURITY.md](SECURITY.md).
 
 By taking part you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Releases
+
+Releases are cut by the maintainer. A release PR bumps `__version__` in `src/sentry_v2/__init__.py` and `upstream_version` in `packaging/sentry-v2.spec`, and adds a `## [x.y.z]` section to the CHANGELOG. Once that's merged, we tag `main` as `vx.y.z` and push the tag. The release workflow builds the RPMs on Rocky 10, builds the wheel and sdist, attests everything, publishes the GitHub release using the CHANGELOG section as its notes, and uploads to PyPI through trusted publishing. It stops early if the tag, the package version and the spec version disagree.

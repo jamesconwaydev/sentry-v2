@@ -1,0 +1,113 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container: rockylinux/rockylinux:10
+    permissions:
+      contents: read
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf -y install dnf-plugins-core
+          dnf config-manager --set-enabled crb
+          dnf -y install rpm-build python3-devel pyproject-rpm-macros systemd-rpm-macros \
+            selinux-policy-devel python3-wheel python3-setuptools bzip2 git make
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the tag matches the package and spec versions
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          pkg=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/sentry_v2/__init__.py)
+          spec=$(sed -n 's/^%global upstream_version[[:space:]]*//p' packaging/sentry-v2.spec)
+          if [ "$TAG" != "v$pkg" ] || [ "$pkg" != "$spec" ]; then
+            echo "tag $TAG, __version__ $pkg, spec $spec: these must all agree" >&2
+            exit 1
+          fi
+      # rpmbuild is already here, so make rpm builds in place.
+      - run: make rpm
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rpm
+          path: |
+            rpmbuild/RPMS/**/*.rpm
+            rpmbuild/SRPMS/*.rpm
+          if-no-files-found: error
+
+  python:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: python -m pip install build twine
+      - run: python -m build
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: [rpm, python]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: artifacts
+      - name: Collect files and write SHA256SUMS
+        run: |
+          mkdir release
+          find artifacts -type f -exec cp {} release/ \;
+          (cd release && sha256sum * > SHA256SUMS)
+      - name: Extract release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          awk -v v="${TAG#v}" '
+            /^## \[/ { if (on) exit; on = (index($0, "## [" v "]") == 1) }
+            on
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "No '## [${TAG#v}]' section in CHANGELOG.md" >&2; exit 1; }
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: release/*
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" release/* --title "$TAG" --notes-file notes.md
+
+  pypi:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
