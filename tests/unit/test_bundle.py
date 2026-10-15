@@ -254,3 +254,7 @@ def test_host_collect_bad_bytes(tmp_path: Path) -> None:
     (tmp_path / "etc").mkdir()
     (tmp_path / "etc/machine-id").write_bytes(b"\xff\xfe")
     assert HostInfo.collect(tmp_path).machine_id is None
+
+
+def test_scrub_tree_nonfinite_floats() -> None:
+    assert RED.scrub_tree([float("nan"), float("inf"), 1.5]) == [None, None, 1.5]

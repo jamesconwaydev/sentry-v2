@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import re
 from collections.abc import Mapping, Sequence
@@ -50,7 +51,9 @@ class Redactor:
             return {k: self.scrub_tree(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
             return [self.scrub_tree(v) for v in obj]
-        if obj is None or isinstance(obj, (bool, int, float)):
+        if isinstance(obj, float):
+            return obj if math.isfinite(obj) else None  # NaN/inf are not valid JSON
+        if obj is None or isinstance(obj, (bool, int)):
             return obj
         return self.scrub(str(obj))
 
