@@ -1,0 +1,149 @@
+{
+  "schema": "sentry-v2/bundle/1",
+  "id": "01a13ce1-15de-70db-8541-42eeffefdc44",
+  "ts": "2026-10-15T00:05:46.590260Z",
+  "severity": "info",
+  "host": {
+    "hostname": "h",
+    "machine_id": "mid",
+    "kernel": "6.12",
+    "os_release": "Rocky"
+  },
+  "incident": {
+    "id": "i1",
+    "kind": "unit_failed",
+    "ts_us": 1,
+    "target": "a.service",
+    "trigger": {
+      "ts_us": 1,
+      "source": "journal",
+      "unit": "a.service",
+      "kind": "failed",
+      "result": "timeout",
+      "exit_code": null,
+      "exit_status": null,
+      "invocation_id": null,
+      "main_pid": null
+    },
+    "related": [
+      {
+        "ts_us": 1,
+        "source": "audit",
+        "serial": 1,
+        "denied": true,
+        "perms": [
+          "read"
+        ],
+        "scontext": "a:b:c",
+        "scontext_type": "c",
+        "tcontext": "x:y:z",
+        "tclass": "file",
+        "comm": null,
+        "exe": null,
+        "pid": null,
+        "permissive": false,
+        "cgroup_at_receipt": null,
+        "unit_at_receipt": null,
+        "raw": "avc: denied"
+      }
+    ],
+    "correlations": [
+      {
+        "avc": {
+          "ts_us": 1,
+          "source": "audit",
+          "serial": 1,
+          "denied": true,
+          "perms": [
+            "read"
+          ],
+          "scontext": "a:b:c",
+          "scontext_type": "c",
+          "tcontext": "x:y:z",
+          "tclass": "file",
+          "comm": null,
+          "exe": null,
+          "pid": null,
+          "permissive": false,
+          "cgroup_at_receipt": null,
+          "unit_at_receipt": null,
+          "raw": "avc: denied"
+        },
+        "confidence": 0.5,
+        "reasons": [
+          "same unit"
+        ]
+      }
+    ],
+    "sustained": null
+  },
+  "context": {
+    "psi": {
+      "memory": {
+        "some": {
+          "avg10": 1.0
+        }
+      }
+    },
+    "unit": {
+      "ExecStart": [
+        "/bin/x --[REDACTED]"
+      ]
+    },
+    "journal": [
+      {
+        "MESSAGE": "Authorization: [REDACTED] ok",
+        "PRIORITY": "6"
+      }
+    ]
+  },
+  "correlations": [
+    {
+      "avc": {
+        "ts_us": 1,
+        "source": "audit",
+        "serial": 1,
+        "denied": true,
+        "perms": [
+          "read"
+        ],
+        "scontext": "a:b:c",
+        "scontext_type": "c",
+        "tcontext": "x:y:z",
+        "tclass": "file",
+        "comm": null,
+        "exe": null,
+        "pid": null,
+        "permissive": false,
+        "cgroup_at_receipt": null,
+        "unit_at_receipt": null,
+        "raw": "avc: denied"
+      },
+      "confidence": 0.5,
+      "reasons": [
+        "same unit"
+      ]
+    }
+  ],
+  "decision": {
+    "policy": "p",
+    "mode": "dry-run",
+    "actions": [
+      {
+        "id": "r1",
+        "policy": "p",
+        "action": "throttle",
+        "target": "a.service",
+        "mode": "dry-run",
+        "configured_mode": "dry-run",
+        "status": "dry_run",
+        "previous": null,
+        "params": {},
+        "applied_at": null,
+        "expires_at": null,
+        "error": null,
+        "incident_id": "i1"
+      }
+    ]
+  }
+}

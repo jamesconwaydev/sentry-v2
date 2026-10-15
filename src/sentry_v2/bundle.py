@@ -22,7 +22,7 @@ DEFAULT_PATTERNS = (
     r"(?i)bearer\s+[a-z0-9._~+/-]+=*",
     r"://[^/\s:@]+:[^/\s@]+@",
     r"AKIA[0-9A-Z]{16}",
-    r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----",
+    r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
     r"(?i)(password|passwd|secret|token)=\S+",
 )
 
@@ -42,13 +42,17 @@ class Redactor:
 
     def scrub_tree(self, obj: Any) -> Any:
         """Return a copy of a JSON-like tree with every string scrubbed."""
+        if isinstance(obj, bytes):
+            return self.scrub(obj.decode(errors="replace"))
         if isinstance(obj, str):
             return self.scrub(obj)
         if isinstance(obj, Mapping):
             return {k: self.scrub_tree(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
             return [self.scrub_tree(v) for v in obj]
-        return obj
+        if obj is None or isinstance(obj, (bool, int, float)):
+            return obj
+        return self.scrub(str(obj))
 
 
 @dataclass(frozen=True)
@@ -62,14 +66,14 @@ class HostInfo:
     def collect(cls, root: Path = Path("/")) -> HostInfo:
         try:
             machine_id: str | None = (root / "etc/machine-id").read_text().strip()
-        except OSError:
+        except (OSError, ValueError):
             machine_id = None
         os_release = None
         try:
             for line in (root / "etc/os-release").read_text().splitlines():
                 if line.startswith("PRETTY_NAME="):
                     os_release = line.partition("=")[2].strip().strip("\"'")
-        except OSError:
+        except (OSError, ValueError):
             pass
         return cls(os.uname().nodename, machine_id, os.uname().release, os_release)
 
@@ -91,6 +95,13 @@ class BundleContext:
 
 def _now() -> str:
     return dt.datetime.now(dt.UTC).isoformat(timespec="microseconds").replace("+00:00", "Z")
+
+
+def _action(rec: Mapping[str, Any], redactor: Redactor) -> dict[str, Any]:
+    out: dict[str, Any] = json.loads(json.dumps(rec, default=str))
+    if isinstance(out.get("error"), str):
+        out["error"] = redactor.scrub(out["error"])
+    return out
 
 
 def _severity(records: Sequence[Mapping[str, Any]], incident: Mapping[str, Any]) -> str:
@@ -139,7 +150,7 @@ def build_bundle(
         "decision": {
             "policy": first.get("policy"),
             "mode": first.get("mode"),
-            "actions": [dict(r) for r in records],
+            "actions": [_action(r, redactor) for r in records],
         },
     }
 

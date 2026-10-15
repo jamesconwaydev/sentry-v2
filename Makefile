@@ -9,8 +9,8 @@ lint:
 	$(MAKE) schema
 
 schema:
-	$(BIN)/pytest tests/unit/test_bundle.py -q -k sample --no-cov
-	$(BIN)/check-jsonschema --schemafile docs/reference/bundle.schema.json tests/fixtures/bundle_sample.json
+	f=$$(mktemp) && SENTRY_BUNDLE_SAMPLE=$$f $(BIN)/pytest tests/unit/test_bundle.py -q -k sample --no-cov \
+		&& $(BIN)/check-jsonschema --schemafile docs/reference/bundle.schema.json $$f; rc=$$?; rm -f $$f; exit $$rc
 
 format:
 	$(BIN)/ruff check --fix .

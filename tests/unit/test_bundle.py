@@ -1,5 +1,9 @@
+import datetime as dt
 import json
+import os
 import re
+import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +23,6 @@ from sentry_v2.sinks.base import bundle_filename
 
 ROOT = Path(__file__).parents[2]
 SCHEMA = json.loads((ROOT / "docs/reference/bundle.schema.json").read_text())
-SAMPLE = ROOT / "tests/fixtures/bundle_sample.json"
 
 TYPES = {
     "object": dict,
@@ -37,6 +40,8 @@ def validate(inst: Any, schema: dict[str, Any], path: str = "$") -> None:
     if t is not None:
         ts = t if isinstance(t, list) else [t]
         assert any(isinstance(inst, TYPES[x]) for x in ts), f"{path}: not {t}"
+    if "pattern" in schema:
+        assert re.search(schema["pattern"], inst), f"{path}: {inst!r} fails pattern"
     if "enum" in schema:
         assert inst in schema["enum"], f"{path}: {inst!r} not in enum"
     if isinstance(inst, dict):
@@ -108,15 +113,15 @@ CTX = BundleContext(
 RED = Redactor.from_config(RedactionConfig())
 
 
-def test_bundle_validates_and_writes_sample() -> None:
+def test_bundle_validates_and_writes_sample(tmp_path: Path) -> None:
     b = build_bundle(incident(), [rec()], CTX, HOST, RED)
     validate(b, SCHEMA)
     assert b["schema"] == SCHEMA_ID
     assert b["ts"].endswith("Z") and re.search(r"\.\d{6}Z$", b["ts"])
     bundle_filename(b)
     assert b["decision"]["policy"] == "p"
-    SAMPLE.parent.mkdir(exist_ok=True)
-    SAMPLE.write_text(json.dumps(b, indent=2) + "\n")
+    sample = Path(os.environ.get("SENTRY_BUNDLE_SAMPLE") or tmp_path / "bundle_sample.json")
+    sample.write_text(json.dumps(b, indent=2) + "\n")
 
 
 def test_schema_rejects_extra_top_level_key() -> None:
@@ -214,3 +219,38 @@ def test_host_collect_unreadable(tmp_path: Path) -> None:
     (tmp_path / "etc").mkdir()
     (tmp_path / "etc/os-release").write_text("NAME=x\n")
     assert HostInfo.collect(tmp_path).os_release is None
+
+
+def test_unterminated_pem_redacted() -> None:
+    assert RED.scrub("a -----BEGIN PRIVATE KEY-----\nAAAA") == "a [REDACTED]"
+
+
+def test_many_begin_markers_fast() -> None:
+    t = time.monotonic()
+    RED.scrub("-----BEGIN PRIVATE KEY-----" * 5000)
+    assert time.monotonic() - t < 0.5
+
+
+def test_scrub_tree_non_json_leaves() -> None:
+    u = uuid.uuid4()
+    out = RED.scrub_tree(
+        {"b": b"token=zz \xff", "d": dt.datetime(2026, 1, 1, tzinfo=dt.UTC), "u": u, "n": 3}
+    )
+    assert out["b"] == "[REDACTED] \ufffd"
+    assert out["d"] == "2026-01-01 00:00:00+00:00"
+    assert out["u"] == str(u) and out["n"] == 3
+    json.dumps(out)
+
+
+def test_action_error_scrubbed_and_copied() -> None:
+    r = rec(error="boom password=x", params={"k": [1]})
+    b = build_bundle(incident(), [r], CTX, HOST, RED)
+    assert b["decision"]["actions"][0]["error"] == "boom [REDACTED]"
+    b["decision"]["actions"][0]["params"]["k"].append(2)
+    assert r["params"] == {"k": [1]}
+
+
+def test_host_collect_bad_bytes(tmp_path: Path) -> None:
+    (tmp_path / "etc").mkdir()
+    (tmp_path / "etc/machine-id").write_bytes(b"\xff\xfe")
+    assert HostInfo.collect(tmp_path).machine_id is None
