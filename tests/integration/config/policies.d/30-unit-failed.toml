@@ -1,0 +1,25 @@
+# test_avc_correlation.py and test_backup_reload.py. A unit_failed pattern
+# matches the unit name, and only the suite creates sentry-itest-* units.
+[[policy]]
+name = "itest-avc-notify"
+mode = "enforce"
+cooldown = "1s"
+
+[policy.when]
+signal = "unit_failed"
+units = ["sentry-itest-avc-*.service"]
+
+[[policy.do]]
+action = "notify"
+
+[[policy]]
+name = "itest-backup-reload"
+mode = "enforce"
+cooldown = "10m"
+
+[policy.when]
+signal = "unit_failed"
+units = ["sentry-itest-backup-*.service"]
+
+[[policy.do]]
+action = "backup_reload"

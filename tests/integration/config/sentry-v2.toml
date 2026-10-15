@@ -1,0 +1,27 @@
+# Test configuration for the integration suite (scripts/itest.sh installs it).
+# Every enforcing policy in policies.d/ matches only units the suite creates
+# under sentry-test.slice; the protected list is a second guard for the
+# services that share the host.
+
+[daemon]
+log_level = "debug"
+mode = "enforce"
+
+[limits]
+max_action_duration = "5m"
+# A broken run should show up as test failures, not as a breaker that
+# quietly turns the rest of the suite into dry-run.
+breaker_failures = 50
+
+[protection]
+protected = [
+    "nginx.service",
+    "cockpit.service",
+    "cockpit.socket",
+    "cockpit-*",
+    "sshd.service",
+    "sentrello-*",
+]
+
+[metrics]
+enabled = true

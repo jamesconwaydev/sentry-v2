@@ -1,0 +1,19 @@
+# test_psi_throttle.py: squeeze a memory hog for 30s, then put it back.
+[[policy]]
+name = "itest-throttle"
+mode = "enforce"
+cooldown = "10m"
+
+[policy.when]
+signal = "psi"
+resource = "memory"
+kind = "some"
+threshold = "100ms/2s"
+sustained = "2s"
+cgroups = ["sentry.slice/sentry-test.slice/sentry-itest-throttle-*.service"]
+
+[[policy.do]]
+action = "throttle"
+memory_high = "48M"
+cpu_weight = 10
+duration = "30s"

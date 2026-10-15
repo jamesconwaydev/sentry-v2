@@ -1,0 +1,19 @@
+# test_freeze_replay.py: freeze a CPU-bound unit long enough to kill the
+# daemon under it. release_below = 0 turns early thaw off.
+[[policy]]
+name = "itest-freeze"
+mode = "enforce"
+cooldown = "10m"
+
+[policy.when]
+signal = "psi"
+resource = "cpu"
+kind = "some"
+threshold = "200ms/2s"
+sustained = "6s"
+cgroups = ["sentry.slice/sentry-test.slice/sentry-itest-freeze-*.service"]
+
+[[policy.do]]
+action = "freeze"
+duration = "2m"
+release_below = 0
