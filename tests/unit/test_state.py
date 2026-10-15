@@ -86,12 +86,13 @@ def test_compact_drops_old_closed_keeps_open(tmp_path: Path) -> None:
     j.append(record(id="old-closed", status="rolled_back"))
     j.append(record(id="old-open", status="applied"))
     j.append(record(id="old-backup", action="backup_reload", expires_at=None))
+    j.append(record(id="old-stuck", status="rollback_failed"))
     now[0] = 6 * DAY
     j.append(record(id="new-closed", status="failed"))
     now[0] = 8 * DAY
     j.compact(older_than=7 * DAY, now=now[0])
-    assert set(j.load()) == {"old-open", "new-closed"}
-    assert len(path.read_text().splitlines()) == 2
+    assert set(j.load()) == {"old-open", "old-stuck", "new-closed"}
+    assert len(path.read_text().splitlines()) == 3
 
 
 def test_is_open() -> None:

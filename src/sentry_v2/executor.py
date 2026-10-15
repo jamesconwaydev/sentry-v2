@@ -71,6 +71,9 @@ NO_EFFECT = frozenset(
     {
         actions.UNIT_INACTIVE,
         NO_RELOAD,
+        "org.freedesktop.DBus.Error.AccessDenied",
+        "org.freedesktop.DBus.Error.InvalidArgs",
+        "org.freedesktop.systemd1.UnitMasked",
         "org.sentry-v2.UnsupportedUnitType",
         "org.sentry-v2.Closed",
     }
@@ -414,11 +417,12 @@ class Executor:
     async def rollback(self, rec_id: str | None = None) -> list[ActionRecord]:
         """Roll back one action by id, or every active one; returns the closed records.
 
-        An id whose rollback already failed is retried; success clears its
-        target for new actions.
+        An id whose rollback already failed is retried (waiting as `planned`);
+        success clears its target for new actions.
         """
         if rec_id is not None and rec_id in self._failed:
-            self._active[rec_id] = dataclasses.replace(self._failed[rec_id], error=None)
+            retry = dataclasses.replace(self._failed[rec_id], status="planned", error=None)
+            self._active[rec_id] = retry
         return await self._rollback_ids(list(self._active) if rec_id is None else [rec_id])
 
     async def _rollback_ids(self, ids: list[str]) -> list[ActionRecord]:
@@ -437,11 +441,20 @@ class Executor:
         await self._rollback_ids(ids)
 
     async def replay(self) -> None:
-        """Startup: undo whatever earlier runs left open or failed to undo, then compact."""
+        """Startup: undo whatever an earlier run left open, then compact.
+
+        Rollbacks that already failed are not retried here: their targets
+        stay stuck until an operator runs `rollback(id)`.
+        """
         async with self._lock:
             for rec in self.journal.load().values():
-                if rec.action in REVERSIBLE and rec.status == "rollback_failed":
-                    self._active[rec.id] = dataclasses.replace(rec, error=None)
+                if rec.status == "rollback_failed":
+                    log.warning(
+                        "%s %s on %s: earlier rollback failed; refusing new actions on it "
+                        "until it is rolled back by hand",
+                        rec.id, rec.action, rec.target,
+                    )  # fmt: skip
+                    self._failed[rec.id] = rec
                 elif not rec.is_open:
                     continue
                 elif rec.action in REVERSIBLE:

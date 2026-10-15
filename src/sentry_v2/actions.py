@@ -74,15 +74,16 @@ def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     """
     backup_id = f"{unit}/{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}"
     bdir = backups_dir / backup_id
+    copies = [(src, Path("files") / Path(src).relative_to("/")) for src in files]
+    for src, rel in copies:
+        if not (bdir / rel).resolve().is_relative_to(bdir.resolve()):
+            raise ValueError(f"{src}: escapes the backup directory")
     backups_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     bdir.parent.mkdir(mode=0o700, exist_ok=True)
     bdir.mkdir(mode=0o700)
     manifest = []
-    for src in files:
-        rel = Path("files") / Path(src).relative_to("/")
+    for src, rel in copies:
         dest = bdir / rel
-        if not dest.resolve().is_relative_to(bdir.resolve()):
-            raise ValueError(f"{src}: escapes the backup directory")
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         manifest.append(f"{hashlib.sha256(dest.read_bytes()).hexdigest()}  {rel}\n")
@@ -103,10 +104,21 @@ async def apply(spec: ActionSpec, unit: str, params: dict[str, Any], mgr: System
             pass
 
 
+CHANGED_SINCE = "changed since; left as is"
+
+
 async def rollback(rec: ActionRecord, mgr: SystemdManager) -> str | None:
-    """Undo `rec`. Returns a note when there was nothing left to undo; raises on failure."""
+    """Undo `rec`. Returns a note when there was nothing (or nothing safe) to undo.
+
+    A throttle is restored only while every value it wrote is still in
+    place; if someone changed one since, their change wins and nothing is
+    written. Raises on failure.
+    """
     try:
         if rec.action == "throttle":
+            props = await mgr.get_properties(rec.target)
+            if any(getattr(props, k) != rec.params.get(k) for k in rec.previous):
+                return CHANGED_SINCE
             prev = rec.previous
             await mgr.set_properties(rec.target, prev.get("memory_high"), prev.get("cpu_weight"))
         elif rec.action == "freeze":

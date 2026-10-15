@@ -57,8 +57,19 @@ def test_throttle_apply_and_rollback_restore_raw_values(tmp_path: Path) -> None:
     prev, params = run(actions.prepare(spec, UNIT, mgr, CgroupFS(tmp_path)))
     run(actions.apply(spec, UNIT, params, mgr))
     assert (mgr.units[UNIT].memory_high, mgr.units[UNIT].cpu_weight) == (64 * MiB, 10)
-    assert run(actions.rollback(rec("throttle", prev), mgr)) is None
+    r = dataclasses.replace(rec("throttle", prev), params=params)
+    assert run(actions.rollback(r, mgr)) is None
     assert (mgr.units[UNIT].memory_high, mgr.units[UNIT].cpu_weight) == (UNSET, 100)
+
+
+def test_throttle_rollback_skips_if_changed(tmp_path: Path) -> None:
+    mgr = fake(memory_high=999)
+    r = dataclasses.replace(
+        rec("throttle", {"memory_high": UNSET}), params={"memory_high": 64 * MiB}
+    )
+    assert run(actions.rollback(r, mgr)) == "changed since; left as is"
+    assert mgr.units[UNIT].memory_high == 999
+    assert [c[0] for c in mgr.calls] == ["get_properties"]
 
 
 def test_freeze_refuses_already_frozen(tmp_path: Path) -> None:
@@ -78,6 +89,7 @@ def test_freeze_apply_and_thaw(tmp_path: Path) -> None:
 
 
 def test_rollback_unit_gone_and_inactive() -> None:
+    assert run(actions.rollback(rec("throttle", {}), FakeSystemd())) == "unit gone"
     assert run(actions.rollback(rec("freeze", {}), FakeSystemd())) == "unit gone"
     mgr = fake()
     mgr.fail["thaw"] = SystemdError("org.freedesktop.systemd1.UnitInactive", "x")
@@ -107,6 +119,7 @@ def test_describe_dry_run_params() -> None:
 def test_backup_refuses_path_escaping_backup_dir(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="escapes"):
         actions.backup(UNIT, ["/../../etc/passwd"], tmp_path / "b", now=0.0)
+    assert not (tmp_path / "b").exists()  # checked before anything is created
 
 
 def test_backup_dirs_are_private(tmp_path: Path) -> None:

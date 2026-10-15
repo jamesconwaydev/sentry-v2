@@ -112,9 +112,15 @@ class ActionJournal:
         return {k: rec for k, (rec, _ts) in self._read().items()}
 
     def compact(self, older_than: float, now: float) -> None:
-        """Drop closed records last touched before `now - older_than`; atomic rewrite."""
+        """Drop closed records last touched before `now - older_than`; atomic rewrite.
+
+        `rollback_failed` records are kept at any age: they stay open until
+        an operator clears them.
+        """
         keep = [
-            (rec, ts) for rec, ts in self._read().values() if rec.is_open or ts >= now - older_than
+            (rec, ts)
+            for rec, ts in self._read().values()
+            if rec.is_open or rec.status == "rollback_failed" or ts >= now - older_than
         ]
         tmp = self.path.with_name(self.path.name + ".tmp")
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

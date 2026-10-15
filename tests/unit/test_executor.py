@@ -307,13 +307,13 @@ def test_rollback_failing_ten_times_alerts_once(h: Harness) -> None:
 
 
 def test_breaker_forces_dry_run_then_closes(h: Harness) -> None:
-    h.mgr.fail["freeze"] = SystemdError("org.freedesktop.DBus.Error.AccessDenied", "no")
+    h.mgr.fail["freeze"] = SystemdError("org.freedesktop.DBus.Error.NoReply", "no")
     plan = [(policy(), Freeze(60))]
 
     async def main() -> None:
         for _ in range(3):
             [rec] = await h.ex.handle(psi_incident(), plan)
-            assert rec.status == "planned" and "AccessDenied" in (rec.error or "")
+            assert rec.status == "planned" and "NoReply" in (rec.error or "")
             await h.clock.advance(60)
             assert h.journal.load()[rec.id].status == "rolled_back"
         assert h.ex.breaker_state()["open"] is True
@@ -334,12 +334,16 @@ def test_breaker_ignores_failures_outside_window(h: Harness) -> None:
     h.mgr.fail["freeze"] = SystemdError("org.freedesktop.DBus.Error.NoReply", "timeout")
 
     async def main() -> None:
-        for _ in range(3):
+        for i in range(3):
+            if i:
+                await h.clock.advance(301)
             await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
-            await h.clock.advance(301)
+        # failures 301 s apart: by the third, the first has left the 600 s window
         assert h.ex.breaker_state() == {"open": False, "until": None, "failures": 2}
-        await h.clock.advance(600)
+        await h.clock.advance(601)
         assert h.ex.breaker_state()["failures"] == 0
+
+    run(main)
 
 
 def test_known_no_effect_errors_skip_breaker(h: Harness) -> None:
@@ -354,7 +358,27 @@ def test_known_no_effect_errors_skip_breaker(h: Harness) -> None:
     run(main)
     assert "thaw" not in [c[0] for c in h.mgr.calls]
 
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "org.freedesktop.DBus.Error.AccessDenied",
+        "org.freedesktop.DBus.Error.InvalidArgs",
+        "org.freedesktop.systemd1.UnitMasked",
+    ],
+)
+def test_refused_throttle_is_not_compensated(h: Harness, name: str) -> None:
+    h.mgr.fail["set_properties"] = SystemdError(name, "no")
+
+    async def main() -> None:
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Throttle(64 * MiB, None, 60))])
+        assert rec.status == "failed" and name in (rec.error or "")
+        await settle()
+        assert h.ex.active() == []
+        assert h.ex.breaker_state()["failures"] == 0
+
     run(main)
+    assert [c[0] for c in h.mgr.calls].count("set_properties") == 1
 
 
 def test_pause_forces_dry_run(h: Harness) -> None:
@@ -707,15 +731,50 @@ def test_stuck_target_refused_until_manual_rollback(h: Harness) -> None:
     run(main)
 
 
-def test_replay_retries_earlier_rollback_failed(h: Harness) -> None:
+def test_replay_leaves_rollback_failed_to_operator(
+    h: Harness, caplog: pytest.LogCaptureFixture
+) -> None:
+    h.clock.now = 0
     h.journal.append(stored(id="s1", action="freeze", status="rollback_failed"))
+    h.clock.now = 30 * 86400
 
     async def main() -> None:
-        await h.ex.replay()
+        await asyncio.wait_for(h.ex.replay(), 1)  # no retry loop
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Throttle(64 * MiB, None, 60))])
+        assert (rec.status, rec.error) == ("failed", "rollback pending")
 
     run(main)
-    assert h.mgr.calls == [("thaw", UNIT)]
-    assert h.journal.load()["s1"].status == "rolled_back"
+    assert [c for c in h.mgr.calls if c[0] == "thaw"] == []
+    assert h.journal.load()["s1"].status == "rollback_failed"  # survives compaction
+    assert caplog.text.count("s1") == 1
+
+
+def test_manual_retry_waits_as_planned(h: Harness) -> None:
+    async def main() -> None:
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Freeze(60))])
+        h.mgr.fail["thaw"] = SystemdError("org.freedesktop.DBus.Error.NoReply", "x")
+        await h.clock.advance(60 + 243)
+        retry = asyncio.create_task(h.ex.rollback(rec.id))
+        await settle()
+        assert [r.status for r in h.ex.active()] == ["planned"]
+        retry.cancel()
+
+    run(main)
+
+
+def test_throttle_left_alone_if_changed_since(h: Harness) -> None:
+    async def main() -> None:
+        [rec] = await h.ex.handle(psi_incident(), [(policy(), Throttle(Percent(50), 30, 60))])
+        assert rec.params == {"memory_high": 32 * MiB, "cpu_weight": 30}  # resolved, floored
+        # an operator raises the limit by hand while the throttle is active
+        h.mgr.units[UNIT] = dataclasses.replace(h.mgr.units[UNIT], memory_high=8 * 1024 * MiB)
+        await h.clock.advance(60)
+        final = h.journal.load()[rec.id]
+        assert (final.status, final.error) == ("rolled_back", "changed since; left as is")
+
+    run(main)
+    assert [c[0] for c in h.mgr.calls].count("set_properties") == 1
+    assert h.mgr.units[UNIT].memory_high == 8 * 1024 * MiB
 
 
 def test_dry_run_reports_limit(fake_cgroupfs: Path) -> None:
