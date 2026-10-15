@@ -42,13 +42,33 @@ class ControlClient:
             ) from None
         return s
 
+    @staticmethod
+    def _request(cmd: str, args: dict[str, Any]) -> bytes:
+        return json.dumps({"id": 1, "cmd": cmd, "args": args}).encode() + b"\n"
+
+    @staticmethod
+    def _parse(line: bytes) -> dict[str, Any]:
+        """One complete reply line, or ControlError."""
+        if not line.endswith(b"\n"):
+            raise ControlError("daemon did not answer: the reply was cut short")
+        try:
+            resp = json.loads(line)
+        except ValueError as e:
+            raise ControlError(f"daemon did not answer: bad reply ({e})") from None
+        if not isinstance(resp, dict):
+            raise ControlError("daemon did not answer: reply is not a JSON object")
+        return resp
+
     def call(self, cmd: str, **args: Any) -> dict[str, Any]:
         with self._connect() as s:
-            s.sendall(json.dumps({"id": 1, "cmd": cmd, "args": args}).encode() + b"\n")
-            line = s.makefile("rb").readline()
-        if not line:
-            raise ControlError("the daemon closed the connection without answering")
-        resp = json.loads(line)
+            try:
+                s.sendall(self._request(cmd, args))
+                with s.makefile("rb") as f:
+                    resp = self._parse(f.readline())
+            except OSError as e:  # includes timeouts
+                raise ControlError(f"daemon did not answer: {e}") from None
+        if resp.get("id") != 1:
+            raise ControlError("daemon did not answer: reply id does not match the request")
         if not resp.get("ok"):
             raise ControlError(str(resp.get("error", "unknown error")))
         result: dict[str, Any] = resp["result"]
@@ -57,11 +77,18 @@ class ControlClient:
     def subscribe(self) -> Iterator[dict[str, Any]]:
         """Yield event dicts until the daemon disconnects."""
         with self._connect() as s:
-            s.sendall(json.dumps({"id": 1, "cmd": "subscribe", "args": {}}).encode() + b"\n")
-            s.settimeout(None)
-            for line in s.makefile("rb"):
-                msg = json.loads(line)
-                if "event" in msg:
-                    yield msg["event"]
-                elif msg.get("ok") is False:
-                    raise ControlError(str(msg.get("error", "unknown error")))
+            try:
+                s.sendall(self._request("subscribe", {}))
+                with s.makefile("rb") as f:
+                    ack = self._parse(f.readline())  # still under the connect timeout
+                    if ack.get("id") != 1:
+                        raise ControlError("daemon did not answer: ack id does not match")
+                    if not ack.get("ok"):
+                        raise ControlError(str(ack.get("error", "unknown error")))
+                    s.settimeout(None)
+                    for line in f:
+                        msg = self._parse(line)
+                        if "event" in msg:
+                            yield msg["event"]
+            except OSError as e:
+                raise ControlError(f"daemon did not answer: {e}") from None

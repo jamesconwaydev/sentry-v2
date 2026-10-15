@@ -1,9 +1,11 @@
+import contextlib
 import json
 import shutil
 import socket
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -40,7 +42,7 @@ class Stub:
     def __init__(self) -> None:
         self.dir = Path(tempfile.mkdtemp(dir="/tmp"))
         self.path = self.dir / "c.sock"
-        self.replies: dict[str, dict] = {}
+        self.replies: dict[str, Any] = {}
         self.seen: list[dict] = []
         self.srv = socket.socket(socket.AF_UNIX)
         self.srv.bind(str(self.path))
@@ -53,11 +55,15 @@ class Stub:
                 c, _ = self.srv.accept()
             except OSError:
                 return
-            with c, c.makefile("rwb") as f:
+            with contextlib.suppress(BrokenPipeError), c, c.makefile("rwb") as f:
                 req = json.loads(f.readline())
                 self.seen.append(req)
                 if req["cmd"] == "subscribe":
                     f.write(b'{"id":1,"ok":true,"result":{}}\n{"event":{"a":1}}\n')
+                elif isinstance(self.replies[req["cmd"]], bytes):
+                    f.write(self.replies[req["cmd"]])
+                    if self.replies[req["cmd"]] == b"hang":
+                        threading.Event().wait(1)
                 else:
                     f.write(json.dumps({"id": req["id"], **self.replies[req["cmd"]]}).encode())
                     f.write(b"\n")
@@ -278,3 +284,65 @@ def test_policy_test_bad_input(tmp_path, capsys):
     assert main(_event(tmp_path, {"kind": "psi"})) == 1
     f = tmp_path / "missing.json"
     assert main(["policy", "test", "--event", str(f), *CFG]) == 1
+
+
+def test_client_bad_replies(stub, capsys):
+    stub.replies["status"] = b'{"id":1,"ok":tr'  # closes after half a line
+    rc, _, err = run(stub, capsys, "status")
+    assert rc == 1 and "daemon did not answer" in err
+    stub.replies["status"] = b"not json\n"
+    assert run(stub, capsys, "status")[0] == 1
+    stub.replies["status"] = b"[1]\n"
+    assert run(stub, capsys, "status")[0] == 1
+    stub.replies["status"] = {"ok": True, "result": {}, "id": 7}
+    stub.replies["status"] = b'{"id":7,"ok":true,"result":{}}\n'
+    rc, _, err = run(stub, capsys, "status")
+    assert rc == 1 and "id does not match" in err
+
+
+def test_client_timeout(stub):
+    stub.replies["status"] = b"hang"
+    with pytest.raises(ControlError, match="did not answer"):
+        ControlClient(stub.path, timeout=0.1).call("status")
+
+
+def test_unexpected_reply_shape(stub, capsys):
+    stub.replies["status"] = {"ok": True, "result": {"version": "1"}}
+    rc, _, err = run(stub, capsys, "status")
+    assert rc == 1 and err.startswith("unexpected reply from the daemon")
+
+
+def test_hostile_text_is_cleaned(stub, capsys):
+    bad = "x\x1b[2J\ny\x9b"
+    stub.replies["actions"] = {
+        "ok": True,
+        "result": {"active": [{"id": "a", "target": bad, "status": "applied"}], "recent": []},
+    }
+    rc, out, _ = run(stub, capsys, "actions")
+    assert rc == 0 and "x?[2J?y?" in out and "\x1b" not in out
+    stub.replies["pause"] = {"ok": False, "error": bad}
+    assert "\x1b" not in run(stub, capsys, "pause")[2]
+
+
+def test_colour_rules(stub, capsys, monkeypatch):
+    stub.replies["actions"] = {
+        "ok": True,
+        "result": {"active": [{"id": "a", "status": "applied"}], "recent": []},
+    }
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True, raising=False)
+    monkeypatch.setenv("NO_COLOR", "")
+    assert "\x1b[32mapplied" in run(stub, capsys, "actions")[1]
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert "\x1b" not in run(stub, capsys, "actions")[1]
+
+
+def test_empty_events_and_limit(tmp_path, capsys):
+    assert main(_event(tmp_path, [])) == 1
+    assert "no events in" in capsys.readouterr().err
+    assert main(["incidents", "--limit", "0"]) == 2
+
+
+def test_broken_pipe(stub, capsys, monkeypatch):
+    stub.replies["pause"] = {"ok": True, "result": {"paused": True}}
+    monkeypatch.setattr("builtins.print", lambda *a, **k: (_ for _ in ()).throw(BrokenPipeError))
+    assert main(["--socket", str(stub.path), "pause"]) == 0

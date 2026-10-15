@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
 import sys
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +27,7 @@ DEFAULT_SOCKET = "/run/sentry-v2/control.sock"
 DEFAULT_CONFIG = "/etc/sentry-v2/sentry-v2.toml"
 DEFAULT_POLICIES = "/etc/sentry-v2/policies.d"
 _US = 1_000_000
-_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 _COLOURS = {
     "failed": "31", "rollback_failed": "31", "high": "31", "critical": "31",
     "applied": "32", "ok": "32",
@@ -37,19 +39,24 @@ _COLOURS = {
 # -- output helpers -------------------------------------------------------------------
 
 
-def _paint(word: str) -> str:
-    if word in _COLOURS and sys.stdout.isatty() and "NO_COLOR" not in os.environ:
-        return f"\x1b[{_COLOURS[word]}m{word}\x1b[0m"
-    return word
+def _clean(v: object) -> str:
+    """Daemon and file text is untrusted: no control characters reach the terminal."""
+    return _CONTROL.sub("?", str(v))
+
+
+def _paint(cell: str) -> str:
+    if cell in _COLOURS and sys.stdout.isatty() and os.environ.get("NO_COLOR", "") == "":
+        return f"\x1b[{_COLOURS[cell]}m{cell}\x1b[0m"
+    return cell
 
 
 def _table(rows: list[list[str]], headers: list[str]) -> str:
-    """Left-aligned columns; widths ignore colour codes."""
-    grid = [headers, *rows]
-    widths = [max(len(_ANSI.sub("", r[i])) for r in grid) for i in range(len(headers))]
+    """Left-aligned columns. Cells are cleaned, padded, then status words coloured."""
+    grid = [[_clean(c) for c in r] for r in (headers, *rows)]
+    widths = [max(len(r[i]) for r in grid) for i in range(len(headers))]
     lines = []
     for r in grid:
-        cells = [c + " " * (w - len(_ANSI.sub("", c))) for c, w in zip(r, widths, strict=True)]
+        cells = [_paint(c) + " " * (w - len(c)) for c, w in zip(r, widths, strict=True)]
         lines.append("  ".join(cells).rstrip())
     return "\n".join(lines)
 
@@ -71,7 +78,7 @@ def _when(v: object) -> str:
         try:
             t = datetime.fromisoformat(v.replace("Z", "+00:00")).timestamp()
         except ValueError:
-            return v
+            return _clean(v)
     else:
         t = float(v)  # type: ignore[arg-type]
     delta = t - time.time()
@@ -85,7 +92,7 @@ def _action_rows(records: list[dict[str, Any]]) -> list[list[str]]:
             str(r.get("policy", "")),
             str(r.get("action", "")),
             str(r.get("target", "")),
-            _paint(str(r.get("status", ""))),
+            str(r.get("status", "")),
             str(r.get("mode", "")),
             _when(r.get("expires_at")) or _when(r.get("ts")),
         ]
@@ -101,9 +108,11 @@ _ACTION_HEAD = ["ID", "POLICY", "ACTION", "TARGET", "STATUS", "MODE", "WHEN"]
 
 def _status(r: dict[str, Any]) -> str:
     state = "paused" if r["paused"] else "running"
-    out = [f"sentry-v2 {r['version']}  {state} for {_span(r['uptime_s'])}  mode {r['mode']}"]
+    out = [
+        _clean(f"sentry-v2 {r['version']}  {state} for {_span(r['uptime_s'])}  mode {r['mode']}")
+    ]
     if r.get("last_reload_error"):
-        out.append(f"last reload failed: {r['last_reload_error']}")
+        out.append(_clean(f"last reload failed: {r['last_reload_error']}"))
     out.append("")
     out.append(
         _table(
@@ -136,7 +145,7 @@ def _top(r: dict[str, Any], sort: str) -> str:
 
 def _incidents(r: dict[str, Any]) -> str:
     rows = [
-        [i["id"], _when(i["ts"]), _paint(str(i["severity"])), i["kind"], i["target"], i["policy"]]
+        [i["id"], _when(i["ts"]), str(i["severity"]), i["kind"], i["target"], i["policy"]]
         for i in r["incidents"]
     ]
     return _table(rows, ["ID", "WHEN", "SEVERITY", "KIND", "TARGET", "POLICY"])
@@ -167,7 +176,7 @@ def _top_loop(client: ControlClient, sort: str, as_json: bool, once: bool) -> in
 
 def _rolled_back(r: dict[str, Any]) -> str:
     lines = [
-        f"rolled back {a['id']}  {a.get('action', '')} on {a.get('target', '')}"
+        _clean(f"rolled back {a['id']}  {a.get('action', '')} on {a.get('target', '')}")
         for a in r["rolled_back"]
     ]
     return "\n".join(lines) or "nothing to roll back"
@@ -182,7 +191,7 @@ _HUMAN: dict[str, Callable[[dict[str, Any]], str]] = {
     "pause": lambda r: "paused" if r["paused"] else "resumed",
     "resume": lambda r: "paused" if r["paused"] else "resumed",
     "reload": lambda r: "reloaded the configuration",
-    "restore": lambda r: "\n".join(["restored:", *r["restored"], r["note"]]),
+    "restore": lambda r: "\n".join(_clean(x) for x in ["restored:", *r["restored"], r["note"]]),
 }
 
 
@@ -220,8 +229,9 @@ def _validate(args: argparse.Namespace) -> int:
     try:
         n = len(_load(args).policies)
     except ConfigError as e:
-        print(json.dumps({"valid": False, "error": str(e)}) if args.json else "", end="")
-        print(f"invalid: {e}", file=sys.stderr)
+        if args.json:
+            print(json.dumps({"valid": False, "error": str(e)}))
+        print(f"invalid: {_clean(e)}", file=sys.stderr)
         return 1
     print(json.dumps({"valid": True, "policies": n}) if args.json else f"ok: {n} policies")
     return 0
@@ -245,8 +255,6 @@ def _event(d: dict[str, Any], default_ts: int) -> Event:
 
 def _ramp(ev: PsiEvent, whens: list[PsiWhen]) -> list[PsiEvent]:
     """A lone PSI trigger can't outlast `sustained`, so replay it up to the policy period."""
-    from dataclasses import replace
-
     out: list[PsiEvent] = []
     for w in whens:
         if (w.resource, w.kind, w.stall_us, w.window_us) != (
@@ -300,6 +308,8 @@ def _plan(args: argparse.Namespace) -> list[dict[str, str]]:
     raw = json.loads(Path(args.event).read_text())
     now_us = int(time.time() * _US)
     events = [_event(d, now_us) for d in (raw if isinstance(raw, list) else [raw])]
+    if not events:
+        raise ValueError(f"no events in {args.event}")
     engine = PolicyEngine(cfg.policies, lambda: 0.0)
     plans = []
     for inc in _incidents_from(events, cfg):
@@ -323,11 +333,11 @@ def _test(args: argparse.Namespace) -> int:
     try:
         plans = _plan(args)
     except ConfigError as e:
-        print(f"invalid: {e}", file=sys.stderr)
+        print(f"invalid: {_clean(e)}", file=sys.stderr)
         return 1
     except (OSError, ValueError, TypeError, KeyError) as e:
         print(
-            f"cannot use {args.event}: {e}. Expected a JSON event or list of events.",
+            f"cannot use {_clean(args.event)}: {_clean(e)}. Expected a JSON event or a list.",
             file=sys.stderr,
         )
         return 1
@@ -342,6 +352,13 @@ def _test(args: argparse.Namespace) -> int:
 
 
 # -- entry point ----------------------------------------------------------------------
+
+
+def _positive(v: str) -> int:
+    n = int(v)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be 1 or more")
+    return n
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -370,7 +387,7 @@ def _parser() -> argparse.ArgumentParser:
     i = add("incidents", "recent incidents, newest first")
     i.add_argument("--since", help="only incidents after this RFC 3339 time")
     i.add_argument("--unit", help="only incidents for this unit")
-    i.add_argument("--limit", type=int, help="how many to show (daemon default 50)")
+    i.add_argument("--limit", type=_positive, help="how many to show (daemon default 50)")
     add("show", "full bundle for one incident").add_argument("id")
     add("actions", "active and recent actions")
     r = add("rollback", "undo an action now")
@@ -413,11 +430,18 @@ def main(argv: list[str] | None = None) -> int:
             return _validate(args) if args.sub == "validate" else _test(args)
         return _daemon(args)
     except NotRunning as e:
-        print(e, file=sys.stderr)
+        print(_clean(e), file=sys.stderr)
         return 2
     except PermissionDenied as e:
-        print(e, file=sys.stderr)
+        print(_clean(e), file=sys.stderr)
         return 3
     except ControlError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f"error: {_clean(e)}", file=sys.stderr)
         return 3 if str(e).startswith("permission denied") else 1
+    except (KeyError, TypeError, ValueError) as e:
+        print(f"unexpected reply from the daemon: {_clean(repr(e))}", file=sys.stderr)
+        return 1
+    except BrokenPipeError:
+        with contextlib.suppress(OSError, ValueError):  # keep the exit-time flush quiet
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        return 0
