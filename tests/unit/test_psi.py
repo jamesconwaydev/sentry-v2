@@ -2,6 +2,7 @@ import asyncio
 import os
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -161,7 +162,8 @@ def test_epoll_hup_closes_fd(fake_cgroupfs: Path) -> None:
     for w in opener.peers:
         os.close(w)
     assert c._ep is not None
-    c._on_epoll()
+    for fd, mask in c._wait():
+        c._dispatch(fd, mask)
     assert not c._fds
     c.close()
 
@@ -253,3 +255,57 @@ def test_run_survives_iteration_error(fake_cgroupfs: Path) -> None:
 
     asyncio.run(main())
     assert calls >= 2
+
+
+class BlockingEpoll:
+    """Stands in for select.epoll: the first registered trigger fires once.
+
+    It has no fileno() on purpose. The collector must wait on the epoll
+    itself rather than nest it in the event loop's epoll, because the
+    kernel's check of a nested epoll consumes PSI trigger events.
+    """
+
+    def __init__(self) -> None:
+        self.pending: list[tuple[int, int]] = []
+        self.fired = False
+
+    def register(self, fd: int, mask: int) -> None:
+        if not self.fired:
+            self.pending.append((fd, EPOLLPRI))
+            self.fired = True
+
+    def unregister(self, fd: int) -> None:
+        pass
+
+    def poll(self, timeout: float = -1) -> list[tuple[int, int]]:
+        if self.pending:
+            events, self.pending = self.pending, []
+            return events
+        time.sleep(0.01)
+        return []
+
+    def close(self) -> None:
+        pass
+
+
+def test_run_waits_on_the_trigger_epoll_off_the_loop(fake_cgroupfs: Path) -> None:
+    q = EventQueue(100)
+    c = collector(fake_cgroupfs, Opener(), q)
+    c._sample_interval = 60
+    c._ep = BlockingEpoll()
+
+    def triggered() -> bool:
+        return any(isinstance(e, PsiEvent) and e.triggered for e in list(q._q))
+
+    async def main() -> None:
+        t = asyncio.create_task(c.run())
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            if triggered():
+                break
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    asyncio.run(main())
+    assert triggered()

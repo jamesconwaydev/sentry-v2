@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 EPOLLPRI = 0x002
 EPOLLERR = 0x008
 EPOLLHUP = 0x010
+WAIT_TIMEOUT = 1.0  # seconds; bounds how long cancelling the watcher takes
 
 DISABLED_HINT = "PSI is off: run 'grubby --update-kernel=ALL --args=psi=1' and reboot"
 
@@ -154,9 +155,23 @@ class PsiCollector:
         elif mask & EPOLLPRI:
             self._emit(key, triggered=True)
 
-    def _on_epoll(self) -> None:
-        for fd, mask in self._ep.poll(0):
-            self._dispatch(fd, mask)
+    def _wait(self) -> list[tuple[int, int]]:
+        """Block up to WAIT_TIMEOUT for trigger events; runs in a worker thread.
+
+        The epoll fd is never handed to the event loop. When an outer epoll
+        checks a nested one, the kernel polls each PSI trigger on its behalf,
+        and psi_trigger_poll() clears the event as it reports it, so the
+        collector would wake up to an empty poll every time.
+        """
+        ep = self._ep
+        return ep.poll(WAIT_TIMEOUT) if ep is not None else []
+
+    async def _watch(self) -> None:
+        # ponytail: an fd closed and reopened between poll() and dispatch could
+        # take one stray event; resolve() runs every 30s, so that's rare
+        while True:
+            for fd, mask in await asyncio.to_thread(self._wait):
+                self._dispatch(fd, mask)
 
     def sample_once(self) -> None:
         for key in {k[:3] for k in self._fds.values()}:
@@ -166,10 +181,7 @@ class PsiCollector:
         if not self._fs.psi_available():
             log.warning(DISABLED_HINT)
             return
-        loop = asyncio.get_running_loop()
-        ep = self._epoll()
-        if ep is not None:
-            loop.add_reader(ep.fileno(), self._on_epoll)
+        watcher = asyncio.create_task(self._watch()) if self._epoll() is not None else None
         last_resolve = float("-inf")
         try:
             while True:
@@ -183,6 +195,7 @@ class PsiCollector:
                     log.exception("psi collector iteration failed")
                 await asyncio.sleep(self._sample_interval)
         finally:
-            if self._ep is not None:
-                loop.remove_reader(self._ep.fileno())
+            if watcher is not None:
+                watcher.cancel()
+                await asyncio.gather(watcher, return_exceptions=True)
             self.close()
