@@ -70,6 +70,12 @@ def test_spec_version_matches_package() -> None:
     assert re.search(r"^Version:\s+%\{upstream_version\}$", spec, re.MULTILINE)
 
 
+def test_selinux_module_version_matches_package() -> None:
+    te = (PACKAGING / "selinux" / "sentry_v2.te").read_text()
+    m = re.search(r"^policy_module\(sentry_v2, *([^)\s]+)\)$", te, re.MULTILINE)
+    assert m is not None and m.group(1) == sentry_v2.__version__
+
+
 def test_spec_ships_every_cockpit_file() -> None:
     spec = (PACKAGING / "sentry-v2.spec").read_text()
     files = spec.split("%files cockpit", 1)[1].split("%changelog", 1)[0]

@@ -19,7 +19,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check the tag, package and spec versions agree
+      - name: Check the tag, package, spec and SELinux module versions agree
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -29,8 +29,9 @@ jobs:
           fi
           pkg=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/sentry_v2/__init__.py | tr -d '[:space:]')
           spec=$(sed -n 's/^%global upstream_version//p' packaging/sentry-v2.spec | tr -d '[:space:]')
-          if [ "$TAG" != "v$pkg" ] || [ "$pkg" != "$spec" ]; then
-            echo "tag $TAG, __version__ $pkg, spec $spec: these must all agree" >&2
+          sel=$(sed -n 's/^policy_module(sentry_v2, *\([^)]*\))/\1/p' packaging/selinux/sentry_v2.te | tr -d '[:space:]')
+          if [ "$TAG" != "v$pkg" ] || [ "$pkg" != "$spec" ] || [ "$pkg" != "$sel" ]; then
+            echo "tag $TAG, __version__ $pkg, spec $spec, SELinux module $sel: these must all agree" >&2
             exit 1
           fi
       - name: Extract release notes
