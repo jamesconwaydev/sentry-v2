@@ -35,7 +35,7 @@ mode = "enforce"
 [policy.when]
 signal = "psi"
 resource = "memory"
-threshold = "100ms/1s"
+threshold = "200ms/2s"
 sustained = "0s"
 cgroups = ["system.slice/nginx.service"]
 
@@ -278,8 +278,8 @@ def test_enforced_psi_throttle_is_rolled_back_on_sigterm(env: Env) -> None:
                 avg300=0.0,
                 total_us=1,
                 triggered=True,
-                stall_us=100_000,
-                window_us=1_000_000,
+                stall_us=200_000,
+                window_us=2_000_000,
             )
         )
         await wait_for(lambda: ("set_properties", "nginx.service", str(512 * 1024**2), "None")
@@ -556,6 +556,11 @@ def test_restore(env: Env) -> None:
         with pytest.raises(CommandError, match="no such backup"):
             await cmd.restore({"backup_id": "demo.service/20000101T000000Z"})
 
+        (backups / "demo.service").chmod(0o770)
+        with pytest.raises(CommandError, match="writable only by it"):
+            await cmd.restore({"backup_id": backup_id})
+        (backups / "demo.service").chmod(0o700)
+
         copy = backups / backup_id / "files" / str(unit_file).lstrip("/")
         copy.write_text("tampered")
         with pytest.raises(CommandError, match="checksum mismatch"):
@@ -667,3 +672,143 @@ async def scrape(port: int) -> str:
     data = await reader.read()
     writer.close()
     return data.decode()
+
+
+FREEZE_POLICY = """
+[[policy]]
+name = "nginx-freeze"
+mode = "enforce"
+
+[policy.when]
+signal = "unit_failed"
+units = ["nginx.service"]
+
+[[policy.do]]
+action = "freeze"
+duration = "2m"
+"""
+
+
+def test_freeze_is_thawed_on_sigterm_and_a_second_sigterm_is_ignored(env: Env) -> None:
+    env.write_config('mode = "enforce"')
+    (env.policies / "10-freeze.toml").write_text(FREEZE_POLICY)
+    env.journal_entries.append(failure_entry("nginx.service", now_us()))
+    thawing = asyncio.Event()
+    release = asyncio.Event()
+
+    class SlowThaw(FakeSystemd):
+        async def thaw(self, unit: str) -> None:
+            thawing.set()
+            await release.wait()
+            await super().thaw(unit)
+
+    env.mgr = SlowThaw(units={"nginx.service": NGINX})
+    d = env.daemon()
+
+    async def body() -> None:
+        await wait_for(lambda: env.mgr.units["nginx.service"].freezer_state == "frozen")
+        os.kill(os.getpid(), signal.SIGTERM)
+        await asyncio.wait_for(thawing.wait(), 5)
+        os.kill(os.getpid(), signal.SIGTERM)  # mid-rollback: logged and ignored
+        os.kill(os.getpid(), signal.SIGHUP)  # stopping: no reload
+        await asyncio.sleep(0.05)
+        release.set()
+
+    drive(d, body, stop=False)
+    assert env.mgr.units["nginx.service"].freezer_state == "running"
+    assert not any(n.startswith("RELOADING=1") for n in env.notes)
+    (rec,) = ActionJournal(env.state / "state" / "actions.jsonl").load().values()
+    assert (rec.action, rec.status) == ("freeze", "rolled_back")
+
+
+def test_slow_systemd_does_not_hold_up_bundles_or_actions(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(daemon, "LOOKUP_TIMEOUT", 0.1)
+    (env.root / "cgroup" / "system.slice" / "memory.pressure").write_text(
+        "some avg10=1.00 avg60=0.00 avg300=0.00 total=1\n"
+    )
+    env.journal_entries.append(failure_entry("nginx.service", now_us()))
+    hang = asyncio.Event()
+
+    class Hung(FakeSystemd):
+        async def get_properties(self, unit: str) -> Any:
+            self.calls.append(("get_properties", unit))
+            await hang.wait()
+            return await super().get_properties(unit)
+
+    env.mgr = Hung(units={"nginx.service": NGINX})
+    d = env.daemon()
+
+    async def body() -> None:
+        (bundle,) = await wait_for(env.bundles)
+        assert bundle["context"]["unit"] is None
+        assert "system.slice" in bundle["context"]["psi"]  # the failed unit's slice
+        # the hung call holds the one lookup slot; the bundle's own lookup was dropped
+        assert env.mgr.calls.count(("get_properties", "nginx.service")) == 1
+        await d.alert("breaker_open", {})  # the pipeline is still moving
+        await wait_for(lambda: len(env.bundles()) == 2)
+        hang.set()
+
+    drive(d, body)
+
+
+def test_sighup_before_ready_is_ignored(env: Env) -> None:
+    d = env.daemon()
+    d._on_sighup()
+    assert not d._tasks
+
+
+def test_reload_survives_unexpected_errors_and_keeps_restart_counts(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    d = env.daemon()
+
+    async def body() -> None:
+        d._health["psi"]["restarts"] = 4
+        monkeypatch.setattr(d, "_apply", lambda cfg: 1 / 0)
+        err = await d.reload()
+        assert err == "ZeroDivisionError: division by zero"
+        assert d.last_reload_error == err
+        monkeypatch.undo()
+        assert await d.reload() is None
+        await wait_for(lambda: "psi" in d._collectors)
+        assert d.collector_health()["psi"]["restarts"] == 4
+
+    drive(d, body)
+
+
+def test_broken_health_and_stale_psi_collector(env: Env) -> None:
+    d = env.daemon()
+
+    class Broken:
+        async def run(self) -> None:
+            return None
+
+        def health(self) -> dict[str, object]:
+            raise RuntimeError("nope")
+
+    async def body() -> None:
+        d._collectors["broken"] = Broken()  # type: ignore[assignment]
+        d._health["broken"] = {"restarts": 0, "last_error": None}
+        assert d.collector_health()["broken"]["state"] == "unknown"
+        psi = d._psi
+        assert psi is not None
+        d._collector_tasks["psi"].cancel()
+        await wait_for(lambda: d._psi is None)
+        d._units_changed()  # no collector: nothing to hint
+
+    drive(d, body)
+
+
+def test_failed_spawned_task_is_logged(env: Env, caplog: pytest.LogCaptureFixture) -> None:
+    d = env.daemon()
+
+    async def boom() -> None:
+        raise RuntimeError("kaput")
+
+    async def body() -> None:
+        d._spawn(boom(), "boom")
+        await wait_for(lambda: "task boom failed" in caplog.text)
+
+    drive(d, body)

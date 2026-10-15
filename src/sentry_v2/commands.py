@@ -42,6 +42,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import uuid
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
@@ -73,6 +74,16 @@ def _required[T](args: dict[str, Any], name: str, kind: type[T]) -> T:
     if value is None:
         raise CommandError(f"{name} is required")
     return value
+
+
+def _check_private(path: Path) -> None:
+    """Refuse a backup directory someone other than us could have planted files in."""
+    try:
+        st = path.lstat()
+    except FileNotFoundError:
+        raise CommandError("no such backup") from None
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid not in (0, os.geteuid()) or st.st_mode & 0o022:
+        raise CommandError(f"{path}: must be a directory owned by root, writable only by it")
 
 
 def _parse_ts(text: str) -> dt.datetime:
@@ -197,12 +208,15 @@ class Commands:
         m = _BACKUP_ID.fullmatch(backup_id)
         if m is None or m.group(1) in (".", ".."):
             raise CommandError("backup_id must look like <unit>/<YYYYmmddTHHMMSSZ>")
-        bdir = self.d.executor.backups_dir / backup_id
+        backups = self.d.executor.backups_dir
+        bdir = backups / backup_id
+        for d in (backups, bdir.parent, bdir):
+            _check_private(d)
         try:
             manifest = (bdir / "MANIFEST.sha256").read_text()
         except FileNotFoundError:
             raise CommandError("no such backup") from None
-        copies: list[tuple[Path, Path]] = []
+        copies: list[tuple[Path, bytes, Path]] = []
         for line in manifest.splitlines():
             digest, _, rel = line.partition("  ")
             parts = PurePosixPath(rel).parts
@@ -215,12 +229,16 @@ class Commands:
                 raise CommandError(f"{rel}: {e.strerror}") from None
             if hashlib.sha256(data).hexdigest() != digest:
                 raise CommandError(f"{rel}: checksum mismatch")
-            copies.append((src, Path("/", *parts[1:])))
+            copies.append((src, data, Path("/", *parts[1:])))
         restored: list[str] = []
-        for src, dest in copies:
+        for src, data, dest in copies:
             tmp = dest.with_name(f".{dest.name}.sentry-v2-restore")
             try:
-                shutil.copy2(src, tmp)
+                # the bytes that were verified, not whatever the file holds now
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, "wb") as f:
+                    f.write(data)
+                shutil.copystat(src, tmp)
                 os.replace(tmp, dest)
             except OSError as e:
                 raise CommandError(f"restoring {dest} failed ({e}); restored {restored}") from None
