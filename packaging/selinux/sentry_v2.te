@@ -46,6 +46,10 @@ corenet_port(sentry_v2_metrics_port_t)
 allow sentry_v2_t self:capability { dac_read_search sys_ptrace };
 # Joining the audit multicast group (collectors/audit.py).
 allow sentry_v2_t self:capability2 audit_read;
+# Thread pool sizing for asyncio.to_thread (sinks, spool). Python 3.12 uses
+# os.cpu_count(), and glibc may call sched_getaffinity behind it; the suite
+# will show whether this is ever hit.
+allow sentry_v2_t self:process getsched;
 # sd_notify and journal logging (dgram); the control socket and asyncio's
 # self-pipe, which is a socketpair (stream).
 allow sentry_v2_t self:unix_dgram_socket create_socket_perms;

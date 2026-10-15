@@ -43,6 +43,9 @@ Requires:       %{name} = %{version}-%{release}
 Requires:       selinux-policy-%{selinuxtype}
 Requires(post): selinux-policy-%{selinuxtype}
 Requires(post): policycoreutils
+# semanage, for the metrics port label.
+Requires(post): policycoreutils-python-utils
+Requires(postun): policycoreutils-python-utils
 %{?selinux_requires}
 
 %description selinux
@@ -99,6 +102,11 @@ install -Dpm 0644 packaging/selinux/%{modulename}.if \
 
 %pre selinux
 %selinux_relabel_pre -s %{selinuxtype}
+
+%preun selinux
+if [ $1 -eq 0 ]; then
+    %selinux_relabel_pre -s %{selinuxtype}
+fi
 
 %post selinux
 %selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
