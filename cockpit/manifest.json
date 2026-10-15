@@ -1,0 +1,18 @@
+{
+  "version": 0,
+  "name": "sentry-v2",
+  "requires": {
+    "cockpit": "300"
+  },
+  "tools": {
+    "index": {
+      "label": "Sentry-v2",
+      "order": 80,
+      "keywords": [
+        {
+          "matches": ["psi", "pressure", "selinux", "avc", "incident", "remediation", "rollback"]
+        }
+      ]
+    }
+  }
+}

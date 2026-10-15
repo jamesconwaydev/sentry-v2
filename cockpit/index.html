@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sentry-v2</title>
+  <link rel="stylesheet" href="sentry-v2.css">
+  <script src="../base1/cockpit.js"></script>
+  <script type="module" src="sentry-v2.js"></script>
+</head>
+<body>
+  <div class="page">
+    <header class="page-header">
+      <h1>Sentry-v2</h1>
+      <nav class="tabs" aria-label="Sentry-v2 sections">
+        <a href="#/" data-tab="">Overview</a>
+        <a href="#/incidents" data-tab="incidents">Incidents</a>
+        <a href="#/policies" data-tab="policies">Policies</a>
+      </nav>
+    </header>
+    <div id="announce" class="sr-only" role="status" aria-live="polite"></div>
+    <main id="main" tabindex="-1">
+      <p class="muted">Connecting to Sentry-v2…</p>
+    </main>
+  </div>
+</body>
+</html>
