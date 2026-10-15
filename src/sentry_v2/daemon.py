@@ -440,13 +440,16 @@ class Daemon:
                 self._status_line()
 
     async def _reload(self) -> str | None:
+        # Build everything that can fail before touching anything that runs.
         try:
             cfg = load_config(*self.paths)
+            redactor = Redactor.from_config(cfg.redaction)
             sinks = SinkManager(self._sinks_factory(cfg))
-        except (ConfigError, SinkError) as e:
-            self.last_reload_error = str(e)
-            log.error("reload failed; keeping the running configuration: %s", e)
-            return str(e)
+        except Exception as e:
+            error = str(e) if isinstance(e, ConfigError | SinkError) else f"{type(e).__name__}: {e}"
+            self.last_reload_error = error
+            log.error("reload failed; keeping the running configuration: %s", error)
+            return error
         old = self.cfg
         fixed = ("control", "metrics")
         if any(getattr(cfg, f) != getattr(old, f) for f in fixed) or (
@@ -459,7 +462,7 @@ class Daemon:
         old_sinks, self.sinks = self.sinks, sinks
         sinks.start()
         try:
-            self._apply(cfg)
+            self._apply(cfg, redactor)
             if (task := self._collector_tasks.get("psi")) is not None:
                 task.cancel()  # the old collector closes its triggers on the way out
                 await asyncio.gather(task, return_exceptions=True)
@@ -470,13 +473,13 @@ class Daemon:
         log.info("reloaded: %d policies, daemon mode %s", len(cfg.policies), cfg.daemon.mode)
         return None
 
-    def _apply(self, cfg: Config) -> None:
+    def _apply(self, cfg: Config, redactor: Redactor) -> None:
         self.cfg = cfg
         self.engine.replace(cfg.policies)
         self.executor.mode = cfg.daemon.mode
         self.executor.limits = cfg.limits
         self.executor.protection = cfg.protection
-        self.reporter.redactor = Redactor.from_config(cfg.redaction)
+        self.reporter.redactor = redactor
         self.correlator.configure(cfg.correlation, _psi_whens(cfg.policies))
         logging.getLogger("sentry_v2").setLevel(cfg.daemon.log_level.upper())
 

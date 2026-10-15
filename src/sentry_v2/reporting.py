@@ -53,8 +53,8 @@ class Reporter:
         self.redactor = redactor
         self._journal_factory = journal_reader_factory
         self._submit = submit
-        # unit -> (monotonic fetch time, props or None while the fetch is in flight)
-        self._units: dict[str, tuple[float, UnitProps | None]] = {}
+        # unit -> (monotonic fetch time, wall fetch time, props or None while in flight)
+        self._units: dict[str, tuple[float, float, UnitProps | None]] = {}
         # held until the call really ends, so lookups never pile up on the D-Bus thread
         self._lookup_slot = asyncio.Semaphore(1)
         self._bundle_slots = asyncio.Semaphore(BUNDLE_BUILDERS)
@@ -86,15 +86,15 @@ class Reporter:
 
     def unit_info(self, unit: str) -> tuple[set[str], str | None]:
         """Called synchronously by the correlator: whatever is cached right now."""
-        props = self._units.get(unit, (0.0, None))[1]
+        props = self._units.get(unit, (0.0, 0.0, None))[2]
         return ({p.rsplit("/", 1)[-1] for p in props.exec_start} if props else set()), None
 
     def refresh(self, unit: str) -> None:
         """Fetch a unit's properties in the background unless they are fresh."""
-        fetched, props = self._units.get(unit, (float("-inf"), None))
+        fetched, wall, props = self._units.get(unit, (float("-inf"), 0.0, None))
         if time.monotonic() - fetched < UNIT_INFO_TTL:
             return
-        self._units[unit] = (time.monotonic(), props)  # one fetch in flight per unit
+        self._units[unit] = (time.monotonic(), wall, props)  # one fetch in flight per unit
         self._spawn(self._fetch_unit(unit), f"unit-info {unit}", self._fetches)
 
     def prune(self) -> None:
@@ -104,7 +104,7 @@ class Reporter:
     async def _fetch_unit(self, unit: str) -> UnitProps | None:
         props = await self._lookup(unit)
         if props is not None:
-            self._units[unit] = (time.monotonic(), props)
+            self._units[unit] = (time.monotonic(), time.time(), props)
         return props
 
     async def _lookup(self, unit: str) -> UnitProps | None:
@@ -124,11 +124,12 @@ class Reporter:
         try:
             return await asyncio.wait_for(asyncio.shield(task), LOOKUP_TIMEOUT)
         except TimeoutError:
-            if not started:
-                task.cancel()
             log.warning("no properties for %s within %gs", unit, LOOKUP_TIMEOUT)
         except Exception as e:
             log.debug("no properties for %s: %r", unit, e)
+        finally:  # timed out, failed or cancelled before the call began: drop it
+            if not started:
+                task.cancel()
         return None
 
     # -- bundles -------------------------------------------------------------
@@ -156,7 +157,10 @@ class Reporter:
         props = None
         tail: list[dict[str, Any]] = []
         if unit is not None:
-            cached = self._units.get(unit, (0.0, None))[1]
+            _mono, wall, cached = self._units.get(unit, (0.0, 0.0, None))
+            # a failure's props must postdate it (state, cgroup); PSI takes any fresh ones
+            if incident.kind == "unit_failed" and wall * 1_000_000 < incident.ts_us:
+                cached = None
             props = cached or await self._fetch_unit(unit)
             try:
                 tail = await asyncio.wait_for(
@@ -167,8 +171,10 @@ class Reporter:
                 log.warning("cannot read the journal for %s: %r", unit, e)
         if incident.kind == "psi":
             cgroup = incident.target
-        else:  # a failed unit has usually lost its cgroup: show its slice instead
+        elif incident.kind == "unit_failed":  # it has usually lost its cgroup: show the slice
             cgroup = props.cgroup if props and props.cgroup else "system.slice"
+        else:  # an AVC burst has no cgroup of its own
+            cgroup = ""
         unit_props = dataclasses.asdict(props) if props else None
         return BundleContext(self.pressure_tree(cgroup), unit_props, tail)
 

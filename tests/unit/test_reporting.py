@@ -77,11 +77,12 @@ def test_cached_props_are_reused_and_drain_waits_for_bundles(fake_cgroupfs: Path
     r = reporter(fake_cgroupfs, mgr, out)
 
     async def main() -> None:
+        incident = failure()  # the props below are fetched after it, so they are reused
         r.refresh("nginx.service")
         r.refresh("nginx.service")  # fresh, or already in flight: no second fetch
         await asyncio.sleep(0.01)
         assert r.unit_info("nginx.service") == ({"nginx"}, None)
-        await r.sinks_notify(failure(), [])
+        await r.sinks_notify(incident, [])
         await r.drain(5)
         (bundle,) = out
         assert bundle["context"]["unit"]["exec_start"] == ["/usr/sbin/nginx"]
@@ -104,3 +105,29 @@ def test_prune_drops_stale_unit_info(fake_cgroupfs: Path, monkeypatch: pytest.Mo
         assert r.unit_info("nginx.service") == (set(), None)
 
     asyncio.run(main())
+
+
+def test_props_older_than_a_failure_are_fetched_again(fake_cgroupfs: Path) -> None:
+    mgr = FakeSystemd(units={"nginx.service": NGINX})
+    r = reporter(fake_cgroupfs, mgr, [])
+
+    async def main() -> None:
+        r.refresh("nginx.service")
+        await asyncio.sleep(0.01)
+        time.sleep(0.002)
+        ctx = await r.context(failure())  # happened after the cached fetch
+        assert ctx.unit_props is not None
+        assert mgr.calls.count(("get_properties", "nginx.service")) == 2
+
+    asyncio.run(main())
+
+
+def test_avc_bundles_have_no_psi_context(fake_cgroupfs: Path) -> None:
+    (fake_cgroupfs / "cgroup" / "system.slice" / "memory.pressure").write_text(
+        "some avg10=1.00 avg60=0.00 avg300=0.00 total=1\n"
+    )
+    r = reporter(fake_cgroupfs, FakeSystemd(), [])
+    inc = failure()
+    avc = Incident(inc.id, "avc", inc.ts_us, "httpd_t", inc.trigger, (), ())
+    ctx = asyncio.run(r.context(avc))
+    assert (ctx.psi, ctx.unit_props, ctx.journal_tail) == ({}, None, [])

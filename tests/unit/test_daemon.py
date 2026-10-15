@@ -734,7 +734,7 @@ def test_reload_survives_unexpected_errors_and_keeps_restart_counts(
 
     async def body() -> None:
         d._health["psi"]["restarts"] = 4
-        monkeypatch.setattr(d, "_apply", lambda cfg: 1 / 0)
+        monkeypatch.setattr(d, "_apply", lambda cfg, redactor: 1 / 0)
         err = await d.reload()
         assert err == "ZeroDivisionError: division by zero"
         assert d.last_reload_error == err
@@ -778,5 +778,37 @@ def test_failed_spawned_task_is_logged(env: Env, caplog: pytest.LogCaptureFixtur
     async def body() -> None:
         d._spawn(boom(), "boom")
         await wait_for(lambda: "task boom failed" in caplog.text)
+
+    drive(d, body)
+
+
+def test_failed_reload_leaves_running_state_untouched(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    shutil.copy(FIXTURES / "policies.d" / "10-ok.toml", env.policies)
+    built: list[object] = []
+
+    def sinks(cfg: Any) -> list[Any]:
+        built.append(cfg)
+        if len(built) > 1:
+            raise RuntimeError("sink exploded")
+        return daemon.build_sinks(cfg.sinks, cfg.daemon.state_dir)
+
+    d = env.daemon(sinks_factory=sinks)
+
+    async def body() -> None:
+        before = (d.cfg, d.sinks, d.reporter.redactor, d.executor.mode, d.executor.limits)
+        env.write_config('mode = "enforce"')  # valid, so only the sinks can fail
+        assert await d.reload() == "RuntimeError: sink exploded"
+        after = (d.cfg, d.sinks, d.reporter.redactor, d.executor.mode, d.executor.limits)
+        assert after == before and d.executor.mode == "dry-run"
+
+        def bad_redactor(cfg: Any) -> Any:
+            raise ValueError("bad pattern")
+
+        monkeypatch.setattr(daemon.Redactor, "from_config", bad_redactor)
+        assert await d.reload() == "ValueError: bad pattern"
+        assert len(built) == 2  # failed before the sinks were even built
+        assert (d.cfg, d.sinks, d.reporter.redactor) == before[:3]
 
     drive(d, body)

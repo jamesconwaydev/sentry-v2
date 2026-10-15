@@ -235,7 +235,8 @@ class Commands:
             tmp = dest.with_name(f".{dest.name}.sentry-v2-restore")
             try:
                 # the bytes that were verified, not whatever the file holds now
-                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+                tmp.unlink(missing_ok=True)  # a leftover from an interrupted restore
+                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                 with os.fdopen(fd, "wb") as f:
                     f.write(data)
                 shutil.copystat(src, tmp)
