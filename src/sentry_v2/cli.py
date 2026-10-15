@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
@@ -41,7 +42,8 @@ _COLOURS = {
 
 def _clean(v: object) -> str:
     """Daemon and file text is untrusted: no control characters reach the terminal."""
-    return _CONTROL.sub("?", str(v))
+    text = _CONTROL.sub("?", str(v))
+    return "".join("?" if unicodedata.category(c) == "Cf" else c for c in text)
 
 
 def _paint(cell: str) -> str:
@@ -62,6 +64,8 @@ def _table(rows: list[list[str]], headers: list[str]) -> str:
 
 
 def _span(seconds: float) -> str:
+    if not abs(seconds) < 1e9:  # also catches inf and nan
+        return "a very long time"
     s = int(abs(seconds))
     h, rem = divmod(s, 3600)
     m, s = divmod(rem, 60)
@@ -309,7 +313,7 @@ def _plan(args: argparse.Namespace) -> list[dict[str, str]]:
     now_us = int(time.time() * _US)
     events = [_event(d, now_us) for d in (raw if isinstance(raw, list) else [raw])]
     if not events:
-        raise ValueError(f"no events in {args.event}")
+        raise ValueError("it holds no events")
     engine = PolicyEngine(cfg.policies, lambda: 0.0)
     plans = []
     for inc in _incidents_from(events, cfg):
@@ -438,7 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     except ControlError as e:
         print(f"error: {_clean(e)}", file=sys.stderr)
         return 3 if str(e).startswith("permission denied") else 1
-    except (KeyError, TypeError, ValueError) as e:
+    except (KeyError, TypeError, ValueError, AttributeError, OverflowError) as e:
         print(f"unexpected reply from the daemon: {_clean(repr(e))}", file=sys.stderr)
         return 1
     except BrokenPipeError:

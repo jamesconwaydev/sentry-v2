@@ -294,7 +294,6 @@ def test_client_bad_replies(stub, capsys):
     assert run(stub, capsys, "status")[0] == 1
     stub.replies["status"] = b"[1]\n"
     assert run(stub, capsys, "status")[0] == 1
-    stub.replies["status"] = {"ok": True, "result": {}, "id": 7}
     stub.replies["status"] = b'{"id":7,"ok":true,"result":{}}\n'
     rc, _, err = run(stub, capsys, "status")
     assert rc == 1 and "id does not match" in err
@@ -338,7 +337,7 @@ def test_colour_rules(stub, capsys, monkeypatch):
 
 def test_empty_events_and_limit(tmp_path, capsys):
     assert main(_event(tmp_path, [])) == 1
-    assert "no events in" in capsys.readouterr().err
+    assert "holds no events" in capsys.readouterr().err
     assert main(["incidents", "--limit", "0"]) == 2
 
 
@@ -346,3 +345,30 @@ def test_broken_pipe(stub, capsys, monkeypatch):
     stub.replies["pause"] = {"ok": True, "result": {"paused": True}}
     monkeypatch.setattr("builtins.print", lambda *a, **k: (_ for _ in ()).throw(BrokenPipeError))
     assert main(["--socket", str(stub.path), "pause"]) == 0
+
+
+def test_odd_reply_shapes(stub, capsys):
+    stub.replies["status"] = {"ok": True, "result": {**STATUS, "collectors": []}}
+    rc, _, err = run(stub, capsys, "status")
+    assert rc == 1 and "unexpected reply" in err
+    act = {"id": "a", "status": "applied", "expires_at": 1e300}
+    stub.replies["actions"] = {"ok": True, "result": {"active": [act], "recent": []}}
+    rc, out, _ = run(stub, capsys, "actions")
+    assert rc == 0 and "a very long time" in out
+
+
+def test_error_ignores_id_and_bool_id_rejected(stub):
+    stub.replies["x"] = b'{"id":9,"ok":false,"error":"nope"}\n'
+    with pytest.raises(ControlError, match="nope"):
+        ControlClient(stub.path).call("x")
+    stub.replies["y"] = b'{"id":true,"ok":true,"result":{}}\n'
+    with pytest.raises(ControlError, match="id does not match"):
+        ControlClient(stub.path).call("y")
+
+
+def test_bidi_stripped(stub, capsys):
+    stub.replies["actions"] = {
+        "ok": True,
+        "result": {"active": [{"id": "a", "target": "a\u202eb"}], "recent": []},
+    }
+    assert "\u202e" not in run(stub, capsys, "actions")[1]
