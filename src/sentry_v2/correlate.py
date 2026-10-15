@@ -96,13 +96,9 @@ class Correlator:
         clock: Callable[[], float],
         unit_info: UnitInfo = _no_unit_info,
     ) -> None:
-        self._cfg = cfg
-        self._whens = tuple(psi_whens)
         self._clock = clock
         self._unit_info = unit_info
-        self._retention_us = int(cfg.retention * _S)
-        self._before_us = int(cfg.before * _S)
-        self._after_us = int(cfg.after * _S)
+        self.configure(cfg, psi_whens)
         self._events: deque[Event] = deque()
         self._pending: list[UnitEvent] = []
         self._domains: dict[str, tuple[int, str]] = {}  # unit -> (ts_us, scontext type)
@@ -112,6 +108,14 @@ class Correlator:
 
     def __len__(self) -> int:
         return len(self._events)
+
+    def configure(self, cfg: CorrelationConfig, psi_whens: Sequence[PsiWhen]) -> None:
+        """Apply new settings (on reload); buffered events and pending failures are kept."""
+        self._cfg = cfg
+        self._whens = tuple(psi_whens)
+        self._retention_us = int(cfg.retention * _S)
+        self._before_us = int(cfg.before * _S)
+        self._after_us = int(cfg.after * _S)
 
     def ingest(self, ev: Event) -> list[Incident]:
         if not self._events or ev.ts_us >= self._events[-1].ts_us:

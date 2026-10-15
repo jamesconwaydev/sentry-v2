@@ -55,7 +55,7 @@ SinksNotify = Callable[[Incident, list[ActionRecord]], Awaitable[None]]
 Alert = Callable[[str, dict[str, Any]], Awaitable[None]]
 Watch = tuple[str, str, float]  # (cgroup, resource, release_below)
 
-_KIND: dict[type, ActionKind] = {
+ACTION_KIND: dict[type, ActionKind] = {
     Throttle: "throttle",
     Freeze: "freeze",
     BackupReload: "backup_reload",
@@ -189,7 +189,7 @@ class Executor:
     async def _guarded(self, incident: Incident, policy: Policy, spec: ActionSpec) -> ActionRecord:
         unit = self._target_unit(incident)
         rec = ActionRecord(
-            id=uuid7(), policy=policy.name, action=_KIND[type(spec)],
+            id=uuid7(), policy=policy.name, action=ACTION_KIND[type(spec)],
             target=unit or incident.target, mode=self._mode_for(policy), status="planned",
             previous={}, applied_at=None, expires_at=None, error=None,
             incident_id=incident.id, configured_mode=policy.mode,

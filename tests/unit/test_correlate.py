@@ -418,3 +418,12 @@ def test_avc_burst_requires_window_and_same_type() -> None:
     for i in range(4):
         c.ingest(avc(T + 9 * S, serial=20 + i, scontext_type=f"t{i}_t"))
     assert c.ingest(avc(T + 9 * S, serial=30, denied=False)) == []
+
+
+def test_configure_keeps_pending_failures() -> None:
+    clock = Clock()
+    c = correlator(clock)
+    c.ingest(failed(T))
+    c.configure(CorrelationConfig(after=3.0), [])
+    assert c.tick(T + 2 * S) == []  # the new, longer `after` applies to the pending one
+    assert len(c.tick(T + 3 * S)) == 1
