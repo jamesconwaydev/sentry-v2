@@ -62,4 +62,6 @@ By taking part you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Releases
 
-Releases are cut by the maintainer. A release PR bumps `__version__` in `src/sentry_v2/__init__.py` and `upstream_version` in `packaging/sentry-v2.spec`, and adds a `## [x.y.z]` section to the CHANGELOG. Once that's merged, we tag `main` as `vx.y.z` and push the tag. The release workflow builds the RPMs on Rocky 10, builds the wheel and sdist, attests everything, publishes the GitHub release using the CHANGELOG section as its notes, and uploads to PyPI through trusted publishing. It stops early if the tag, the package version and the spec version disagree.
+Releases are cut by the maintainer. The version lives in `src/sentry_v2/__init__.py`, and `pyproject.toml` reads it from there, so the release PR bumps that file and `upstream_version` in `packaging/sentry-v2.spec`, and adds a `## [x.y.z]` section to the CHANGELOG. Once that's merged, we tag `main` as `vx.y.z` and push the tag. Tags must be plain `vMAJOR.MINOR.PATCH`; we don't publish prereleases.
+
+A first job checks that the tag, `__version__` and the spec agree and that the CHANGELOG has notes for the version, so a bad tag fails in seconds. Then the workflow builds the RPMs on Rocky 10 and the wheel and sdist, checks the built files carry the tag's version, attests everything, publishes the GitHub release with the CHANGELOG section as its notes, and uploads to PyPI through trusted publishing.

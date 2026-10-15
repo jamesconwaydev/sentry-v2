@@ -6,8 +6,51 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check the tag, package and spec versions agree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "tag $TAG is not vMAJOR.MINOR.PATCH; we don't publish prereleases" >&2
+            exit 1
+          fi
+          pkg=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/sentry_v2/__init__.py | tr -d '[:space:]')
+          spec=$(sed -n 's/^%global upstream_version//p' packaging/sentry-v2.spec | tr -d '[:space:]')
+          if [ "$TAG" != "v$pkg" ] || [ "$pkg" != "$spec" ]; then
+            echo "tag $TAG, __version__ $pkg, spec $spec: these must all agree" >&2
+            exit 1
+          fi
+      - name: Extract release notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          [ -f CHANGELOG.md ] || { echo "CHANGELOG.md is missing" >&2; exit 1; }
+          awk -v v="${TAG#v}" '
+            /^## \[/ { if (on) exit; on = (index($0, "## [" v "]") == 1); next }
+            on && /^\[[^]]+\]:[[:space:]]/ { next }
+            on
+          ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md || { echo "No notes under '## [${TAG#v}]' in CHANGELOG.md" >&2; exit 1; }
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes
+          path: notes.md
+          if-no-files-found: error
   rpm:
+    needs: check
     runs-on: ubuntu-latest
     container: rockylinux/rockylinux:10
     permissions:
@@ -18,20 +61,10 @@ jobs:
           dnf -y install dnf-plugins-core
           dnf config-manager --set-enabled crb
           dnf -y install rpm-build python3-devel pyproject-rpm-macros systemd-rpm-macros \
-            selinux-policy-devel python3-wheel python3-setuptools bzip2 git make
+            selinux-policy-devel python3-wheel python3-setuptools bzip2 make
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Check the tag matches the package and spec versions
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          pkg=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/sentry_v2/__init__.py)
-          spec=$(sed -n 's/^%global upstream_version[[:space:]]*//p' packaging/sentry-v2.spec)
-          if [ "$TAG" != "v$pkg" ] || [ "$pkg" != "$spec" ]; then
-            echo "tag $TAG, __version__ $pkg, spec $spec: these must all agree" >&2
-            exit 1
-          fi
       # rpmbuild is already here, so make rpm builds in place.
       - run: make rpm
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -43,6 +76,7 @@ jobs:
           if-no-files-found: error
 
   python:
+    needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -56,6 +90,13 @@ jobs:
       - run: python -m pip install build twine
       - run: python -m build
       - run: twine check dist/*
+      - name: Check the built files carry the tag version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          v=${TAG#v}
+          [ "$(find dist -type f -printf '%f\n' | sort)" = "$(printf 'sentry_v2-%s-py3-none-any.whl\nsentry_v2-%s.tar.gz\n' "$v" "$v")" ] \
+            || { echo "unexpected files in dist/ for $v:" >&2; ls dist >&2; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python
@@ -79,28 +120,21 @@ jobs:
       - name: Collect files and write SHA256SUMS
         run: |
           mkdir release
-          find artifacts -type f -exec cp {} release/ \;
-          (cd release && sha256sum * > SHA256SUMS)
-      - name: Extract release notes
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          awk -v v="${TAG#v}" '
-            /^## \[/ { if (on) exit; on = (index($0, "## [" v "]") == 1) }
-            on
-          ' CHANGELOG.md > notes.md
-          [ -s notes.md ] || { echo "No '## [${TAG#v}]' section in CHANGELOG.md" >&2; exit 1; }
+          find artifacts -type f ! -path 'artifacts/notes/*' -exec cp {} release/ \;
+          (cd release && sha256sum -- * > SHA256SUMS)
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release/*
+          create-storage-record: false
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" release/* --title "$TAG" --notes-file notes.md
+        run: gh release create "$TAG" release/* --title "$TAG" --notes-file artifacts/notes/notes.md
 
   pypi:
     needs: release
+    if: github.repository == 'jamesconwaydev/sentry-v2'
     runs-on: ubuntu-latest
     environment: pypi
     permissions:

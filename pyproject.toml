@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sentry-v2"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Correlates PSI, journal failures and SELinux denials, and applies reversible remediation."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -20,6 +20,9 @@ sentry-v2ctl = "sentry_v2.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
+
+[tool.setuptools.dynamic]
+version = { attr = "sentry_v2.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
