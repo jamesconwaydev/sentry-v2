@@ -20,11 +20,14 @@ SCHEMA_ID = "sentry-v2/bundle/1"
 REDACTED = "[REDACTED]"
 
 DEFAULT_PATTERNS = (
+    # before the bearer pattern, which would leave "Authorization: [REDACTED]"
+    # for this one to swallow the next word after
+    r"(?i)authorization:\s*\S+(?:\s+\S+)?",
     r"(?i)bearer\s+[a-z0-9._~+/-]+=*",
     r"://[^/\s:@]+:[^/\s@]+@",
     r"AKIA[0-9A-Z]{16}",
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
-    r"(?i)(password|passwd|secret|token)=\S+",
+    r"(?i)(password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)=\S+",
 )
 
 

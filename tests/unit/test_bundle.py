@@ -193,6 +193,21 @@ def test_default_patterns(text: str) -> None:
         assert leak not in out
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("api_key=k1 apikey=k2 API-KEY=k3", "[REDACTED] [REDACTED] [REDACTED]"),
+        ("access_key=k4 accesskey=k5", "[REDACTED] [REDACTED]"),
+        ("client_secret=k6 client-secret=k7", "[REDACTED] [REDACTED]"),
+        ("authorization: Basic dXNlcjpwYXNz", "[REDACTED]"),
+        ("Authorization: Bearer abc rest", "[REDACTED] rest"),
+        ("AUTHORIZATION:k8", "[REDACTED]"),
+    ],
+)
+def test_api_keys_and_authorization_headers(text: str, expected: str) -> None:
+    assert RED.scrub(text) == expected
+
+
 def test_pem_keeps_surroundings() -> None:
     assert RED.scrub(PEM) == "x [REDACTED] y"
 

@@ -253,11 +253,12 @@ anywhere, matches of these patterns are replaced with `[REDACTED]`:
 
 | What | Pattern |
 |---|---|
+| Authorization headers, with the scheme | `(?i)authorization:\s*\S+(?:\s+\S+)?` |
 | Bearer tokens | `(?i)bearer\s+[a-z0-9._~+/-]+=*` |
 | Credentials in URLs | `://[^/\s:@]+:[^/\s@]+@` |
 | AWS access key ids | `AKIA[0-9A-Z]{16}` |
 | PEM private keys | `-----BEGIN … PRIVATE KEY-----` through the matching `END` line, or to the end of the text if it's cut off |
-| Secret pairs | `(?i)(password\|passwd\|secret\|token)=\S+` |
+| Secret pairs | `(?i)(password\|passwd\|secret\|token\|api[_-]?key\|access[_-]?key\|client[_-]?secret)=\S+` |
 
 They're applied to:
 
@@ -288,7 +289,8 @@ only yours.
 ### Limits worth knowing
 
 - The whole match is replaced. The URL pattern takes the `://` with it, so
-  `postgres://billing:hunter2@db` becomes `postgres[REDACTED]db`.
+  `postgres://billing:hunter2@db` becomes `postgres[REDACTED]db`, and an
+  `Authorization:` header loses its name along with up to two words after it.
 - Patterns run in order on each string, one after another. A later pattern
   sees the earlier replacements.
 - Only the fields listed above are scrubbed. The parsed AVC fields beside
