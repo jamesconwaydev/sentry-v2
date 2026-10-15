@@ -10,6 +10,7 @@ import asyncio
 import ipaddress
 import logging
 import re
+import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
@@ -23,10 +24,13 @@ AVC_CORRELATED_TOTAL = "sentry_v2_avc_correlated_total"
 EVENTS_DROPPED_TOTAL = "sentry_v2_events_dropped_total"
 SINK_FAILURES_TOTAL = "sentry_v2_sink_failures_total"
 BUILD_INFO = "sentry_v2_build_info"
+RENDER_ERRORS_TOTAL = "sentry_v2_metrics_render_errors_total"
 
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 MAX_HEADER_BYTES = 4096
 HEADER_TIMEOUT = 5.0
+WRITE_TIMEOUT = 5.0
+LOG_INTERVAL = 60.0
 
 _NAME_RE = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
 _LABEL_RE = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
@@ -40,6 +44,11 @@ def _fmt(v: float) -> str:
     if v in (float("inf"), float("-inf")):
         return "+Inf" if v > 0 else "-Inf"
     return repr(float(v))
+
+
+def _check_label(label: str) -> None:
+    if not _LABEL_RE.fullmatch(label) or label.startswith("__"):
+        raise ValueError(f"invalid label name: {label!r}")
 
 
 def _escape_help(s: str) -> str:
@@ -68,6 +77,8 @@ class _Child:
         self.value += n
 
     def set(self, v: float) -> None:
+        if self._monotonic:
+            raise ValueError("counters cannot be set")
         self.value = float(v)
 
 
@@ -79,6 +90,8 @@ class _Metric:
         self.help = help
         self.labelnames = labelnames
         self._children: dict[tuple[str, ...], _Child] = {}
+        if not labelnames and self.kind == "counter":
+            self.labels()  # render 0 from the first scrape
 
     def labels(self, **kw: str) -> _Child:
         if set(kw) != set(self.labelnames):
@@ -127,9 +140,19 @@ class _FuncGauge:
         self._fn = fn
 
     def samples(self) -> Iterable[str]:
-        rows = sorted((tuple(sorted(lbl.items())), v) for lbl, v in self._fn())
-        for items, v in rows:
-            yield _sample(self.name, tuple(k for k, _ in items), tuple(x for _, x in items), v)
+        rows = list(self._fn())
+        if not rows:
+            return iter(())
+        names = tuple(sorted(rows[0][0]))
+        for label in names:
+            _check_label(label)
+        table = []
+        for labels, v in rows:
+            if set(labels) != set(names):
+                raise ValueError(f"{self.name}: inconsistent label set {sorted(labels)}")
+            table.append((tuple(str(labels[n]) for n in names), float(v)))
+        table.sort(key=lambda row: row[0])
+        return iter([_sample(self.name, names, values, v) for values, v in table])
 
 
 class Registry:
@@ -137,6 +160,9 @@ class Registry:
 
     def __init__(self) -> None:
         self._metrics: dict[str, Counter | Gauge | _FuncGauge] = {}
+        # Set by build_registry; counts metrics skipped during render.
+        self.render_errors: Counter | None = None
+        self._last_logged: dict[str, float] = {}
 
     def _check(self, name: str, labelnames: tuple[str, ...] = ()) -> None:
         if not _NAME_RE.fullmatch(name):
@@ -144,8 +170,7 @@ class Registry:
         if name in self._metrics:
             raise ValueError(f"metric already registered: {name}")
         for label in labelnames:
-            if not _LABEL_RE.fullmatch(label) or label.startswith("__"):
-                raise ValueError(f"invalid label name: {label!r}")
+            _check_label(label)
 
     def counter(self, name: str, help: str, labelnames: tuple[str, ...] = ()) -> Counter:
         self._check(name, labelnames)
@@ -167,11 +192,25 @@ class Registry:
         self._check(name)
         self._metrics[name] = _FuncGauge(name, help, fn)
 
+    def _render_failed(self, name: str) -> None:
+        if self.render_errors is not None:
+            self.render_errors.inc()
+        now = time.monotonic()
+        last = self._last_logged.get(name)
+        if last is None or now - last >= LOG_INTERVAL:
+            self._last_logged[name] = now
+            log.exception("metric %s failed to render; skipping it", name)
+
     def render(self) -> str:
         out: list[str] = []
         for m in self._metrics.values():
+            try:
+                lines = list(m.samples())
+            except Exception:
+                self._render_failed(m.name)
+                continue
             out.append(f"# HELP {m.name} {_escape_help(m.help)}\n# TYPE {m.name} {m.kind}\n")
-            out.extend(m.samples())
+            out.extend(lines)
         return "".join(out)
 
 
@@ -211,6 +250,9 @@ def build_registry(build_info: dict[str, str]) -> tuple[Registry, Metrics]:
         build_info=r.gauge(BUILD_INFO, "Build information (always 1).", tuple(build_info)),
     )
     m.build_info.labels(**build_info).set(1)
+    r.render_errors = r.counter(
+        RENDER_ERRORS_TOTAL, "Metrics skipped because they failed to render."
+    )
     return r, m
 
 
@@ -220,6 +262,7 @@ _REASONS = {
     404: "Not Found",
     405: "Method Not Allowed",
     408: "Request Timeout",
+    500: "Internal Server Error",
     431: "Request Header Fields Too Large",
 }
 
@@ -275,7 +318,7 @@ class MetricsServer:
             head += f"Content-Type: {ctype}\r\n"
         head += "Connection: close\r\n\r\n"
         writer.write(head.encode("ascii") + body)
-        await writer.drain()
+        await asyncio.wait_for(writer.drain(), timeout=WRITE_TIMEOUT)
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -297,11 +340,16 @@ class MetricsServer:
                 await self._respond(writer, 400)
             elif parts[0] != b"GET":
                 await self._respond(writer, 405)
-            elif parts[1] != b"/metrics":
+            elif parts[1].split(b"?", 1)[0] != b"/metrics":
                 await self._respond(writer, 404)
             else:
-                body = self._registry.render().encode()
-                await self._respond(writer, 200, body, CONTENT_TYPE)
+                try:
+                    body = self._registry.render().encode()
+                except Exception:
+                    log.exception("metrics render failed")
+                    await self._respond(writer, 500)
+                else:
+                    await self._respond(writer, 200, body, CONTENT_TYPE)
         except (ConnectionError, OSError):
             pass
         finally:

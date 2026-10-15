@@ -74,6 +74,8 @@ def test_gauge_func_evaluated_at_scrape():
     r.gauge_func("f", "F.", lambda: [({"k": "b"}, box[0] + 1), ({"k": "a"}, 0.5)])
     box[0] = 4.0
     assert r.render() == '# HELP f F.\n# TYPE f gauge\nf{k="a"} 0.5\nf{k="b"} 5.0\n'
+    r.gauge_func("n", "N.", lambda: [({"k": 2}, 1), ({"k": 1}, 2)])
+    assert 'n{k="1"} 2.0\nn{k="2"} 1.0\n' in r.render()
 
 
 def test_gauge_func_duplicate():
@@ -134,7 +136,8 @@ def test_server_metrics_ok():
 
 def test_server_404_and_405():
     assert _serve(b"GET / HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 404")
-    assert _serve(b"GET /metrics?x=1 HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 404")
+    assert _serve(b"GET /metricsx HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 404")
+    assert _serve(b"GET /metrics?x=1 HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 200")
     assert _serve(b"POST /metrics HTTP/1.1\r\n\r\n").startswith(b"HTTP/1.1 405")
     assert _serve(b"garbage\r\n\r\n").startswith(b"HTTP/1.1 400")
 
@@ -170,3 +173,46 @@ def test_non_loopback_host_warns(caplog):
     with caplog.at_level(logging.WARNING):
         asyncio.run(go())
     assert "non-loopback" in caplog.text
+
+
+def test_counter_set_raises_and_unlabelled_counter_starts_at_zero():
+    r = Registry()
+    c = r.counter("c_total", "C.")
+    assert "c_total 0.0\n" in r.render()
+    with pytest.raises(ValueError):
+        c.set(3)
+
+
+def test_failing_gauge_func_is_skipped_counted_and_logged_once(caplog):
+    r, _ = build_registry({"version": "1"})
+    r.gauge_func("bad_mismatch", "B.", lambda: [({"a": "1"}, 1), ({"b": "1"}, 1)])
+    r.gauge_func("bad_label", "B.", lambda: [({"__x": "1"}, 1)])
+
+    def boom():
+        raise RuntimeError("nope")
+
+    r.gauge_func("bad_raise", "B.", boom)
+    r.gauge_func("good", "G.", lambda: [({}, 1)])
+    with caplog.at_level(logging.ERROR):
+        out1 = r.render()
+        r.render()
+    assert "bad_" not in out1 and "good 1.0\n" in out1
+    assert "sentry_v2_build_info" in out1
+    assert caplog.text.count("failed to render") == 3
+    assert "sentry_v2_metrics_render_errors_total 6.0\n" in r.render()
+
+
+def test_server_500_when_render_raises():
+    class Broken(Registry):
+        def render(self) -> str:
+            raise RuntimeError("x")
+
+    async def go() -> bytes:
+        s = MetricsServer(Broken(), "127.0.0.1", 0)
+        await s.start()
+        try:
+            return await _get(s.port, b"GET /metrics HTTP/1.1\r\n\r\n")
+        finally:
+            await s.stop()
+
+    assert asyncio.run(go()).startswith(b"HTTP/1.1 500")
