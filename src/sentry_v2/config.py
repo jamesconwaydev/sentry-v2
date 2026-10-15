@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import tomllib
 from collections.abc import Callable
@@ -106,6 +107,14 @@ def _strs(v: object) -> tuple[str, ...]:
     if not isinstance(v, list) or not all(isinstance(i, str) for i in v):
         raise ValueError("must be a list of strings")
     return tuple(v)
+
+
+def _abs_paths(v: object) -> tuple[Path, ...]:
+    paths = _strs(v)
+    for p in paths:
+        if not p.startswith("/") or os.path.normpath(p) != p:
+            raise ValueError(f"{p!r}: paths must be absolute, normalised paths")
+    return tuple(Path(p) for p in paths)
 
 
 def _path(v: object) -> Path:
@@ -447,7 +456,7 @@ def _action(r: _Reader, limits: LimitsConfig) -> ActionSpec:
             duration=duration(), release_below=r.get("release_below", _float_in(0, 100), None)
         )
     elif kind == "backup_reload":
-        action = BackupReload(paths=tuple(Path(p) for p in r.get("paths", _strs, _NO_STRS)))
+        action = BackupReload(paths=r.get("paths", _abs_paths, ()))
     else:
         action = Notify()
     r.finish()

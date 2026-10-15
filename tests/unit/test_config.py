@@ -250,3 +250,10 @@ def test_file_sink_dir_follows_state_dir(tmp_path: Path) -> None:
     assert load(tmp_path, '[daemon]\nstate_dir = "/x"').sinks.file.dir == Path("/x/bundles")
     cfg = load(tmp_path, '[daemon]\nstate_dir = "/x"\n[sinks.file]\ndir = "/y"')
     assert cfg.sinks.file.dir == Path("/y")
+
+
+@pytest.mark.parametrize("path", ["etc/nginx.conf", "/etc/../root/x", "/etc//nginx.conf", "/etc/"])
+def test_backup_paths_absolute_and_normalised(tmp_path: Path, path: str) -> None:
+    got = err(tmp_path, x=policy_text(do=f'action = "backup_reload"\npaths = ["{path}"]'))
+    assert got.startswith("x.toml: policy[0].do[0].paths: ")
+    assert "absolute, normalised" in got
