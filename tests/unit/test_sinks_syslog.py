@@ -75,21 +75,29 @@ def test_udp_truncates_large_messages() -> None:
     assert m and _params(m["params"])["truncated"] == "1"
 
 
-def _accept_one(srv: socket.socket, out: list[bytes], ctx: ssl.SSLContext | None) -> None:
-    conn, _ = srv.accept()
-    if ctx:
-        conn = ctx.wrap_socket(conn, server_side=True)
-    with conn:
-        buf = b""
-        while chunk := conn.recv(65536):
-            buf += chunk
-    out.append(buf)
+def _accept_one(
+    srv: socket.socket, out: list[bytes | BaseException], ctx: ssl.SSLContext | None
+) -> None:
+    """Read one connection to EOF; with TLS, answer the client's close_notify like rsyslog."""
+    try:
+        conn, _ = srv.accept()
+        if ctx:
+            conn = ctx.wrap_socket(conn, server_side=True)
+        with conn:
+            buf = b""
+            while chunk := conn.recv(65536):
+                buf += chunk
+            if ctx:
+                conn.unwrap()  # type: ignore[attr-defined]
+        out.append(buf)
+    except BaseException as e:  # surface it in the test, not as a stray thread warning
+        out.append(e)
 
 
 def _stream(transport: str, ctx_server: ssl.SSLContext | None, ca: Path | None) -> bytes:
     with socket.create_server(("127.0.0.1", 0)) as srv:
         srv.settimeout(5)
-        out: list[bytes] = []
+        out: list[bytes | BaseException] = []
         t = threading.Thread(target=_accept_one, args=(srv, out, ctx_server))
         t.start()
         sink = SyslogSink(
@@ -103,6 +111,8 @@ def _stream(transport: str, ctx_server: ssl.SSLContext | None, ca: Path | None) 
         asyncio.run(sink.send(b))
         t.join(5)
     (data,) = out
+    if isinstance(data, BaseException):
+        raise data
     return data
 
 

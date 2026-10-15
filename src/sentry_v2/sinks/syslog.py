@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import socket
 import ssl
@@ -90,5 +91,10 @@ class SyslogSink:
             if self._context is not None:
                 with self._context.wrap_socket(raw, server_hostname=self.host) as tls:
                     tls.sendall(frame)
+                    # Close with close_notify, reading what the server still sends
+                    # (TLS 1.3 session tickets). Closing with that unread makes the
+                    # kernel send RST, and the server may discard our message.
+                    with contextlib.suppress(OSError):  # peer closed without close_notify
+                        tls.unwrap()
             else:
                 raw.sendall(frame)
