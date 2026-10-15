@@ -35,7 +35,14 @@ from .control import ControlServer
 from .correlate import Correlator
 from .events import EventQueue, Incident, PsiEvent, UnitEvent
 from .executor import Executor
-from .metrics import ACTIONS_ACTIVE, PSI_AVG10, MetricsServer, build_registry
+from .metrics import (
+    ACTIONS_ACTIVE,
+    BREAKER_OPEN,
+    PSI_AVG10,
+    ROLLBACKS_STUCK,
+    MetricsServer,
+    build_registry,
+)
 from .policy import Policy, PolicyEngine, PsiWhen, effective_mode
 from .reporting import Reporter
 from .sinks import Sink, SinkError, SinkManager, build_sinks
@@ -182,6 +189,14 @@ class Daemon:
         self.registry.gauge_func(
             ACTIONS_ACTIVE, "Throttles and freezes awaiting rollback.",
             lambda: [({}, len(self.executor.active()))],
+        )  # fmt: skip
+        self.registry.gauge_func(
+            ROLLBACKS_STUCK, "Targets whose rollback failed and that refuse new actions.",
+            lambda: [({}, len({r.target for r in self.executor.stuck()}))],
+        )  # fmt: skip
+        self.registry.gauge_func(
+            BREAKER_OPEN, "1 while the circuit breaker forces dry-run.",
+            lambda: [({}, int(self.executor.breaker_state()["open"]))],
         )  # fmt: skip
         self.metrics_server = (
             MetricsServer(self.registry, cfg.metrics.host, cfg.metrics.port)

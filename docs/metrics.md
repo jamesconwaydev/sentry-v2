@@ -35,6 +35,8 @@ another port, label it too (see [hardening.md](hardening.md#selinux)).
 | `sentry_v2_psi_avg10` | gauge | `cgroup`, `resource`, `kind` | The latest 10-second pressure average, in percent, for each watched cgroup, from the 5-second samples. A cgroup that misses three samples in a row (15 seconds) drops out, so a stopped unit disappears quickly. |
 | `sentry_v2_actions_total` | counter | `policy`, `action`, `mode`, `result` | Actions attempted. `mode` is the mode actually used (`dry-run` or `enforce`); `result` is the record's status when the incident was handled: `applied`, `failed`, `dry_run`, or `planned` for an apply whose outcome was unknown and is being rolled back. |
 | `sentry_v2_actions_active` | gauge | | Throttles and freezes awaiting rollback. |
+| `sentry_v2_rollbacks_stuck` | gauge | | Units whose rollback failed for good. Each one refuses new actions until you run `sentry-v2ctl rollback` on it. |
+| `sentry_v2_breaker_open` | gauge | | 1 while the circuit breaker forces dry-run after repeated systemd failures, otherwise 0. |
 | `sentry_v2_incidents_total` | counter | `kind` | Incidents opened: `unit_failed`, `psi` or `avc`. |
 | `sentry_v2_avc_correlated_total` | counter | | Denials linked to an incident. |
 | `sentry_v2_events_dropped_total` | counter | `collector` | Events dropped because the event queue was full. |
@@ -59,12 +61,21 @@ groups:
         expr: increase(sentry_v2_sink_failures_total[30m]) > 3
         annotations:
           summary: "sentry-v2 cannot deliver to {{ $labels.sink }}"
+      - alert: SentryV2RollbackStuck
+        expr: sentry_v2_rollbacks_stuck > 0
+        annotations:
+          summary: "a sentry-v2 rollback failed; see sentry-v2ctl actions"
+      - alert: SentryV2BreakerOpen
+        expr: sentry_v2_breaker_open == 1
+        annotations:
+          summary: "sentry-v2 has forced dry-run after repeated systemd failures"
       - alert: SentryV2ActionsEnforced
         expr: increase(sentry_v2_actions_total{mode="enforce"}[5m]) > 0
         annotations:
           summary: "sentry-v2 enforced {{ $labels.action }} for policy {{ $labels.policy }}"
 ```
 
-A rollback that fails for good and a tripped circuit breaker each send a
-critical bundle to every sink, so alert on those from your bundle pipeline
-rather than from metrics.
+A rollback that fails for good and a tripped circuit breaker also send a
+critical bundle to every sink. The gauges are there so you can see the
+state persist: the bundle arrives once, while the gauge stays up until
+someone deals with it.

@@ -144,6 +144,10 @@ class Executor:
         """Throttles and freezes awaiting rollback (applied, or of unknown outcome)."""
         return list(self._active.values())
 
+    def stuck(self) -> list[ActionRecord]:
+        """Records whose rollback failed; new actions on their targets are refused."""
+        return list(self._failed.values())
+
     def breaker_state(self) -> dict[str, Any]:
         """{"open", "until", "failures"}: whether apply failures have forced dry-run."""
         now = self._clock()

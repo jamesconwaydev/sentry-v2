@@ -833,6 +833,39 @@ async def scrape(port: int) -> str:
     return data.decode()
 
 
+def test_metrics_show_stuck_rollbacks_and_the_breaker(env: Env) -> None:
+    journal = ActionJournal(env.state / "state" / "actions.jsonl")
+    for rec_id in ("s1", "s2"):  # two failed rollbacks, one stuck target
+        journal.append(
+            ActionRecord(
+                id=rec_id,
+                policy="p",
+                action="freeze",
+                target="nginx.service",
+                mode="enforce",
+                status="rollback_failed",
+                previous={},
+                applied_at=1.0,
+                expires_at=2.0,
+                error="timeout",
+                incident_id="i1",
+            )
+        )
+    port = free_port()
+    env.write_config(f"[metrics]\nenabled = true\nport = {port}\n")
+    d = env.daemon()
+
+    async def body() -> None:
+        text = await scrape(port)
+        assert "sentry_v2_rollbacks_stuck 1.0" in text
+        assert "sentry_v2_breaker_open 0.0" in text
+        for _ in range(d.cfg.limits.breaker_failures):
+            d.executor._apply_failed()
+        assert "sentry_v2_breaker_open 1.0" in await scrape(port)
+
+    drive(d, body)
+
+
 FREEZE_POLICY = """
 [[policy]]
 name = "nginx-freeze"

@@ -19,6 +19,8 @@ log = logging.getLogger(__name__)
 PSI_AVG10 = "sentry_v2_psi_avg10"
 ACTIONS_TOTAL = "sentry_v2_actions_total"
 ACTIONS_ACTIVE = "sentry_v2_actions_active"
+ROLLBACKS_STUCK = "sentry_v2_rollbacks_stuck"
+BREAKER_OPEN = "sentry_v2_breaker_open"
 INCIDENTS_TOTAL = "sentry_v2_incidents_total"
 AVC_CORRELATED_TOTAL = "sentry_v2_avc_correlated_total"
 EVENTS_DROPPED_TOTAL = "sentry_v2_events_dropped_total"
@@ -218,9 +220,9 @@ class Registry:
 class Metrics:
     """Metrics the daemon updates directly.
 
-    psi_avg10{cgroup,resource,kind} and actions_active are not here: the
-    daemon registers them with Registry.gauge_func (names PSI_AVG10 and
-    ACTIONS_ACTIVE) because their values live in other components.
+    psi_avg10{cgroup,resource,kind}, actions_active, rollbacks_stuck and
+    breaker_open are not here: the daemon registers them with
+    Registry.gauge_func because their values live in other components.
     """
 
     actions_total: Counter
