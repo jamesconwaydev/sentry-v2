@@ -155,12 +155,12 @@ class Env:
             return FakeReader(entries, [])
 
         kw.setdefault("audit_source_factory", lambda: FakeSource(self.audit_records))
+        kw.setdefault("clock", time.time)
         return Daemon(
             (self.config, self.policies),
             fs=self.fs,
             mgr_factory=lambda: self.mgr,
             journal_reader_factory=reader,
-            clock=time.time,
             notify=self.notes.append,
             **kw,
         )
@@ -385,6 +385,27 @@ def test_slow_replay_keeps_extending_the_start_timeout(
     ready = env.notes.index("READY=1")
     assert env.notes[:ready].count(daemon.EXTEND_TIMEOUT) >= 3
     assert daemon.EXTEND_TIMEOUT not in env.notes[ready:]
+
+
+def test_ticker_compacts_the_action_journal_daily(env: Env) -> None:
+    now = [time.time()]
+    d = env.daemon(clock=lambda: now[0])
+    path = env.state / "state" / "actions.jsonl"
+    old = ActionJournal(path, clock=lambda: now[0] - 8 * 86400)
+    rec = ActionRecord(
+        id="old", policy="p", action="throttle", target="nginx.service", mode="enforce",
+        status="rolled_back", previous={}, applied_at=1.0, expires_at=2.0, error=None,
+        incident_id="i1",
+    )  # fmt: skip
+
+    async def body() -> None:
+        old.append(rec)  # after startup's compaction
+        await asyncio.sleep(0.6)
+        assert "old" in d.executor.journal.load()
+        now[0] += daemon.COMPACT_EVERY
+        await wait_for(lambda: "old" not in d.executor.journal.load())
+
+    drive(d, body)
 
 
 def test_replay_runs_before_collectors_start(env: Env) -> None:

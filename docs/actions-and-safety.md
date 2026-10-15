@@ -170,8 +170,9 @@ new incident can race with a leftover action:
 - An interrupted `backup_reload` is marked `failed` with `interrupted`.
 - A `rollback_failed` record is not retried. Its target stays blocked until
   you act (next section).
-- Closed records older than 7 days are compacted away. `rollback_failed`
-  records are kept at any age.
+- Closed records older than 7 days are compacted away, here and then once
+  a day while the daemon runs. `rollback_failed` records are kept at any
+  age.
 
 A crash halfway through writing a line leaves a partial last line, which is
 cut off with a warning. Throttles are runtime-only, so a reboot clears them

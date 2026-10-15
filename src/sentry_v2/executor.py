@@ -472,5 +472,9 @@ class Executor:
                     cut = dataclasses.replace(rec, status="failed", error="interrupted")
                     self.journal.append(cut)
         await self.rollback(None)
+        await self.compact()
+
+    async def compact(self) -> None:
+        """Drop closed records older than COMPACT_AFTER from the journal."""
         async with self._lock:
             self.journal.compact(COMPACT_AFTER, self._clock())
