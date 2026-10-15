@@ -28,7 +28,7 @@ reach your terminal.
 
 | Commands | Needs |
 |---|---|
-| `status`, `top`, `incidents`, `show`, `actions` | root, or membership of `sentry-v2` |
+| `status`, `top`, `incidents`, `show`, `actions`, `policies` | root, or membership of `sentry-v2` |
 | `rollback`, `pause`, `resume`, `reload`, `restore` | root, or membership of both `sentry-v2` and `sentry-v2-admin` |
 | `policy validate`, `policy test` | read access to the configuration files; no daemon needed |
 
@@ -136,6 +136,20 @@ otherwise.
 The `ID` column shows the first 8 characters; `--json` has the full ids,
 which `rollback` needs.
 
+### policies
+
+The policies the daemon has loaded, with each one's own mode, the mode it
+actually runs in once the daemon's `mode` is applied, its signal, its
+actions and the file it came from. If the last reload was rejected, the
+error follows the table, and the policies shown are the ones still running.
+
+```console
+$ sentry-v2ctl policies
+NAME                      MODE     EFFECTIVE  SIGNAL       ACTIONS           SOURCE
+memory-pressure-throttle  dry-run  dry-run    psi          throttle, notify  /etc/sentry-v2/policies.d/10-memory-pressure-throttle.toml
+unit-failure-notify       dry-run  dry-run    unit_failed  notify            /etc/sentry-v2/policies.d/20-unit-failure-notify.toml
+```
+
 ### rollback ID | --all
 
 Undo an action now. Give either an action id or `--all`.
@@ -183,11 +197,16 @@ prints the paths, followed by what to run next:
 ```text
 restored:
 /etc/systemd/system/app-web.service
-/etc/app-web/app.conf
+/etc/systemd/system/app-web.service.d/override.conf
 run systemctl daemon-reload && systemctl reload app-web.service
 ```
 
-It doesn't reload anything itself.
+It doesn't reload anything itself. The unit's sandbox only lets the daemon
+write under `/etc/systemd/system` and `/run/systemd/system`. A backed-up
+file anywhere else, such as one from a policy's `paths`, makes the restore
+stop with `Read-only file system` once it reaches that file; the error
+lists what was restored before it. Copy such files back by hand from the
+backup directory.
 
 ## Offline commands
 

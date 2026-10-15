@@ -191,13 +191,19 @@ it: `ausearch -m AVC -ts recent`.
 
 ## SELinux denials from sentry_v2_t
 
-The domain is permissive in this release (see
-[hardening.md](hardening.md#selinux)), so denials are logged and nothing is
-blocked. They still mean the policy module is missing a rule.
+The domain is enforcing (see [hardening.md](hardening.md#enforcing)), so a
+denial means something the daemon tried failed: a sink that can't connect,
+a throttle that comes back as `AccessDenied`, a file it can't read. It
+also means the policy module is missing a rule.
+
+Denials come from two places. The kernel logs AVC records for files and
+sockets. systemd logs USER_AVC records when it refuses one of the daemon's
+D-Bus calls, and those carry systemd's own context as the sender, so
+`ausearch -se` misses them. Search by the daemon's context instead:
 
 ```console
-# ausearch -m AVC,USER_AVC -ts today -se sentry_v2_t
-# ausearch -m AVC,USER_AVC -ts today -se sentry_v2_t | audit2allow
+# ausearch -m AVC,USER_AVC -ts today | grep 'scontext=system_u:system_r:sentry_v2_t'
+# ausearch -m AVC,USER_AVC -ts today | audit2allow
 ```
 
 Please open an issue with the `ausearch` output and what the daemon was

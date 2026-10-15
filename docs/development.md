@@ -46,27 +46,39 @@ Markdown must resolve.
 
 ## Integration tests on a Rocky host
 
-Tests marked `integration` talk to the real system bus and need root on an
-EL10 host. They're skipped by default.
+Tests marked `integration` run against the installed RPMs on an EL10 host:
+the real daemon, the system bus, kernel PSI triggers, the audit stream and
+the SELinux module, enforcing. They're skipped by default.
 
-On the host, create a virtual environment that can see the distro bindings,
-then run the marked tests as root:
+From your checkout, with SSH access to a host where your user has
+passwordless sudo and the RPM build dependencies are installed (see
+[Building the RPMs](#building-the-rpms)):
 
 ```console
-# dnf install python3-systemd python3-dbus git
-$ git clone https://github.com/jamesconwaydev/sentry-v2.git && cd sentry-v2
-$ python3 -m venv --system-site-packages .venv
-$ .venv/bin/pip install -e '.[dev]'
-$ sudo .venv/bin/pytest -m integration tests/integration --no-cov
+$ make itest HOST=rocky@test-host.example.com
 ```
 
-A `make itest` target for this is coming; until then, run
-pytest on the host as above.
+`scripts/itest.sh` copies the tree to `~/sentry-v2-itest` on the host,
+builds the RPMs there with `make rpm`, installs all three, writes the test
+configuration and policies from `tests/integration/config` to
+`/etc/sentry-v2`, starts the daemon and runs the suite as root from a
+throwaway virtual environment in `/tmp`. Afterwards it copies the daemon's
+journal and the run's audit records to `itest-artifacts/<timestamp>/` and
+removes the RPMs, the configuration and the state directory.
 
-The tests create throwaway transient units in `sentry-test.slice`, keep any
-memory load small, and stop and reset every unit they create, even when a
-test fails. Don't run them on a host where something else uses that slice
-name.
+| Variable | Default | Meaning |
+|---|---|---|
+| `HOST` | the project's test host | The test host, as `user@host`. |
+| `KEEP` | `0` | `1` leaves everything installed and running, for poking at by hand. The next run removes it first. |
+| `PYTEST_ARGS` | empty | Extra pytest arguments, such as `-k throttle`. |
+
+The tests start their units in `sentry-test.slice`, and every enforcing
+test policy matches only those units. Memory load stays under 100 MiB, and
+each test stops, resets and deletes what it created, even when it fails.
+Don't run the suite on a host where something else uses that slice name or
+`sentry-itest-*` unit names. `test_avc_correlation.py` loads a small
+SELinux module, `sentry_test`, and removes it again; `test_cli_and_control.py`
+creates and deletes a system user, `sv2-itest`.
 
 ## Building the RPMs
 

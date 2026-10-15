@@ -80,7 +80,9 @@ The daemon checks every file against the manifest first and refuses the
 whole restore on a mismatch, or if the backup directory isn't owned by root
 or is writable by anyone else. Then it writes each file back atomically and
 tells you what to run next, `systemctl daemon-reload && systemctl reload
-<unit>`. It never reloads anything itself.
+<unit>`. It never reloads anything itself. Restore only writes under
+`/etc/systemd/system` and `/run/systemd/system`; copy anything from `paths`
+back by hand (see [cli.md](cli.md#restore-backup_id)).
 
 ## What happens to each action
 

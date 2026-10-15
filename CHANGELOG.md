@@ -31,14 +31,14 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   Schema (`sentry-v2/bundle/1`).
 - Send bundles to disk, to an HMAC-signed webhook with an on-disk spool, to
   RFC 5424 syslog over UDP, TCP or TLS, to Splunk HEC and to Elasticsearch.
-- `sentry-v2ctl` to check status, watch pressure, read incidents and
-  bundles, roll back, pause, reload and restore backups, and to validate and
-  test policies without the daemon.
+- `sentry-v2ctl` to check status, list policies, watch pressure, read
+  incidents and bundles, roll back, pause, reload and restore backups, and
+  to validate and test policies without the daemon.
 - An optional Prometheus endpoint on `127.0.0.1:9787`.
 - An RPM with a hardened systemd unit, example policies in dry-run, and the
   `sentry-v2` and `sentry-v2-admin` groups.
-- A `sentry-v2-selinux` subpackage with the `sentry_v2` policy module. The
-  domain is permissive in this release.
+- A `sentry-v2-selinux` subpackage with the `sentry_v2` policy module,
+  enforcing.
 - A Cockpit page for status, incidents and policies.
 - Documentation: installation, quickstart, configuration and policy
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,

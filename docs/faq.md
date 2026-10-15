@@ -64,9 +64,8 @@ are written and tested for EL10.
 
 ## Is the SELinux module enforcing?
 
-Not yet. The `sentry_v2_t` domain is permissive in this release, so
-denials are logged and nothing is blocked. See
-[hardening.md](hardening.md#selinux).
+Yes. The integration suite runs with the `sentry_v2_t` domain enforcing
+and fails on any denial for it. See [hardening.md](hardening.md#enforcing).
 
 ## Can I edit policies from Cockpit?
 
