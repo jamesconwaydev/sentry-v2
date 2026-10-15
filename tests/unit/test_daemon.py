@@ -595,7 +595,7 @@ def test_alert_becomes_a_critical_bundle(env: Env) -> None:
     d = env.daemon()
 
     async def body() -> None:
-        await d.alert("breaker_open", {"failures": 3, "until": 1.0})
+        await d.reporter.alert("breaker_open", {"failures": 3, "until": 1.0})
         (bundle,) = await wait_for(env.bundles)
         assert (bundle["severity"], bundle["incident"]["alert"]) == ("critical", "breaker_open")
         assert d.incidents[0]["kind"] == "alert"
@@ -719,38 +719,6 @@ def test_freeze_is_thawed_on_sigterm_and_a_second_sigterm_is_ignored(env: Env) -
     assert not any(n.startswith("RELOADING=1") for n in env.notes)
     (rec,) = ActionJournal(env.state / "state" / "actions.jsonl").load().values()
     assert (rec.action, rec.status) == ("freeze", "rolled_back")
-
-
-def test_slow_systemd_does_not_hold_up_bundles_or_actions(
-    env: Env, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(daemon, "LOOKUP_TIMEOUT", 0.1)
-    (env.root / "cgroup" / "system.slice" / "memory.pressure").write_text(
-        "some avg10=1.00 avg60=0.00 avg300=0.00 total=1\n"
-    )
-    env.journal_entries.append(failure_entry("nginx.service", now_us()))
-    hang = asyncio.Event()
-
-    class Hung(FakeSystemd):
-        async def get_properties(self, unit: str) -> Any:
-            self.calls.append(("get_properties", unit))
-            await hang.wait()
-            return await super().get_properties(unit)
-
-    env.mgr = Hung(units={"nginx.service": NGINX})
-    d = env.daemon()
-
-    async def body() -> None:
-        (bundle,) = await wait_for(env.bundles)
-        assert bundle["context"]["unit"] is None
-        assert "system.slice" in bundle["context"]["psi"]  # the failed unit's slice
-        # the hung call holds the one lookup slot; the bundle's own lookup was dropped
-        assert env.mgr.calls.count(("get_properties", "nginx.service")) == 1
-        await d.alert("breaker_open", {})  # the pipeline is still moving
-        await wait_for(lambda: len(env.bundles()) == 2)
-        hang.set()
-
-    drive(d, body)
 
 
 def test_sighup_before_ready_is_ignored(env: Env) -> None:

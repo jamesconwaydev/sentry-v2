@@ -23,10 +23,10 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
 from . import __version__
-from .bundle import BundleContext, HostInfo, Redactor, build_alert_bundle, build_bundle
+from .bundle import HostInfo, Redactor
 from .cgroupfs import CgroupFS
 from .collectors.audit import AuditCollector, Source, open_source
-from .collectors.journal import JournalCollector, ReaderLike, open_reader, unit_tail
+from .collectors.journal import JournalCollector, ReaderLike, open_reader
 from .collectors.psi import PsiCollector, trigger_specs
 from .commands import Commands
 from .config import ConfigError, load_config
@@ -37,24 +37,20 @@ from .events import EventQueue, Incident, PsiEvent, UnitEvent
 from .executor import Executor
 from .metrics import ACTIONS_ACTIVE, PSI_AVG10, MetricsServer, build_registry
 from .policy import Policy, PolicyEngine, PsiWhen, effective_mode
+from .reporting import Reporter
 from .sinks import Sink, SinkError, SinkManager, build_sinks
 from .state import ActionJournal, ActionRecord
-from .systemd import DBusSystemd, SystemdManager, UnitProps
+from .systemd import DBusSystemd, SystemdManager
 
 log = logging.getLogger(__name__)
 
 TICK = 0.25  # correlator tick
 HEALTHY_AFTER = 300.0  # a collector that ran this long restarts from the minimum backoff
-UNIT_INFO_TTL = 60.0
-LOOKUP_TIMEOUT = 2.5  # per context lookup when building a bundle
-BUNDLE_BUILDERS = 4
 BUNDLE_DRAIN = 5.0  # shutdown waits this long for bundles still being built
 SAMPLE_TTL = 300.0
 INCIDENT_HISTORY = 500
 RECENT_ACTIONS = 100
-JOURNAL_TAIL = 50
 MUTATING = {"rollback", "pause", "resume", "reload", "restore"}
-RESOURCES = ("memory", "cpu", "io")
 
 
 def sd_notify(state: str) -> None:
@@ -151,31 +147,26 @@ class Daemon:
         self._collectors: dict[str, Collector] = {}
         self._health: dict[str, dict[str, Any]] = {}
         self._psi: PsiCollector | None = None
-        # unit -> (monotonic fetch time, props or None while the fetch is in flight)
-        self._units: dict[str, tuple[float, UnitProps | None]] = {}
-        # One systemd lookup on behalf of bundles and correlation at a time, held
-        # until the call really ends: executor actions queue behind one at most.
-        self._lookup_slot = asyncio.Semaphore(1)
-        self._bundle_slots = asyncio.Semaphore(BUNDLE_BUILDERS)
-        self._bundle_tasks: set[asyncio.Task[None]] = set()
         self._stopping = False
         self._incident_count = 0
         self._seen_dropped: Counter[str] = Counter()
         self._seen_failures: Counter[str] = Counter()
 
         self.queue = EventQueue(cfg.daemon.queue_size)
-        self.host = HostInfo.collect()
-        self.redactor = Redactor.from_config(cfg.redaction)
         self.engine = PolicyEngine(cfg.policies, clock)
-        self.correlator = Correlator(
-            cfg.correlation, _psi_whens(cfg.policies), clock, self._unit_info
-        )
         self.mgr = mgr_factory()
+        self.reporter = Reporter(
+            fs, self.mgr, journal_reader_factory, HostInfo.collect(),
+            Redactor.from_config(cfg.redaction), self._submit,
+        )  # fmt: skip
+        self.correlator = Correlator(
+            cfg.correlation, _psi_whens(cfg.policies), clock, self.reporter.unit_info
+        )
         state = cfg.daemon.state_dir
         journal = _Journal(state / "state" / "actions.jsonl", clock, self._on_record)
         self.executor = Executor(
-            self.mgr, fs, journal, cfg.limits, cfg.protection, self._sinks_notify,
-            self.alert, clock, state / "backups", daemon_mode=cfg.daemon.mode,
+            self.mgr, fs, journal, cfg.limits, cfg.protection, self.reporter.sinks_notify,
+            self.reporter.alert, clock, state / "backups", daemon_mode=cfg.daemon.mode,
         )  # fmt: skip
         self.sinks = SinkManager(self._sinks_factory(cfg))
         self.registry, self.metrics = build_registry({"version": __version__})
@@ -257,11 +248,7 @@ class Daemon:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         await self.executor.shutdown()
-        if self._bundle_tasks:
-            _done, late = await asyncio.wait(self._bundle_tasks, timeout=BUNDLE_DRAIN)
-            for t in late:
-                t.cancel()
-            await asyncio.gather(*late, return_exceptions=True)
+        await self.reporter.drain(BUNDLE_DRAIN)
         await self.sinks.close(5)
         if self.metrics_server is not None:
             await self.metrics_server.stop()
@@ -275,7 +262,6 @@ class Daemon:
 
     def _task_done(self, task: asyncio.Task[Any]) -> None:
         self._tasks.discard(task)
-        self._bundle_tasks.discard(task)
         if not task.cancelled() and (e := task.exception()) is not None:
             log.error("task %s failed", task.get_name(), exc_info=e)
 
@@ -353,7 +339,7 @@ class Daemon:
                 if isinstance(ev, PsiEvent):
                     self.samples[(ev.cgroup, ev.resource, ev.kind)] = ev
                 elif isinstance(ev, UnitEvent):
-                    self._refresh_unit(ev.unit)
+                    self.reporter.refresh(ev.unit)
                 incidents = self.correlator.ingest(ev)
             except Exception:
                 log.exception("correlating %s failed", type(ev).__name__)
@@ -368,8 +354,7 @@ class Daemon:
                 await self._handle_all(self.correlator.tick(int(now * 1_000_000)))
                 horizon = (now - SAMPLE_TTL) * 1_000_000
                 self.samples = {k: s for k, s in self.samples.items() if s.ts_us >= horizon}
-                stale = time.monotonic() - UNIT_INFO_TTL
-                self._units = {u: e for u, e in self._units.items() if e[0] >= stale}
+                self.reporter.prune()
                 self._sync_counters()
             except Exception:
                 log.exception("correlator tick failed")
@@ -415,51 +400,6 @@ class Daemon:
             for (cg, res, kind), ev in self.samples.items()
         ]
 
-    # -- unit info for correlation -----------------------------------------
-
-    def _unit_info(self, unit: str) -> tuple[set[str], str | None]:
-        """Called synchronously by the correlator: whatever is cached right now."""
-        props = self._units.get(unit, (0.0, None))[1]
-        return ({p.rsplit("/", 1)[-1] for p in props.exec_start} if props else set()), None
-
-    def _refresh_unit(self, unit: str) -> None:
-        fetched, props = self._units.get(unit, (float("-inf"), None))
-        if time.monotonic() - fetched < UNIT_INFO_TTL:
-            return
-        self._units[unit] = (time.monotonic(), props)  # one fetch in flight per unit
-        self._spawn(self._fetch_unit(unit), f"unit-info {unit}")
-
-    async def _fetch_unit(self, unit: str) -> UnitProps | None:
-        props = await self._lookup(unit)
-        if props is not None:
-            self._units[unit] = (time.monotonic(), props)
-        return props
-
-    async def _lookup(self, unit: str) -> UnitProps | None:
-        """get_properties within LOOKUP_TIMEOUT, or None. Never more than one in flight."""
-
-        started = False
-
-        async def call() -> UnitProps:
-            nonlocal started
-            async with self._lookup_slot:
-                started = True
-                return await self.mgr.get_properties(unit)
-
-        # Shielded: a call that timed out keeps the slot until systemd answers.
-        # One still waiting for the slot is dropped instead.
-        task = asyncio.ensure_future(call())
-        task.add_done_callback(lambda t: t.cancelled() or t.exception())
-        try:
-            return await asyncio.wait_for(asyncio.shield(task), LOOKUP_TIMEOUT)
-        except TimeoutError:
-            if not started:
-                task.cancel()
-            log.warning("no properties for %s within %gs", unit, LOOKUP_TIMEOUT)
-        except Exception as e:
-            log.debug("no properties for %s: %r", unit, e)
-        return None
-
     # -- bundles and records -----------------------------------------------
 
     def _on_record(self, rec: ActionRecord) -> None:
@@ -482,65 +422,6 @@ class Daemon:
         }  # fmt: skip
         self.incidents.appendleft(summary)
         self.control.publish({"type": "incident", "incident": summary})
-
-    async def _sinks_notify(self, incident: Incident, records: list[ActionRecord]) -> None:
-        """Build and send the bundle in the background, so actions never wait on it."""
-        rows = [dataclasses.asdict(r) for r in records]
-        # ponytail: waiting builders are unbounded; an incident flood queues coroutines
-        task = asyncio.create_task(self._bundle(incident, rows), name=f"bundle {incident.id}")
-        self._bundle_tasks.add(task)
-        task.add_done_callback(self._task_done)
-
-    async def _bundle(self, incident: Incident, rows: list[dict[str, Any]]) -> None:
-        async with self._bundle_slots:
-            context = await self._context(incident)
-            self._submit(build_bundle(incident, rows, context, self.host, self.redactor))
-
-    async def alert(self, kind: str, detail: dict[str, Any]) -> None:
-        self._submit(build_alert_bundle(kind, detail, self.host))
-
-    async def _context(self, incident: Incident) -> BundleContext:
-        unit = None
-        if incident.kind == "unit_failed":
-            unit = incident.target
-        elif incident.kind == "psi":
-            unit = self.fs.unit_of(incident.target)
-        props = None
-        tail: list[dict[str, Any]] = []
-        if unit is not None:
-            cached = self._units.get(unit, (0.0, None))[1]
-            props = cached or await self._fetch_unit(unit)
-            try:
-                tail = await asyncio.wait_for(
-                    asyncio.to_thread(unit_tail, unit, JOURNAL_TAIL, self._journal_factory),
-                    LOOKUP_TIMEOUT,
-                )
-            except Exception as e:
-                log.warning("cannot read the journal for %s: %r", unit, e)
-        if incident.kind == "psi":
-            cgroup = incident.target
-        else:  # a failed unit has usually lost its cgroup: show its slice instead
-            cgroup = props.cgroup if props and props.cgroup else "system.slice"
-        unit_props = dataclasses.asdict(props) if props else None
-        return BundleContext(self._pressure_tree(cgroup), unit_props, tail)
-
-    def _pressure_tree(self, cgroup: str) -> dict[str, dict[str, Any]]:
-        """Pressure for a cgroup and each of its parents, where readable."""
-        parts = [p for p in cgroup.split("/") if p]
-        out: dict[str, dict[str, Any]] = {}
-        for i in range(len(parts), 0, -1):
-            rel = "/".join(parts[:i])
-            entry = {}
-            for res in RESOURCES:
-                try:
-                    entry[res] = {
-                        k: v.to_dict() for k, v in self.fs.read_pressure(rel, res).items()
-                    }
-                except (OSError, ValueError, KeyError):
-                    continue
-            if entry:
-                out[rel] = entry
-        return out
 
     # -- reload --------------------------------------------------------------
 
@@ -595,7 +476,7 @@ class Daemon:
         self.executor.mode = cfg.daemon.mode
         self.executor.limits = cfg.limits
         self.executor.protection = cfg.protection
-        self.redactor = Redactor.from_config(cfg.redaction)
+        self.reporter.redactor = Redactor.from_config(cfg.redaction)
         self.correlator.configure(cfg.correlation, _psi_whens(cfg.policies))
         logging.getLogger("sentry_v2").setLevel(cfg.daemon.log_level.upper())
 
