@@ -8,7 +8,9 @@ between.
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
+import stat
 import time
 from pathlib import Path
 from typing import Any
@@ -67,6 +69,18 @@ def describe(spec: ActionSpec) -> dict[str, Any]:
     }
 
 
+def copy_mode_and_times(src: Path | str, dest: Path | str) -> None:
+    """Give `dest` the permission bits and times of `src`, but not its xattrs.
+
+    shutil.copystat (and copy2) also copies security.selinux. That would
+    label a backup as a unit file, or a restored unit file as sentry-v2
+    state, and the daemon's SELinux domain is not allowed to relabel.
+    """
+    st = os.stat(src)
+    os.chmod(dest, stat.S_IMODE(st.st_mode))
+    os.utime(dest, ns=(st.st_atime_ns, st.st_mtime_ns))
+
+
 def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     """Copy `files` under `backups_dir/<unit>/<ts>/files/<abs path>` with a sha256 manifest.
 
@@ -85,7 +99,8 @@ def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     for src, rel in copies:
         dest = bdir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src, dest)
+        shutil.copyfile(src, dest)
+        copy_mode_and_times(src, dest)
         manifest.append(f"{hashlib.sha256(dest.read_bytes()).hexdigest()}  {rel}\n")
     (bdir / "MANIFEST.sha256").write_text("".join(manifest))
     return backup_id

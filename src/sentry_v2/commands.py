@@ -41,13 +41,12 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import uuid
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from . import __version__
+from . import __version__, actions
 from .control import CommandError, Handler
 from .executor import ACTION_KIND
 from .policy import AvcWhen, PsiWhen, effective_mode
@@ -239,7 +238,7 @@ class Commands:
                 fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
                 with os.fdopen(fd, "wb") as f:
                     f.write(data)
-                shutil.copystat(src, tmp)
+                actions.copy_mode_and_times(src, tmp)
                 os.replace(tmp, dest)
             except OSError as e:
                 raise CommandError(f"restoring {dest} failed ({e}); restored {restored}") from None

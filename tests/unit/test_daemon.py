@@ -574,6 +574,29 @@ def test_restore(env: Env) -> None:
     drive(d, body)
 
 
+def test_restore_does_not_copy_the_backups_label(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    # copystat would stamp the backup's SELinux label on the restored unit
+    # file, and the daemon's domain may not relabel files anyway
+    def denied(*_a: object, **_k: object) -> None:
+        raise PermissionError(13, "Permission denied", "security.selinux")
+
+    unit_file = env.root / "etc" / "demo.service"
+    unit_file.parent.mkdir()
+    unit_file.write_text("[Service]\n")
+    os.utime(unit_file, (1000, 1000))
+    d = env.daemon()
+    backup_id = actions.backup("demo.service", [str(unit_file)], d.executor.backups_dir, 0.0)
+    unit_file.write_text("broken")
+    monkeypatch.setattr(shutil, "copystat", denied)
+
+    async def body() -> None:
+        assert (await d.commands.restore({"backup_id": backup_id}))["restored"] == [str(unit_file)]
+        assert unit_file.read_text() == "[Service]\n"
+        assert unit_file.stat().st_mtime == 1000
+
+    drive(d, body)
+
+
 def test_subscribe_receives_incidents_and_records(env: Env) -> None:
     ts = now_us()
     env.journal_entries.append(failure_entry("nginx.service", ts + 300_000))

@@ -171,3 +171,23 @@ def test_backup_reload_manifest_matches_copies(tmp_path: Path) -> None:
 def test_backup_missing_file_fails(tmp_path: Path) -> None:
     with pytest.raises(OSError):
         actions.backup(UNIT, [str(tmp_path / "nope")], tmp_path / "b", now=0.0)
+
+
+def test_backup_does_not_copy_extended_attributes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # copystat also copies security.selinux; under an enforcing policy that
+    # relabel is denied, and the copy would carry the unit file's label
+    def denied(*_a: object, **_k: object) -> None:
+        raise PermissionError(13, "Permission denied", "security.selinux")
+
+    monkeypatch.setattr(actions.shutil, "copystat", denied)
+    src = tmp_path / "demo.service"
+    src.write_text("[Service]\n")
+    src.chmod(0o640)
+    os.utime(src, (1000, 1000))
+    bid = actions.backup(UNIT, [str(src)], tmp_path / "b", now=0.0)
+    copy = tmp_path / "b" / bid / "files" / str(src).lstrip("/")
+    assert copy.read_text() == "[Service]\n"
+    assert copy.stat().st_mode & 0o777 == 0o640
+    assert copy.stat().st_mtime == 1000
