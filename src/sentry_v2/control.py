@@ -24,6 +24,7 @@ import logging
 import os
 import socket
 import struct
+from collections import Counter
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,7 +33,9 @@ from typing import Any
 log = logging.getLogger(__name__)
 
 MAX_LINE = 64 * 1024
-MAX_CONNECTIONS = 32
+MAX_CONNECTIONS = 32  # for everyone but uid 0 and the admin group
+MAX_PER_UID = 8
+SO_PEERGROUPS = 59  # Linux; not exported by the socket module
 IDLE_TIMEOUT = 300.0
 WRITE_TIMEOUT = 10.0
 SUBSCRIBER_QUEUE = 1000
@@ -69,7 +72,11 @@ def peer_cred(sock: Any) -> Peer:
         size = struct.calcsize("3i")
         raw = sock.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, size)
         pid, uid, gid = struct.unpack("3i", raw)
-        return Peer(pid, uid, peer_groups(pid, gid))
+        try:  # the groups at connect time, with no /proc race
+            raw = sock.getsockopt(socket.SOL_SOCKET, SO_PEERGROUPS, 4 * 1024)
+        except OSError:  # older kernel, or more than 1024 groups
+            return Peer(pid, uid, peer_groups(pid, gid))
+        return Peer(pid, uid, frozenset({gid, *struct.unpack(f"{len(raw) // 4}I", raw)}))
     # macOS, for development: LOCAL_PEERCRED (SOL_LOCAL 0, option 1) fills a struct xucred
     raw = sock.getsockopt(0, 1, struct.calcsize("IIh16I"))  # pragma: no cover
     _version, uid, ngroups, *groups = struct.unpack("IIh16I", raw)  # pragma: no cover
@@ -94,6 +101,7 @@ class ControlServer:
         *,
         peer_cred: Callable[[Any], Peer] = peer_cred,
         max_connections: int = MAX_CONNECTIONS,
+        max_per_uid: int = MAX_PER_UID,
         idle_timeout: float = IDLE_TIMEOUT,
     ) -> None:
         self.path = path
@@ -103,6 +111,8 @@ class ControlServer:
         self._mutating = frozenset(mutating)
         self._peer_cred = peer_cred
         self._max = max_connections
+        self._max_per_uid = max_per_uid
+        self._per_uid: Counter[int] = Counter()
         self._idle = idle_timeout
         self._server: asyncio.Server | None = None
         self._writers: set[asyncio.StreamWriter] = set()
@@ -148,9 +158,9 @@ class ControlServer:
                 q.put_nowait(event)
 
     def _allowed(self, peer: Peer, cmd: str) -> bool:
-        if peer.uid in (0, os.geteuid()):
+        if self._privileged(peer):
             return True
-        admin = self._admin_gid is not None and self._admin_gid in peer.groups
+        admin = self._admin(peer)
         if cmd in self._mutating:
             return admin
         return admin or (self._read_gid is not None and self._read_gid in peer.groups)
@@ -168,19 +178,34 @@ class ControlServer:
     async def _error(self, writer: asyncio.StreamWriter, rid: Any, error: str) -> None:
         await self._write(writer, {"id": rid, "ok": False, "error": error})
 
+    def _privileged(self, peer: Peer) -> bool:
+        return peer.uid in (0, os.geteuid())
+
+    def _admin(self, peer: Peer) -> bool:
+        return self._admin_gid is not None and self._admin_gid in peer.groups
+
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self._writers.add(writer)
+        capped: int | None = None
         try:
-            if len(self._writers) >= self._max:
-                await self._error(writer, None, "too many connections")
-                return
-            self._writers.add(writer)
             peer = self._peer_cred(writer.get_extra_info("socket"))
+            if not (self._privileged(peer) or self._admin(peer)):
+                in_use = sum(self._per_uid.values())
+                if in_use >= self._max or self._per_uid[peer.uid] >= self._max_per_uid:
+                    await self._error(writer, None, "too many connections")
+                    return
+                capped = peer.uid
+                self._per_uid[capped] += 1
             await self._serve(peer, reader, writer)
         except (ConnectionError, TimeoutError):
             pass
         except Exception:
             log.exception("control connection failed")
         finally:
+            if capped is not None:
+                self._per_uid[capped] -= 1
+                if not self._per_uid[capped]:
+                    del self._per_uid[capped]
             self._writers.discard(writer)
             writer.close()
 

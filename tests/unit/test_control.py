@@ -225,18 +225,42 @@ def test_idle_connection_is_closed(sock_path: Path) -> None:
     run(main())
 
 
-def test_connection_limit(sock_path: Path) -> None:
+def test_connection_caps(sock_path: Path) -> None:
     async def main() -> None:
-        srv = server(sock_path, Peer(1, 0, frozenset()), max_connections=1)
+        peers = iter(
+            [
+                Peer(1, 1000, frozenset({READ})),  # uid 1000: 1 of 2 allowed
+                Peer(1, 1000, frozenset({READ})),  # uid 1000: 2 of 2
+                Peer(1, 1000, frozenset({READ})),  # over the per-uid cap
+                Peer(1, 1001, frozenset({READ})),  # 3 of 3 overall
+                Peer(1, 1002, frozenset({READ})),  # over the global cap
+                Peer(1, 0, frozenset()),  # root is never capped
+                Peer(1, 1003, frozenset({ADMIN})),  # nor is the admin group
+            ]
+        )
+        srv = ControlServer(
+            sock_path, HANDLERS, read_gid=READ, admin_gid=ADMIN, mutating=set(),
+            peer_cred=lambda _s: next(peers), max_connections=3, max_per_uid=2,
+        )  # fmt: skip
         await srv.start()
         try:
-            first = await Client.open(sock_path)
-            assert (await first.call("status"))["ok"] is True
-            second = await Client.open(sock_path)
-            assert (await second.recv())["error"] == "too many connections"
-            assert await second.reader.read() == b""
-            await first.close()
-            await second.close()
+            clients = []
+            for expect_ok in (True, True, False, True, False, True, True):
+                c = await Client.open(sock_path)
+                if expect_ok:
+                    assert (await c.call("status"))["ok"] is True
+                else:
+                    assert (await c.recv())["error"] == "too many connections"
+                    assert await c.reader.read() == b""
+                clients.append(c)
+            await clients[0].close()  # frees one of uid 1000's slots
+            for _ in range(100):
+                if srv._per_uid[1000] == 1:
+                    break
+                await asyncio.sleep(0.01)
+            assert dict(srv._per_uid) == {1000: 1, 1001: 1}
+            for c in clients[1:]:
+                await c.close()
         finally:
             await srv.stop()
 
