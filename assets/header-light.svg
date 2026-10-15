@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 340" width="1200" height="340" role="img" aria-labelledby="t d">
+<title id="t">Sentry-v2</title>
+<desc id="d">A pressure trace climbs past a trigger line, the noisy unit is throttled, pressure falls away, and the throttle is rolled back when it expires.</desc>
+<style>
+  .w { font: 800 66px ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; letter-spacing: -2px; fill: #13212E; }
+  .s { font: 500 22px ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; fill: #4F6475; }
+  .l { font: 600 15px ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif; }
+  .trace { fill: none; stroke: #1F8A84; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round;
+           stroke-dasharray: 1300; stroke-dashoffset: 1300; animation: draw 7s cubic-bezier(.4,0,.2,1) infinite; }
+  .hold { opacity: 0; animation: hold 7s linear infinite; }
+  .back { opacity: 0; animation: back 7s linear infinite; }
+  @keyframes draw { 0% { stroke-dashoffset: 1300; } 70% { stroke-dashoffset: 0; } 92% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: 0; } }
+  @keyframes hold { 0%, 36% { opacity: 0; } 40%, 92% { opacity: 1; } 100% { opacity: 0; } }
+  @keyframes back { 0%, 60% { opacity: 0; } 64%, 92% { opacity: 1; } 100% { opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .trace { animation: none; stroke-dashoffset: 0; }
+    .hold, .back { animation: none; opacity: 1; }
+  }
+</style>
+<rect width="1200" height="340" fill="#F3F6F8"/>
+<g stroke="#DCE4EA" stroke-width="1">
+  <line x1="60" y1="304" x2="1140" y2="304"/>
+</g>
+<text class="w" x="60" y="92">Sentry-v2</text>
+<text class="s" x="62" y="130">Sees memory, CPU and I/O pressure building, and acts before the OOM killer has to.</text>
+<line x1="60" y1="212" x2="1140" y2="212" stroke="#B86E05" stroke-width="2" stroke-dasharray="6 7"/>
+<text class="l" x="60" y="200" fill="#B86E05">trigger: memory some &#8805; 150ms/1s</text>
+<path class="trace" d="M60,298 C150,298 200,294 260,295 S360,289 420,280 S520,252 570,236 S650,206 690,198 C712,194 726,198 740,206 S800,252 840,272 S930,294 1000,296 S1100,297 1140,297"/>
+<g class="hold">
+  <line x1="700" y1="168" x2="700" y2="190" stroke="#C2412F" stroke-width="3"/>
+  <text class="l" x="710" y="178" fill="#C2412F">throttled</text>
+</g>
+<g class="back">
+  <line x1="1000" y1="262" x2="1000" y2="288" stroke="#4F6475" stroke-width="3"/>
+  <text class="l" x="1010" y="274" fill="#4F6475">rolled back at expiry</text>
+</g>
+</svg>
