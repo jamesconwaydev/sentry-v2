@@ -79,9 +79,11 @@ action record's `backup_id`. To put the files back:
 $ sentry-v2ctl restore app-web.service/20261014T031502Z
 ```
 
-The daemon replies with the restored paths and a note. If unit files or
-drop-ins came back, run `systemctl daemon-reload` and restart or reload the
-unit yourself.
+The daemon checks every file against the manifest first and refuses the
+whole restore on a mismatch, or if the backup directory isn't owned by root
+or is writable by anyone else. Then it writes each file back atomically and
+tells you what to run next, `systemctl daemon-reload && systemctl reload
+<unit>`. It never reloads anything itself.
 
 ## What happens to each action
 
@@ -147,7 +149,8 @@ TimeoutStopSec=1300s
 
 ## Crash recovery
 
-On start, the daemon replays the journal:
+On start, the daemon replays the journal before any collector runs, so no
+new incident can race with a leftover action:
 
 - A throttle or freeze still `planned` or `applied` is rolled back at once.
   A `planned` one may or may not have reached systemd, and rolling back is
@@ -231,7 +234,8 @@ $ sentry-v2ctl resume
 resumed
 ```
 
-Pause forces dry-run for new actions. Collectors, correlation and bundles
+Pause forces dry-run for new actions until you resume or the daemon
+restarts. Collectors, correlation and bundles
 carry on, and actions already in force keep their timers and roll back on
 schedule. To undo everything now as well, follow with
 `sentry-v2ctl rollback --all`.

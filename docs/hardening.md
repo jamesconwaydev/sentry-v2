@@ -36,8 +36,8 @@ triggers on `*.pressure` files.
 
 | Setting | Value | Why |
 |---|---|---|
-| `Type` | `notify` | The daemon tells systemd itself when it's up. |
-| `WatchdogSec` | `30s` | systemd restarts a hung daemon. |
+| `Type` | `notify-reload` | The daemon tells systemd when it's ready, only after crash replay and every component are running. `systemctl reload` sends `SIGHUP`, and the daemon reports `RELOADING=1` and `READY=1` around the reload, so `systemctl reload` waits for it to finish. |
+| `WatchdogSec` | `30s` | The event loop pings the watchdog itself, so a hung loop gets the daemon restarted. |
 | `Restart` | `on-failure` | A crash comes back after `RestartSec=5s`, and replay undoes anything left in force. |
 | `TimeoutStopSec` | `780s` | Room to roll back five stuck actions on stop. See [actions-and-safety.md](actions-and-safety.md#how-long-a-stop-can-take). |
 | `ProtectSystem` | `strict` | The whole filesystem is read-only to the daemon... |
@@ -73,7 +73,10 @@ triggers on `*.pressure` files.
 
 The control socket is `/run/sentry-v2/control.sock`, mode `0660`, owner
 `root:sentry-v2`, inside `/run/sentry-v2` (mode `0750`, group `sentry-v2`).
-The daemon checks the connecting process's uid and groups:
+The daemon creates the socket with a restrictive umask, so it never exists
+with looser permissions, then sets the group and mode. For each request it
+checks the caller's uid and groups (from `SO_PEERCRED` and the kernel's
+peer group list):
 
 | Caller | Can |
 |---|---|
@@ -81,6 +84,20 @@ The daemon checks the connecting process's uid and groups:
 | Member of `sentry-v2` | Read: `status`, `psi`, `incidents`, `show`, `actions`, `policies`, `subscribe`. |
 | Member of `sentry-v2` and `sentry-v2-admin` | Also change things: `rollback`, `pause`, `resume`, `reload`, `restore`. |
 | Anyone else | Nothing; the directory keeps them out. |
+
+Membership of `sentry-v2-admin` alone would pass the daemon's check, but
+the socket's group and the directory keep a non-member of `sentry-v2` out,
+so admins need both groups. If `control.group` names a group that doesn't
+exist, the socket falls back to the admin group, and with neither group it
+is `0600`, root only.
+
+Every change made through the socket is logged with the caller, for example
+`control: uid 1000 pid 4242 ran rollback {'all': True}`.
+
+To stop one user from tying up the socket, callers that aren't root or in
+the admin group are limited to 8 connections each and 32 between them;
+extra connections get `too many connections`. Idle connections close
+after 5 minutes, and a request line can be at most 64 KiB.
 
 The RPM creates both groups. Bundles can contain journal lines and command
 lines, so treat `sentry-v2` membership as read access to diagnostic data.

@@ -47,6 +47,12 @@ Group changes apply from your next login.
 | 2 | The daemon isn't running (no socket), or the command line was wrong. |
 | 3 | Permission denied, on the socket or by the daemon. |
 
+A refused command names what it needs, for example
+`error: permission denied: rollback needs uid 0 or group sentry-v2-admin`.
+A user who isn't root or in the admin group can hold at most 8 connections
+at once (32 across all such users); past that the daemon answers
+`too many connections`. An idle connection is closed after 5 minutes.
+
 ```console
 $ sentry-v2ctl status
 sentry-v2 is not running (no socket at /run/sentry-v2/control.sock)
@@ -66,12 +72,17 @@ $ sentry-v2ctl status
 sentry-v2 0.1.0  running for 2h14m  mode dry-run
 
 COLLECTOR  HEALTH
-psi        state=ok, triggers=6
-journal    state=ok
-audit      source=netlink, user_avc_truncated=0
+psi        state=ok, triggers=6, restarts=0, last_error=None
+journal    state=ok, restarts=0, last_error=None
+audit      source=netlink, user_avc_truncated=0, restarts=0, last_error=None
 
 no active actions
 ```
+
+The three collectors are `psi`, `journal` and `audit`. If one stops or
+crashes, the daemon restarts it with backoff (1 s doubling to 60 s), and
+`restarts` and `last_error` say so. A PSI collector that finds PSI turned
+off in the kernel reports `state=disabled` and is left stopped.
 
 `--json` adds the breaker state, sink failure and drop counts, and events
 dropped per collector.
@@ -94,26 +105,32 @@ system.slice/batch-report.service  memory    full  22.50  9.10   2.00
 
 ### incidents
 
-Recent incidents, newest first.
+Recent incidents, newest first. The daemon keeps the latest 500 in
+memory, so the list starts empty after a restart; the bundles themselves
+stay on disk.
 
 | Option | Default | Meaning |
 |---|---|---|
 | `--since TIME` | none | Only incidents after this RFC 3339 time, such as `2026-10-17T00:00:00Z`. |
-| `--unit UNIT` | none | Only incidents for this unit. |
+| `--unit UNIT` | none | Only incidents whose target is this unit, or a cgroup path ending in it. |
 | `--limit N` | 50 | How many to show. Must be 1 or more. |
 
 ### show ID
 
-Print the full bundle for an incident, as indented JSON. Take the id from
-`incidents`.
+Print a bundle as indented JSON. The id is the one in the `ID` column of
+`incidents`, which is the bundle's own id; the bundle is read from the file
+sink's directory, so `show` works for any bundle still on disk, even from
+before a restart. An unknown id fails with `error: no such bundle`.
 
 ```console
-$ sentry-v2ctl show 0199f2a1-7c00-7a3e-8b1d-4e5f6a7b8c9d | jq '.correlations[].reasons'
+$ sentry-v2ctl show 0199f2a1-8150-7d44-a2b6-0c1d2e3f4a5b | jq '.correlations[].reasons'
 ```
 
 ### actions
 
-Active throttles and freezes, then the last 100 action records. The `WHEN`
+Active throttles and freezes, then the last 100 action records, newest
+first. The recent list is kept in memory and starts empty after a
+restart; the full history is in `/var/lib/sentry-v2/state/actions.jsonl`. The `WHEN`
 column shows the expiry when a record has one and the record time
 otherwise.
 The `ID` column shows the first 8 characters; `--json` has the full ids,
@@ -138,13 +155,16 @@ An unknown id fails with `error: no such action` and exit code 1.
 ### pause, resume
 
 `pause` forces dry-run for new actions while everything else keeps running.
-Active actions keep their timers. `resume` turns it back off.
+Active actions keep their timers. `resume` turns it back off. A pause lasts
+until `resume` or the next restart of the daemon.
 
 ### reload
 
-Re-read the configuration and policies, like `systemctl reload sentry-v2`.
-An invalid configuration is rejected, the old one stays live, and the error
-is printed.
+Re-read the configuration and policies; `systemctl reload sentry-v2` does
+the same. An invalid configuration (or a sink secret that can't be read) is
+rejected, the old one stays live, and the error is printed. What a reload
+does and doesn't change is in
+[configuration.md](configuration.md#applying-changes).
 
 ### restore BACKUP_ID
 
@@ -155,10 +175,35 @@ Put back the files a `backup_reload` action saved. The id has the form
 $ sentry-v2ctl restore app-web.service/20261014T031502Z
 ```
 
-The daemon prints the restored paths and a note. Reload systemd and the unit
-yourself if unit files came back.
+Before writing anything, the daemon checks every file against the backup's
+`MANIFEST.sha256` and refuses a backup directory that isn't owned by root
+or is writable by anyone else. It then puts each file back atomically and
+prints the paths, followed by what to run next:
+
+```text
+restored:
+/etc/systemd/system/app-web.service
+/etc/app-web/app.conf
+run systemctl daemon-reload && systemctl reload app-web.service
+```
+
+It doesn't reload anything itself.
 
 ## Offline commands
+
+The daemon binary can check the configuration too, and lists each policy
+with its effective mode:
+
+```console
+$ sentry-v2 --check
+/etc/sentry-v2/sentry-v2.toml: OK, 3 policies, daemon mode dry-run
+  memory-pressure-throttle: dry-run (effective dry-run) from /etc/sentry-v2/policies.d/10-memory-pressure-throttle.toml
+  unit-failure-notify: dry-run (effective dry-run) from /etc/sentry-v2/policies.d/20-unit-failure-notify.toml
+  io-pressure-freeze-batch: dry-run (effective dry-run) from /etc/sentry-v2/policies.d/30-io-pressure-freeze-batch.toml
+```
+
+It takes the same `--config` and `--policies` options and exits 2 on an
+invalid configuration.
 
 `policy validate` and `policy test` load the configuration directly, so they
 work before the daemon is installed as a service, in CI, or on a laptop.

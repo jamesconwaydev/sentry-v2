@@ -174,8 +174,9 @@ matched case-sensitively. Where the `/` is decides what they match:
 A `*` in a pattern with `/` also matches across slashes, so
 `system.slice/*` matches nested cgroups too.
 
-PSI patterns are resolved against the cgroup tree every 30 s, so a unit
-that starts later is picked up, and triggers on cgroups that vanish are
+PSI patterns are resolved against the cgroup tree every 30 s, and again
+(at most once a second) whenever systemd reports unit changes, so a unit
+that starts later is picked up and triggers on cgroups that vanish are
 closed.
 
 For a `psi` incident, the action target is the last path component if it
@@ -205,7 +206,7 @@ What each action does to the system, and how it's undone, is in
 | `throttle` | `memory_high` (size or percentage), `cpu_weight` (1 to 10000), `duration` (required) | Needs at least one of `memory_high` and `cpu_weight`. A percentage is taken of the unit's `memory.current` when the action runs. |
 | `freeze` | `duration` (required), `release_below` (0 to 100) | `release_below` is the avg10 percentage that ends the freeze early. It defaults to half the trigger's stall ratio. |
 | `backup_reload` | `paths` (list of absolute, normalised paths) | Backs up the unit's files plus `paths`, then reloads the unit. |
-| `notify` | none | Changes nothing. The bundle for a matched incident goes to the sinks whatever actions ran, so a policy whose only action is `notify` is how you ask for a bundle and nothing else. |
+| `notify` | none | Changes nothing. Every incident gets a bundle whether or not a policy matched it; a `notify` action puts the policy's name and mode in the bundle's `decision` and shows up in the action list, so you can filter on it downstream. |
 
 `duration` must be above zero and no longer than
 `limits.max_action_duration` (30 minutes by default).
@@ -265,8 +266,9 @@ limits and the bundle. It stops just before the D-Bus call. The action
 record says `dry_run` and shows what would have been written, so a dry-run
 bundle is a faithful preview.
 
-`sentry-v2ctl policy test` shows the effective mode for each planned action,
-and the Cockpit Policies page shows it for each loaded policy.
+`sentry-v2 --check` lists every policy with its configured and effective
+mode, `sentry-v2ctl policy test` shows the effective mode for each planned
+action, and the Cockpit Policies tab shows it for each loaded policy.
 
 ## Cooldown
 

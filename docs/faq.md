@@ -49,11 +49,6 @@ each one is tied to the unit, with the reasons. A 0.94 from "pid in unit
 cgroup" and "comm matches ExecStart" is a strong lead, not a verdict. See
 [correlation.md](correlation.md).
 
-## Does it use eBPF?
-
-No. PSI comes from the kernel's own trigger interface, failures from the
-systemd journal, and denials from the audit netlink stream.
-
 ## Why Python, and why no dependencies from PyPI?
 
 Python 3.12 and the two bindings it needs (`python3-systemd` and

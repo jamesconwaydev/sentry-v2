@@ -50,7 +50,11 @@ flowchart LR
 | `sinks/` | One module per destination, plus the manager that gives each one a queue and a worker. |
 | `metrics.py` | The Prometheus registry and a minimal HTTP server. |
 | `config.py`, `config_types.py` | Strict TOML loading and the frozen config dataclasses. |
+| `reporting.py` | Builds bundles in the background (up to 4 at once) with bounded context lookups, and caches unit properties for the correlator. |
+| `control.py`, `commands.py` | The control socket: framing, peer credentials, permissions and connection caps; and the commands the CLI and Cockpit use. |
+| `daemon.py` | Wires everything together, supervises collectors, handles `SIGHUP` reload and `SIGTERM` shutdown, and talks to systemd's notify socket. |
 | `cli.py`, `client.py` | `sentry-v2ctl` and its control-socket client. |
+| `cockpit/` | The Cockpit page: plain JavaScript over the control socket. |
 
 ## Data flow for one failure
 
@@ -65,8 +69,20 @@ flowchart LR
 5. The executor runs each action: protection check, limits, mode. In
    enforce mode it journals the record as `planned`, calls systemd through
    the adapter, journals `applied` and starts the expiry timer.
-6. The bundle is built from the incident, the host's context and the action
-   records, redacted, and handed to every sink's queue.
+6. In the background, the reporter gathers context (pressure for the
+   cgroup and its parents, the unit's properties, its last 50 journal
+   lines, each lookup capped at 2.5 s), builds and redacts the bundle, and
+   hands it to every sink's queue. Control-socket subscribers, such as the
+   Cockpit page, hear about the incident at the same moment.
+
+## Startup, reload and shutdown
+
+| Phase | What happens, in order |
+|---|---|
+| Start | Load and validate the configuration (a bad one stops the daemon with exit code 2); replay the action journal and roll back leftovers; start sinks, metrics and the control socket; start the collectors; send `READY=1`. |
+| Running | Each collector runs under a supervisor that restarts it with backoff (1 s doubling to 60 s, reset after 5 minutes of health). The watchdog is pinged from the event loop itself. |
+| Reload (`SIGHUP`) | Send `RELOADING=1`; build the new configuration and sinks; swap them in; restart the PSI collector with the new triggers; close the old sinks; send `READY=1`. A failure at any build step keeps the old configuration. |
+| Stop (`SIGTERM`) | Send `STOPPING=1`; close the control socket; stop collectors; roll back every active action; give bundles still being built 5 s; give sinks 5 s to deliver. |
 
 ## Threads and the event loop
 
@@ -74,8 +90,8 @@ Everything decides on the event loop thread. Blocking work is pushed off it:
 
 | Thread | Runs |
 |---|---|
-| Event loop (main) | Collectors' fd callbacks, the correlator, policy engine, executor, control socket, metrics server. Metrics are only updated here, so they need no locks. |
-| D-Bus worker (one thread) | Every call to systemd. `dbus-python` objects must stay on the thread that made them, and one thread also serialises the calls. |
+| Event loop (main) | Collectors' fd callbacks, the correlator (ticked every 0.25 s), policy engine, executor, reporter, control socket, metrics server. Metrics are only updated here, so they need no locks. |
+| D-Bus worker (one thread) | Every call to systemd. `dbus-python` objects must stay on the thread that made them, and one thread also serialises the calls. Property lookups for bundles and correlation are limited to one in flight, so an action never queues behind more than one of them. |
 | Default thread pool | File writes, the spool, HTTP and syslog delivery, and journal lookups for bundles. |
 
 The collectors hand their file descriptors to the loop (`add_reader`):

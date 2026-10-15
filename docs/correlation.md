@@ -71,10 +71,15 @@ service.
 
 ### Learned domains
 
-The unit's domain comes from what the daemon already knows about it. When
-it doesn't know, the correlator learns it from the unit's own most recent
-denial before the one being scored. A denial never vouches for itself.
-Learned domains are kept for up to 4096 units.
+The correlator learns a unit's SELinux domain from the unit's own most
+recent denial before the one being scored, so a denial never vouches for
+itself. Learned domains are kept for up to 4096 units. A unit with no
+earlier denial in memory has no known domain, and this reason can't apply.
+
+The `ExecStart` binaries come from systemd. The daemon fetches a unit's
+properties in the background when it sees a journal event for it, and
+caches them for 60 s, so they're usually ready by the time the failure is
+scored.
 
 ### One incident per failure
 

@@ -32,14 +32,14 @@ another port, label it too (see [hardening.md](hardening.md#selinux)).
 
 | Metric | Type | Labels | Meaning |
 |---|---|---|---|
-| `sentry_v2_psi_avg10` | gauge | `cgroup`, `resource`, `kind` | The latest 10-second pressure average, in percent, for each watched cgroup. |
-| `sentry_v2_actions_total` | counter | `policy`, `action`, `mode`, `result` | Actions attempted. `mode` is the mode actually used, `result` the outcome. |
-| `sentry_v2_actions_active` | gauge | | Throttles and freezes currently in force. |
+| `sentry_v2_psi_avg10` | gauge | `cgroup`, `resource`, `kind` | The latest 10-second pressure average, in percent, for each watched cgroup, from the 5-second samples. A cgroup with no sample for 5 minutes drops out. |
+| `sentry_v2_actions_total` | counter | `policy`, `action`, `mode`, `result` | Actions attempted. `mode` is the mode actually used (`dry-run` or `enforce`); `result` is the record's status when the incident was handled: `applied`, `failed`, `dry_run`, or `planned` for an apply whose outcome was unknown and is being rolled back. |
+| `sentry_v2_actions_active` | gauge | | Throttles and freezes awaiting rollback. |
 | `sentry_v2_incidents_total` | counter | `kind` | Incidents opened: `unit_failed`, `psi` or `avc`. |
 | `sentry_v2_avc_correlated_total` | counter | | Denials linked to an incident. |
 | `sentry_v2_events_dropped_total` | counter | `collector` | Events dropped because the event queue was full. |
-| `sentry_v2_sink_failures_total` | counter | `sink` | Failed deliveries per sink. |
-| `sentry_v2_build_info` | gauge | build details | Always 1. The labels describe the running build. |
+| `sentry_v2_sink_failures_total` | counter | `sink` | Failed deliveries per sink. Updated every 0.25 s from the sinks' own counts. |
+| `sentry_v2_build_info` | gauge | `version` | Always 1, labelled with the running version. |
 | `sentry_v2_metrics_render_errors_total` | counter | | Metrics skipped because they failed to render. One broken metric never takes down the whole scrape. |
 
 Counters without labels appear as 0 from the first scrape. Labelled series

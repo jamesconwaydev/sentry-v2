@@ -1,6 +1,7 @@
 # Diagnostic bundles
 
-Every incident a policy matches produces one bundle: a single JSON document
+Every incident produces one bundle, whether or not a policy matched it: a
+single JSON document
 with what happened, what the host looked like at the time, which SELinux
 denials were linked to it and why, and what the daemon did about it. The
 point is that whoever opens it at 3am doesn't have to go and collect any of
@@ -15,12 +16,15 @@ turn on.
 # ls /var/lib/sentry-v2/bundles/2026/10/17/
 0199f2a1-8150-7d44-a2b6-0c1d2e3f4a5b.json
 $ sentry-v2ctl incidents --limit 5
-$ sentry-v2ctl show 0199f2a1-7c00-7a3e-8b1d-4e5f6a7b8c9d
+$ sentry-v2ctl show 0199f2a1-8150-7d44-a2b6-0c1d2e3f4a5b
 ```
 
 Files are named by the bundle id, which is a UUIDv7, so listing a day's
-directory lists bundles in the order they were written. `sentry-v2ctl show`
-takes an incident id from `sentry-v2ctl incidents` and prints its bundle.
+directory lists bundles in the order they were written. The `ID` column of
+`sentry-v2ctl incidents` is that bundle id, and `sentry-v2ctl show` reads
+the bundle back from the file sink's directory. The incident list itself
+lives in memory (the latest 500) and starts empty after a restart; the
+files stay until retention removes them.
 
 ## The schema
 
@@ -40,9 +44,9 @@ $ check-jsonschema --schemafile docs/reference/bundle.schema.json bundle.json
 | `severity` | `info`, `warning`, `critical` | See [Severity](#severity). |
 | `host` | object | `hostname`, `machine_id`, `kernel`, `os_release` (the `PRETTY_NAME`). |
 | `incident` | object | `id`, `kind` (`unit_failed`, `psi`, `avc` or `alert`), `ts_us`, `target`, the `trigger` event, `related` events, `correlations`, and for PSI the `sustained` period it outlasted. |
-| `context` | object | `psi` pressure readings, `unit` properties (or `null`), and `journal`: the unit's recent journal lines. |
+| `context` | object | `psi`: pressure for the incident's cgroup and each parent, keyed by cgroup path, then resource, then `some`/`full`. `unit`: the unit's systemd properties (or `null`). `journal`: the unit's last 50 journal lines this boot, oldest first. |
 | `correlations` | array | The scored denials, each with `avc`, `confidence` and `reasons`. The same list as `incident.correlations`, at the top level so it's easy to query. |
-| `decision` | object | `policy` and `mode` of the first planned action, and `actions`: every action record for this incident. |
+| `decision` | object | `policy` and `mode` of the first planned action, and `actions`: every action record for this incident. With no matching policy, `policy` and `mode` are `null` and `actions` is empty. |
 
 Timestamps inside events (`ts_us`) are microseconds since the epoch.
 Timestamps in action records (`applied_at`, `expires_at`, `ts`) are seconds
@@ -69,9 +73,13 @@ have `severity = "critical"`, `incident.kind = "alert"`, the alert name in
 A billing service fails a second after SELinux stops it reading its config
 file. The denial came from a process in the unit's cgroup with the right
 name, so it scores 0.94, and the bundle is a `warning`. The policy is still
-in dry-run, so the only action is a `notify` marked `dry_run`. Note the two
-`[REDACTED]` strings: a database password in `ExecStart` and a bearer token
-in a journal line.
+in dry-run, so the only action is a `notify` marked `dry_run`. Note the
+`[REDACTED]` in the first journal line, where the service logged its
+database URL with the password in it.
+
+The unit had already failed and lost its cgroup, so `context.psi` shows the
+parent slice. `memory_high` and `cpu_weight` are systemd's raw values;
+18446744073709551615 (2⁶⁴ − 1) means "not set".
 
 ```json
 {
@@ -135,31 +143,51 @@ in a journal line.
   },
   "context": {
     "psi": {
-      "memory": {
-        "some": {
-          "avg10": 0.0,
-          "avg60": 0.12,
-          "avg300": 0.05,
-          "total_us": 912334
+      "system.slice": {
+        "memory": {
+          "some": {
+            "avg10": 0.0,
+            "avg60": 0.12,
+            "avg300": 0.05,
+            "total_us": 912334
+          },
+          "full": {
+            "avg10": 0.0,
+            "avg60": 0.02,
+            "avg300": 0.01,
+            "total_us": 301220
+          }
         }
       }
     },
     "unit": {
-      "ActiveState": "failed",
-      "ExecStart": [
-        "/usr/bin/billing-api --db postgres[REDACTED]db.internal/billing"
-      ]
+      "memory_high": 18446744073709551615,
+      "cpu_weight": 18446744073709551615,
+      "freezer_state": "running",
+      "active_state": "failed",
+      "main_pid": 0,
+      "fragment_path": "/etc/systemd/system/app-billing.service",
+      "drop_in_paths": [],
+      "exec_start": [
+        "/usr/bin/billing-api"
+      ],
+      "cgroup": "system.slice/app-billing.service"
     },
     "journal": [
       {
         "ts_us": 1792199998700000,
-        "priority": 3,
-        "message": "open /etc/billing/billing.conf: permission denied"
+        "priority": 6,
+        "message": "connecting to postgres[REDACTED]db.internal/billing"
       },
       {
         "ts_us": 1792199998750000,
         "priority": 3,
-        "message": "retrying with Authorization: [REDACTED]"
+        "message": "open /etc/billing/billing.conf: permission denied"
+      },
+      {
+        "ts_us": 1792199999999000,
+        "priority": 3,
+        "message": "app-billing.service: Main process exited, code=exited, status=1/FAILURE"
       }
     ]
   },
@@ -210,8 +238,7 @@ in a journal line.
         "expires_at": null,
         "error": null,
         "incident_id": "0199f2a1-7c00-7a3e-8b1d-4e5f6a7b8c9d",
-        "backup_id": null,
-        "ts": 1792200001.2
+        "backup_id": null
       }
     ]
   }

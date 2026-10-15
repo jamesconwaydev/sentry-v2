@@ -26,9 +26,30 @@ $ sentry-v2ctl policy validate
 ok: 3 policies
 ```
 
-Then apply it with `systemctl reload sentry-v2` or `sentry-v2ctl reload`. If
-the new files don't validate, the daemon keeps running on the old ones and
-`sentry-v2ctl status` shows the error.
+Then apply it with `systemctl reload sentry-v2` or `sentry-v2ctl reload`.
+
+## Applying changes
+
+A reload re-reads both the global file and `policies.d`, re-opens every
+sink secret and rebuilds the sinks, then swaps the new configuration in.
+Everything that can fail is built first, so if the files don't validate or
+a secret can't be read, the daemon keeps running on the old configuration
+and `sentry-v2ctl status` shows the error as `last reload failed: …`.
+
+A reload applies policies, `daemon.mode`, `daemon.log_level`, `[limits]`,
+`[protection]`, `[correlation]`, `[redaction]` and `[sinks]`. The PSI
+collector restarts so its kernel triggers match the new policies, and
+cooldown history, buffered events and active actions carry over.
+
+Four things need a restart instead, and a reload that changes them logs a
+warning: `[control]`, `[metrics]`, `daemon.state_dir` and
+`daemon.queue_size`.
+
+```console
+# systemctl restart sentry-v2
+```
+
+A restart rolls back every active throttle and freeze first.
 
 ## Value formats
 
@@ -219,7 +240,9 @@ hmac_key_file = "webhook-hmac"
 ```
 
 `policy validate` doesn't open secret files. A bad secret shows up when the
-daemon starts.
+daemon starts (it refuses to start) or reloads (the reload is refused).
+Because a reload re-reads secrets, rotating a key is: replace the file,
+then `systemctl reload sentry-v2`.
 
 ## The whole file at a glance
 

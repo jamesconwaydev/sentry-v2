@@ -13,6 +13,7 @@ Download the packages for the latest release from
 |---|---|
 | `sentry-v2-<version>.noarch.rpm` | The daemon, `sentry-v2ctl`, the unit and the example configuration. |
 | `sentry-v2-selinux-<version>.noarch.rpm` | The `sentry_v2` SELinux policy module. Recommended on any host running SELinux. |
+| `sentry-v2-cockpit-<version>.noarch.rpm` | Optional. The Cockpit page; see [cockpit.md](cockpit.md). |
 
 With the GitHub CLI:
 

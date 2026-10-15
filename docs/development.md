@@ -60,6 +60,9 @@ $ .venv/bin/pip install -e '.[dev]'
 $ sudo .venv/bin/pytest -m integration tests/integration --no-cov
 ```
 
+A `make itest` target for this is coming; until then, run
+pytest on the host as above.
+
 The tests create throwaway transient units in `sentry-test.slice`, keep any
 memory load small, and stop and reset every unit they create, even when a
 test fails. Don't run them on a host where something else uses that slice

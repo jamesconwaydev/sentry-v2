@@ -42,7 +42,7 @@ $ cat /proc/pressure/memory
 some avg10=0.00 avg60=0.00 avg300=0.00 total=1234567
 full avg10=0.00 avg60=0.00 avg300=0.00 total=987654
 $ sentry-v2ctl status | grep psi
-psi        state=ok, triggers=6
+psi        state=ok, triggers=6, restarts=0, last_error=None
 ```
 
 `triggers` counts the kernel triggers registered across all matching
@@ -83,8 +83,13 @@ $ echo $?
 3
 ```
 
-or, for a change you're not allowed to make, an `error: permission denied…`
-from the daemon, also with exit code 3.
+or, for a change you're not allowed to make, an error from the daemon that
+names what's missing, also with exit code 3:
+
+```console
+$ sentry-v2ctl pause
+error: permission denied: pause needs uid 0 or group sentry-v2-admin
+```
 
 **Fix**
 
@@ -96,6 +101,26 @@ from the daemon, also with exit code 3.
 Log out and back in, then check with `id`. An admin needs both groups:
 `sentry-v2` to get into `/run/sentry-v2`, `sentry-v2-admin` to change
 anything.
+
+## Too many connections
+
+**Symptom**: `error: too many connections`.
+
+Users who aren't root or in `sentry-v2-admin` can hold 8 connections each
+and 32 between them. Usually something is leaving connections open, such
+as a script that runs `sentry-v2ctl top` in a loop or a dashboard that never
+closes its socket. Idle connections are closed after 5 minutes.
+
+## A collector keeps restarting
+
+**Symptom**: `restarts` climbing in `sentry-v2ctl status`, with the reason
+in `last_error`, and `collector <name> stopped (...); restarting in Ns` in
+the journal.
+
+The daemon restarts a stopped collector with backoff, from 1 s up to 60 s.
+The journal line before it has the traceback. For the journal collector
+it's usually the journal itself (`journalctl --verify`); for audit, see
+[the audit fallback](#denials-come-from-the-audit-log-not-netlink).
 
 ## A rollback is stuck
 
@@ -115,8 +140,9 @@ fix the cause, then `sentry-v2ctl rollback <full id>`.
 **Symptom**: `sentry-v2ctl reload` prints an error, or `status` shows
 `last reload failed: …`.
 
-The running daemon kept its previous configuration. Run the validator to
-see the same error with the file and key:
+The running daemon kept its previous configuration. A sink secret that
+can't be read also fails a reload. Run the validator to see a
+configuration error with the file and key:
 
 ```console
 $ sentry-v2ctl policy validate
@@ -150,8 +176,9 @@ Common causes:
   re-serialised body instead of the raw bytes. See
   [sinks.md](sinks.md#verifying-the-signature).
 - A private CA that isn't in `ca_file`.
-- `hmac_key_file` was changed but the daemon wasn't restarted. Secrets are
-  read at startup.
+- The key file was replaced but the daemon wasn't reloaded. Secrets are
+  read at startup and on every reload, so run `systemctl reload sentry-v2`
+  after rotating one.
 
 ## Events are being dropped
 
