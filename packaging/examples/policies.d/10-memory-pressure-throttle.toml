@@ -15,8 +15,10 @@ resource = "memory"
 # "some" fires when at least one task is stalled, "full" only when every task
 # in the cgroup is. "full" is quieter and a better sign of real trouble.
 kind = "full"
-# Fire when tasks spend 150ms of any 1s window stalled on memory...
-threshold = "150ms/1s"
+# Fire when tasks spend 300ms of any 2s window stalled on memory...
+# The window has to be a multiple of 2s, up to 10s. Anything else needs
+# CAP_SYS_RESOURCE, which the unit deliberately drops.
+threshold = "300ms/2s"
 # ...and keep doing so for 10 seconds straight. One spike isn't a problem.
 sustained = "10s"
 # Matched against the cgroup path under /sys/fs/cgroup.

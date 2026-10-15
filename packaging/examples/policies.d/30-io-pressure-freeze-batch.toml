@@ -11,8 +11,9 @@ cooldown = "30m"
 signal = "psi"
 resource = "io"
 kind = "some"
-# 200ms of every second spent waiting on I/O, for 15 seconds running.
-threshold = "200ms/1s"
+# 400ms of every 2s window spent waiting on I/O, for 15 seconds running.
+# As with the memory policy, keep the window to a multiple of 2s.
+threshold = "400ms/2s"
 sustained = "15s"
 cgroups = ["system.slice/batch-*.service", "system.slice/backup-*.service"]
 

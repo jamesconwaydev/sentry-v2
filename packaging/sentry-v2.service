@@ -12,10 +12,12 @@ ExecReload=/bin/kill -HUP $MAINPID
 WatchdogSec=30s
 Restart=on-failure
 RestartSec=5s
-# On stop the daemon rolls back every active throttle and freeze. The worst
-# case is ten rollback retries with backoff (about four minutes) plus D-Bus
-# timeouts, so give it five and a half before systemd sends SIGKILL.
-TimeoutStopSec=330s
+# On stop the daemon rolls back every active throttle and freeze. Each one
+# can take 10 attempts: 243s of backoff plus 10 D-Bus timeouts of 10s. The
+# retries overlap but D-Bus calls are serialised, so 5 active actions (the
+# max_active_actions default) need up to 243s + 5 * 100s = 743s. Raise this
+# if you raise max_active_actions.
+TimeoutStopSec=780s
 
 Slice=system.slice
 MemoryMin=48M
@@ -27,6 +29,8 @@ StateDirectory=sentry-v2
 StateDirectoryMode=0700
 # systemd chowns the runtime directory to the service's group at start, so
 # the group has to be set here for sentry-v2 members to reach the socket.
+# Admins need both groups: sentry-v2 to get through the directory and
+# sentry-v2-admin to change anything (usermod -aG sentry-v2,sentry-v2-admin <you>).
 Group=sentry-v2
 RuntimeDirectory=sentry-v2
 RuntimeDirectoryMode=0750
@@ -40,7 +44,9 @@ ConfigurationDirectory=sentry-v2
 CapabilityBoundingSet=CAP_AUDIT_READ CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
 NoNewPrivileges=yes
 ProtectSystem=strict
-# PSI triggers are registered by writing to <cgroup>/*.pressure.
+# PSI triggers are registered by writing to <cgroup>/*.pressure. The state
+# directory is writable through StateDirectory= anyway; it's listed so
+# every writable path shows up in one place.
 ReadWritePaths=/var/lib/sentry-v2 /sys/fs/cgroup
 ProtectHome=yes
 PrivateTmp=yes
@@ -53,7 +59,6 @@ RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes
-RemoveIPC=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
 SystemCallArchitectures=native

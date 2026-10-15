@@ -98,7 +98,9 @@ port = 9787
 
 [control]
 # Members of `group` can read status. Members of `admin_group` can also roll
-# back, pause and reload. Add yourself with `usermod -aG sentry-v2 <you>`.
+# back, pause and reload, but only if they're in `group` as well, because
+# that's what lets them reach the socket at all. For an admin:
+# `usermod -aG sentry-v2,sentry-v2-admin <you>`.
 socket = "/run/sentry-v2/control.sock"
 group = "sentry-v2"
 admin_group = "sentry-v2-admin"

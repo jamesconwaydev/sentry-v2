@@ -383,6 +383,12 @@ def _threshold(v: object) -> tuple[int, int]:
     stall, window = parse_duration(m.group(1)), parse_duration(m.group(2))
     if not 0.5 <= window <= 10:
         raise ValueError("window must be between 500ms and 10s (kernel limit)")
+    # Without CAP_SYS_RESOURCE the kernel only accepts trigger windows that
+    # are a multiple of 2s, and the unit deliberately drops that capability.
+    if round(window * 1_000_000) % 2_000_000:
+        raise ValueError(
+            "window must be a multiple of 2s (shorter or odd windows need CAP_SYS_RESOURCE)"
+        )
     if not 0 < stall <= window:
         raise ValueError("stall must be above 0 and no longer than the window")
     return round(stall * 1_000_000), round(window * 1_000_000)

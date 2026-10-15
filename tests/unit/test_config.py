@@ -74,7 +74,7 @@ def test_policies_load() -> None:
     mem, crash, den = cfg.policies
     assert mem.mode == "enforce" and mem.cooldown == 600.0
     assert mem.when == PsiWhen(
-        "memory", "full", 150_000, 1_000_000, 10.0, ("system.slice/*.service",)
+        "memory", "full", 300_000, 2_000_000, 10.0, ("system.slice/*.service",)
     )
     assert mem.actions == (Throttle(Percent(80.0), 50, 300.0), Notify())
     assert crash.mode == "dry-run" and crash.cooldown == 300.0
@@ -127,7 +127,7 @@ def test_throttle_needs_a_knob(tmp_path: Path) -> None:
         ('signal = "unit_failed"\nunits = ["sshd.service"]', "units"),
         ('signal = "unit_failed"\nunits = ["systemd-*.service", "sshd.service"]', "units"),
         (
-            'signal = "psi"\nresource = "cpu"\nthreshold = "150ms/1s"\ncgroups = ["system.slice/sshd.service"]',
+            'signal = "psi"\nresource = "cpu"\nthreshold = "300ms/2s"\ncgroups = ["system.slice/sshd.service"]',
             "cgroups",
         ),
     ],
@@ -150,10 +150,20 @@ def test_inline_secret(tmp_path: Path) -> None:
     assert got == "main.toml: sinks.webhook.token: secrets must be given as token_file"
 
 
-@pytest.mark.parametrize("window", ["150ms/20s", "150ms/100ms", "2s/1s", "150ms", "x/1s"])
+@pytest.mark.parametrize("window", ["150ms/20s", "150ms/100ms", "3s/2s", "150ms", "x/2s"])
 def test_bad_thresholds(tmp_path: Path, window: str) -> None:
     when = f'signal = "psi"\nresource = "io"\nthreshold = "{window}"\ncgroups = ["a.service"]'
     assert err(tmp_path, x=policy_text(when=when)).startswith("x.toml: policy[0].when.threshold:")
+
+
+@pytest.mark.parametrize("threshold", ["150ms/1s", "300ms/3s", "100ms/500ms"])
+def test_window_must_be_a_multiple_of_2s(tmp_path: Path, threshold: str) -> None:
+    when = f'signal = "psi"\nresource = "io"\nthreshold = "{threshold}"\ncgroups = ["a.service"]'
+    got = err(tmp_path, x=policy_text(when=when))
+    assert got == (
+        "x.toml: policy[0].when.threshold: window must be a multiple of 2s"
+        " (shorter or odd windows need CAP_SYS_RESOURCE)"
+    )
 
 
 @pytest.mark.parametrize(

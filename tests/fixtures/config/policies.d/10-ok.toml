@@ -7,7 +7,7 @@ cooldown = "10m"
 signal = "psi"
 resource = "memory"
 kind = "full"
-threshold = "150ms/1s"
+threshold = "300ms/2s"
 sustained = "10s"
 cgroups = ["system.slice/*.service"]
 

@@ -27,6 +27,7 @@ BuildRequires:  python3-pytest
 Requires:       python3 >= 3.12
 Requires:       python3-systemd
 Requires:       python3-dbus
+Recommends:     (%{name}-selinux if selinux-policy-%{selinuxtype})
 
 %description
 Sentry-v2 watches cgroup v2 pressure, unit failures in the journal and
@@ -60,7 +61,7 @@ bzip2 -9 packaging/selinux/%{modulename}.pp
 
 %install
 %pyproject_install
-%pyproject_save_files sentry_v2
+%pyproject_save_files -l sentry_v2
 
 install -Dpm 0644 packaging/sentry-v2.service %{buildroot}%{_unitdir}/sentry-v2.service
 install -Dpm 0644 packaging/90-sentry-v2.preset %{buildroot}%{_presetdir}/90-sentry-v2.preset
@@ -78,7 +79,9 @@ install -Dpm 0644 packaging/selinux/%{modulename}.if \
     %{buildroot}%{_datadir}/selinux/devel/include/distributed/%{modulename}.if
 
 %check
-%pyproject_check_import -e sentry_v2.daemon -e sentry_v2.cli
+# sentry_v2.daemon is the console script's target and doesn't exist yet;
+# drop the exclusion when it lands.
+%pyproject_check_import -e sentry_v2.daemon
 %if %{with tests}
 %pytest -m 'not integration'
 %endif
@@ -99,17 +102,22 @@ install -Dpm 0644 packaging/selinux/%{modulename}.if \
 
 %post selinux
 %selinux_modules_install -s %{selinuxtype} %{_datadir}/selinux/packages/%{selinuxtype}/%{modulename}.pp.bz2
+# -a fails if the port is already labelled (an upgrade), so fall back to -m.
+semanage port -a -t sentry_v2_metrics_port_t -p tcp 9787 2>/dev/null \
+    || semanage port -m -t sentry_v2_metrics_port_t -p tcp 9787 || :
 
 %postun selinux
 if [ $1 -eq 0 ]; then
+    # The port record refers to the module's type, so it goes first.
+    semanage port -d -t sentry_v2_metrics_port_t -p tcp 9787 || :
     %selinux_modules_uninstall -s %{selinuxtype} %{modulename}
+    %selinux_relabel_post -s %{selinuxtype}
 fi
 
 %posttrans selinux
 %selinux_relabel_post -s %{selinuxtype}
 
 %files -f %{pyproject_files}
-%license LICENSE
 %doc README.md
 %{_bindir}/sentry-v2
 %{_bindir}/sentry-v2ctl
@@ -121,7 +129,7 @@ fi
 %dir %{_sysconfdir}/sentry-v2/policies.d
 %config(noreplace) %{_sysconfdir}/sentry-v2/sentry-v2.toml
 %config(noreplace) %{_sysconfdir}/sentry-v2/policies.d/*.toml
-%dir %attr(0700,root,root) %{_sharedstatedir}/sentry-v2
+%dir %attr(0700,root,sentry-v2) %{_sharedstatedir}/sentry-v2
 %ghost %dir %attr(0750,root,sentry-v2) /run/sentry-v2
 
 %files selinux

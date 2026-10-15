@@ -11,6 +11,13 @@ policy_module(sentry_v2, 0.1.0)
 type sentry_v2_t;
 type sentry_v2_exec_t;
 init_daemon_domain(sentry_v2_t, sentry_v2_exec_t)
+# The unit sets NoNewPrivileges=yes, and on EL10 init_daemon_domain does not
+# grant the nnp_transition that systemd then needs to enter the domain.
+init_nnp_daemon_domain(sentry_v2_t)
+
+# Permissive until the integration suite has run clean against it: denials
+# are logged, nothing is blocked.
+permissive sentry_v2_t;
 
 type sentry_v2_conf_t;
 files_config_file(sentry_v2_conf_t)
@@ -24,6 +31,11 @@ files_pid_file(sentry_v2_var_run_t)
 type sentry_v2_unit_file_t;
 systemd_unit_file(sentry_v2_unit_file_t)
 
+# The metrics listener's port, 9787. The selinux subpackage labels it with
+# semanage in %post; label any other configured port the same way.
+type sentry_v2_metrics_port_t;
+corenet_port(sentry_v2_metrics_port_t)
+
 ########################################
 #
 # Local policy
@@ -34,9 +46,8 @@ systemd_unit_file(sentry_v2_unit_file_t)
 allow sentry_v2_t self:capability { dac_read_search sys_ptrace };
 # Joining the audit multicast group (collectors/audit.py).
 allow sentry_v2_t self:capability2 audit_read;
-# SIGTERM/SIGHUP handling and the asyncio self-pipe.
-allow sentry_v2_t self:process { getsched signal };
-allow sentry_v2_t self:fifo_file rw_fifo_file_perms;
+# sd_notify and journal logging (dgram); the control socket and asyncio's
+# self-pipe, which is a socketpair (stream).
 allow sentry_v2_t self:unix_dgram_socket create_socket_perms;
 allow sentry_v2_t self:unix_stream_socket { create_stream_socket_perms connectto };
 # Outbound sinks and the optional metrics listener.
@@ -67,12 +78,10 @@ auth_use_nsswitch(sentry_v2_t)
 # Action journal, bundles, spool and backups under /var/lib/sentry-v2.
 manage_dirs_pattern(sentry_v2_t, sentry_v2_var_lib_t, sentry_v2_var_lib_t)
 manage_files_pattern(sentry_v2_t, sentry_v2_var_lib_t, sentry_v2_var_lib_t)
-files_var_lib_filetrans(sentry_v2_t, sentry_v2_var_lib_t, dir)
 
-# Control socket /run/sentry-v2/control.sock.
-manage_dirs_pattern(sentry_v2_t, sentry_v2_var_run_t, sentry_v2_var_run_t)
+# Control socket /run/sentry-v2/control.sock. systemd creates the state and
+# runtime directories themselves, so no file transitions are needed.
 manage_sock_files_pattern(sentry_v2_t, sentry_v2_var_run_t, sentry_v2_var_run_t)
-files_pid_filetrans(sentry_v2_t, sentry_v2_var_run_t, dir)
 
 # PSI collector: read *.pressure, register triggers by writing to them and
 # poll for events; walk the hierarchy to resolve unit cgroups.
@@ -96,7 +105,8 @@ kernel_read_kernel_sysctls(sentry_v2_t)
 dev_read_sysfs(sentry_v2_t)
 
 # systemd over D-Bus: unit properties, SetUnitProperties (throttle),
-# FreezeUnit/ThawUnit and ReloadUnit (backup_reload).
+# FreezeUnit/ThawUnit and ReloadUnit (backup_reload). These cover every unit
+# file type; the protected-unit list is enforced by the daemon, not here.
 dbus_system_bus_client(sentry_v2_t)
 init_dbus_chat(sentry_v2_t)
 init_status(sentry_v2_t)
@@ -124,6 +134,6 @@ corenet_tcp_connect_syslogd_port(sentry_v2_t)
 corenet_tcp_connect_syslog_tls_port(sentry_v2_t)
 corenet_udp_send_syslogd_port(sentry_v2_t)
 
-# Optional metrics listener on 127.0.0.1:9787 (unlabelled port).
+# Optional metrics listener on 127.0.0.1:9787.
 corenet_tcp_bind_generic_node(sentry_v2_t)
-corenet_tcp_bind_unreserved_ports(sentry_v2_t)
+allow sentry_v2_t sentry_v2_metrics_port_t:tcp_socket name_bind;

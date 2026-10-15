@@ -243,7 +243,7 @@ def _event(tmp_path, ev):
 PSI = {
     "kind": "psi", "ts_us": 100_000_000, "cgroup": "system.slice/batch.service",
     "resource": "memory", "pressure": "full", "avg10": 40.0, "avg60": 20.0, "avg300": 5.0,
-    "total_us": 1, "triggered": True, "stall_us": 150000, "window_us": 1000000,
+    "total_us": 1, "triggered": True, "stall_us": 300000, "window_us": 2000000,
 }  # fmt: skip
 
 
