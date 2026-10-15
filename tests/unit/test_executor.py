@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from conftest import PRESSURE
 from contracts import NGINX
+from pressure import pressure_text
 from sentry_v2.cgroupfs import CgroupFS
 from sentry_v2.config_types import LimitsConfig, ProtectionConfig
 from sentry_v2.events import AvcEvent, Incident, PsiEvent, UnitEvent
@@ -471,7 +471,7 @@ def test_unit_missing_at_prepare(h: Harness) -> None:
 
 
 def set_pressure(path: Path, avg10: float) -> None:
-    path.write_text(PRESSURE.format(k="some", a=avg10) + PRESSURE.format(k="full", a=0))
+    path.write_text(pressure_text(avg10))
 
 
 def test_freeze_thaws_early_when_parent_pressure_drops(h: Harness, fake_cgroupfs: Path) -> None:

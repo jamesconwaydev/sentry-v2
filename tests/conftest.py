@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-PRESSURE = "{k} avg10={a:.2f} avg60=0.20 avg300=0.00 total=12345\n"
+from pressure import pressure_text
 
 
 @pytest.fixture
@@ -19,9 +19,7 @@ def fake_cgroupfs(tmp_path: Path) -> Path:
         d = root / rel
         d.mkdir(parents=True)
         for res in ("memory", "cpu", "io"):
-            (d / f"{res}.pressure").write_text(
-                PRESSURE.format(k="some", a=42) + PRESSURE.format(k="full", a=0)
-            )
+            (d / f"{res}.pressure").write_text(pressure_text(42))
         (d / "memory.current").write_text("4096\n")
     proc = tmp_path / "proc"
     (proc / "pressure").mkdir(parents=True)
