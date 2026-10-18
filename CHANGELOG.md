@@ -9,6 +9,19 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 ### Added
 
 - Published on PyPI as `sentry-v2`.
+- `sentry-v2ctl redact` shows what the configured redaction leaves of a
+  file or stdin, so you can check before anything reaches a sink.
+- Redaction catches more by default: `--password x` and `--db-password=x`
+  style flags, JSON-quoted secrets such as `"Authorization": "Basic …"`,
+  HTTP Digest `response=` values and JSON Web Tokens.
+
+### Fixed
+
+- An AVC storm could overflow the audit socket and lose denials without a
+  trace. The daemon now asks for an 8 MiB receive buffer (capped by
+  `net.core.rmem_max`), counts kernel overruns and its own reader-queue
+  drops as `audit` events dropped, and shows `overruns` and `rcvbuf` in the
+  audit collector's health.
 
 ### Changed
 

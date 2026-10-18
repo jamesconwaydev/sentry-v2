@@ -251,14 +251,21 @@ Bundles are built from journal lines, unit properties and audit records,
 which is exactly where passwords and tokens leak. Before a bundle goes
 anywhere, matches of these patterns are replaced with `[REDACTED]`:
 
+`NAMES` below stands for
+`password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret`.
+
 | What | Pattern |
 |---|---|
+| JSON-quoted secrets, Authorization included | `(?i)"(?:authorization\|NAMES)"\s*:\s*"(?:[^"\\]\|\\.)*"` |
 | Authorization headers, with the scheme | `(?i)authorization:\s*\S+(?:\s+\S+)?` |
 | Bearer tokens | `(?i)bearer\s+[a-z0-9._~+/-]+=*` |
 | Credentials in URLs | `://[^/\s:@]+:[^/\s@]+@` |
 | AWS access key ids | `AKIA[0-9A-Z]{16}` |
 | PEM private keys | `-----BEGIN … PRIVATE KEY-----` through the matching `END` line, or to the end of the text if it's cut off |
-| Secret pairs | `(?i)(password\|passwd\|secret\|token\|api[_-]?key\|access[_-]?key\|client[_-]?secret)=\S+` |
+| HTTP Digest responses | `(?i)\bresponse="?[0-9a-f]{32,}"?` |
+| JSON Web Tokens | `eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*` |
+| Secret flags, `--password x` or `--db-password=x` | `(?i)--(?:[a-z0-9]+[-_]){0,3}(?:NAMES)(?:=\|\s+)\S+` |
+| Secret pairs | `(?i)(?:NAMES)=\S+` |
 
 They're applied to:
 
@@ -268,6 +275,20 @@ They're applied to:
 
 Ids, SELinux contexts, unit names and cgroup paths are left alone so the
 bundle stays usable.
+
+### Checking what leaves the host
+
+`sentry-v2ctl redact` runs your configured patterns over a file, or
+stdin, and prints what's left. No daemon needed:
+
+```console
+$ systemctl show -p ExecStart app-billing.service | sentry-v2ctl redact
+ExecStart={ path=/usr/bin/billing ; argv[]=/usr/bin/billing [REDACTED] --port 8080 ; … }
+```
+
+Paste in a journal line you're worried about before it ever reaches a
+webhook. The input is scrubbed as one string, the way a single journal
+message is.
 
 ### Adding your own
 
@@ -299,9 +320,9 @@ only yours.
 - A secret that doesn't match a pattern goes out as is. Redaction is a
   safety net, not a guarantee; keep secrets out of command lines and logs
   in the first place.
-- Two shapes slip past the defaults: a JSON-quoted
-  `"Authorization": "Basic …"` value, and a Digest `response=` field. If
-  your logs carry them, add a pattern, for example
-  `'(?i)"authorization"\s*:\s*"[^"]*"'` or `'(?i)\bresponse="[0-9a-f]+"'`.
+- Short flags aren't in the defaults, because `-p` is a port to half your
+  tools and a password to MySQL. If your command lines carry
+  `mysql -pSECRET`, add `'(?<!\S)-p\S+'`. A flag value with a space
+  inside quotes (`--password "two words"`) loses only its first word.
 - A slow, backtracking pattern runs on every string in every bundle. Keep
   patterns anchored on a literal prefix where you can.

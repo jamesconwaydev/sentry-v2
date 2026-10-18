@@ -189,6 +189,18 @@ The correlator fell behind a flood of events. Raise `daemon.queue_size`,
 and if `audit` is the collector dropping, look for the denial storm behind
 it: `ausearch -m AVC -ts recent`.
 
+If the audit collector's `overruns` is climbing too, the kernel is
+dropping denials before the daemon can read them. Give the socket more
+room and restart:
+
+```console
+# echo 'net.core.rmem_max = 8388608' > /etc/sysctl.d/90-sentry-v2.conf
+# sysctl --system && systemctl restart sentry-v2
+```
+
+`status --json` then shows `rcvbuf` close to 16 MiB (the kernel doubles
+what it grants, for bookkeeping).
+
 ## SELinux denials from sentry_v2_t
 
 The domain is enforcing (see [hardening.md](hardening.md#enforcing)), so a

@@ -28,6 +28,7 @@ log = logging.getLogger(__name__)
 NETLINK_AUDIT = 9
 AUDIT_NLGRP_READLOG = 1
 RECV_SIZE = 65536  # MAX_AUDIT_MESSAGE_LENGTH is 8970
+RCVBUF = 8 << 20  # asked for; the kernel caps it at net.core.rmem_max
 NETLINK_TYPES = {
     1300: "SYSCALL",
     1320: "EOE",
@@ -217,6 +218,8 @@ class NetlinkSource:
     name = "netlink"
     max_batch = 64  # recvs per loop callback, so an audit storm cannot starve the loop
     max_queued = 10_000
+    dropped = 0  # records shed because the queue below was full
+    overruns = 0  # ENOBUFS: the kernel dropped records before we read them
 
     def __init__(self) -> None:
         af = getattr(socket, "AF_NETLINK", None)
@@ -224,13 +227,19 @@ class NetlinkSource:
             raise OSError("AF_NETLINK is not available on this platform")
         self._sock = socket.socket(af, socket.SOCK_RAW, NETLINK_AUDIT)
         self._loop: asyncio.AbstractEventLoop | None = None
-        self.dropped = 0
         try:
             self._sock.setblocking(False)
+            with contextlib.suppress(OSError):
+                self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, RCVBUF)
             self._sock.bind((0, AUDIT_NLGRP_READLOG))  # needs CAP_AUDIT_READ
         except OSError:
             self._sock.close()
             raise
+
+    @property
+    def rcvbuf(self) -> int:
+        """The receive buffer the kernel granted, in bytes."""
+        return self._sock.getsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF)
 
     def close(self) -> None:
         if self._loop is not None:
@@ -259,7 +268,9 @@ class NetlinkSource:
                     return
                 except OSError as e:
                     if e.errno == errno.ENOBUFS:  # the kernel dropped messages
-                        log.warning("audit netlink overrun: %s", e)
+                        self.overruns += 1
+                        if self.overruns == 1 or self.overruns % 1000 == 0:
+                            log.warning("audit netlink overrun (%d so far): %s", self.overruns, e)
                         continue
                     loop.remove_reader(self._sock.fileno())
                     push(e)
@@ -401,6 +412,7 @@ class AuditCollector:
         self._flush_interval = flush_interval
         self._asm = AvcAssembler()
         self._source: Source | None = None
+        self._lost = 0
 
     def health(self) -> dict[str, object]:
         out: dict[str, object] = {
@@ -409,7 +421,19 @@ class AuditCollector:
         }
         if error := getattr(self._source, "error", None):
             out["error"] = error
+        if isinstance(self._source, NetlinkSource):
+            out["overruns"] = self._source.overruns
+            with contextlib.suppress(OSError):
+                out["rcvbuf"] = self._source.rcvbuf
         return out
+
+    def _count_lost(self) -> None:
+        """Add records the source lost to the queue's audit drop count."""
+        s = self._source
+        n = getattr(s, "dropped", 0) + getattr(s, "overruns", 0)
+        if n > self._lost:
+            self._queue.dropped["audit"] += n - self._lost
+            self._lost = n
 
     def _publish(self, events: list[AvcEvent]) -> None:
         for ev in events:
@@ -427,6 +451,7 @@ class AuditCollector:
             await asyncio.sleep(self._flush_interval)
             try:
                 self._publish(self._asm.flush(self._now()))
+                self._count_lost()
             except Exception:
                 log.exception("audit flush failed")
 
@@ -445,6 +470,7 @@ class AuditCollector:
         finally:
             flusher.cancel()
             source.close()
+            self._count_lost()
             try:
                 self._publish(self._asm.flush(float("inf")))
             except Exception:
