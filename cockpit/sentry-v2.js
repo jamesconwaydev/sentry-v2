@@ -326,6 +326,7 @@ function overviewView() {
     const banners = slot();
     const summary = slot();
     const attention = slot();
+    const held = slot();
     const actions = slot();
     const pressure = slot();
     let confirming = null; // {section, id} of a rollback awaiting confirmation
@@ -340,6 +341,7 @@ function overviewView() {
         };
         banners.set({ mode: status.mode, paused: status.paused, breaker: status.breaker, err: status.last_reload_error }, renderBanners);
         summary.set(status, renderSummary);
+        held.set(status.held || [], renderHeld);
         if (confirming === null) renderRecords();
         pressure.set(psi?.cgroups, renderPressure);
     }
@@ -457,6 +459,35 @@ function overviewView() {
         return section;
     }
 
+    function renderHeld(list) {
+        if (!list.length) return "";
+        const rows = list.map(u => h("tr", null,
+            h("th", { scope: "row" }, dash(u.unit)),
+            h("td", null, when(u.since)),
+            h("td", { class: "fit" }, h("button", { type: "button", "data-unit": u.unit,
+                "aria-label": `Allow actions on ${u.unit} again`, onclick: () => ack(u.unit) }, "Allow actions again"))));
+        const section = card("Held for acting too often", [
+            h("p", { class: "lead" }, "Sentry-v2 kept acting on these units, so it stopped. Whatever it last did still expires on schedule, but nothing new touches them until you allow it. Look at why they keep coming back first."),
+            table("Held units", [["Unit"], ["Held"], ["", "fit"]], rows),
+        ], null, "held");
+        section.classList.add("attention");
+        return section;
+    }
+
+    async function ack(unit) {
+        shownError = null;
+        try {
+            await client.call("ack", { unit });
+            showError(null);
+            announce(`Actions on ${unit} are allowed again.`);
+        } catch (e) {
+            showError(mutationError(`allow actions on ${unit}`, e));
+        }
+        held.reset();
+        await refresh().catch(() => {});
+        focusOr(node, '[data-heading="actions"]');
+    }
+
     function renderActions(list) {
         if (!list.length)
             return card("Active actions", h("p", { class: "muted" }, "Nothing is throttled or frozen right now."), null, "actions");
@@ -538,7 +569,7 @@ function overviewView() {
             h("p", { class: "muted" }, "Updates every 5 seconds"));
     }
 
-    const node = h("div", { class: "stack" }, banners.el, summary.el, attention.el, actions.el, pressure.el);
+    const node = h("div", { class: "stack" }, banners.el, summary.el, attention.el, held.el, actions.el, pressure.el);
     return { node, refresh, poll: true };
 }
 
@@ -607,6 +638,19 @@ function bundleView(id) {
         ];
     }
 
+    /** A root command that explains the bundle's denials, from the audit log itself. */
+    function reviewCommand(inc, corr) {
+        const avcs = [inc.trigger, ...(inc.related || []), ...corr.map(c => c.avc)]
+            .filter(e => e?.source === "audit" && Number.isInteger(e.serial) && e.serial > 0);
+        const ids = [...new Set(avcs.map(e => e.serial))].sort((a, b) => a - b);
+        if (!ids.length) return "";
+        return h("div", { class: "review" },
+            h("h3", null, "Review the denials yourself"),
+            h("p", null, "Run this as root to see why SELinux said no:"),
+            h("pre", { class: "mono" }, `for id in ${ids.join(" ")}; do ausearch --input-logs -a "$id" --raw; done | audit2allow -w`),
+            h("p", { class: "muted" }, "Drop -w to see the rules audit2allow would write. Read them before loading anything: a denial is often a file with the wrong label (restorecon fixes it) or a boolean that's off, not missing policy. Records rotated out of audit.log won't be found."));
+    }
+
     function render(b) {
         const inc = b.incident || {};
         const { ts_us: tsUs, source: _source, ...triggerRest } = inc.trigger || {};
@@ -615,13 +659,14 @@ function bundleView(id) {
             .map(([k, v]) => [capitalise(k.replace(/_/g, " ")), typeof v === "object" ? JSON.stringify(v) : String(v)]);
 
         const corr = b.correlations || [];
-        const correlations = card("Likely related SELinux denials", corr.length
+        const correlations = card("Likely related SELinux denials", [corr.length
             ? table("Correlated denials", [["Confidence", "num"], ["Denial"], ["Why they're linked"]],
                 corr.map(c => h("tr", null,
                     h("td", { class: "num confidence" }, isNum(c.confidence) ? `${Math.round(c.confidence * 100)}%` : "–"),
                     h("td", null, avcSummary(c.avc || {})),
                     h("td", null, h("ul", { class: "reasons" }, (c.reasons || []).map(r => h("li", null, capitalise(r))))))))
-            : h("p", { class: "muted" }, "No SELinux denials were linked to this incident."));
+            : h("p", { class: "muted" }, "No SELinux denials were linked to this incident."),
+            reviewCommand(inc, corr)]);
 
         const d = b.decision || {};
         const decided = d.actions?.length

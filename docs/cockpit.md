@@ -34,6 +34,9 @@ Refreshes every 5 seconds.
   including PSI being off and the audit log fallback.
 - Needs attention: rollbacks that failed, with a **Retry** button for
   each. It only appears when there's something in it.
+- Held for acting too often: units the [flap guard](actions-and-safety.md#units-that-keep-coming-back)
+  put on hold, with **Allow actions again** for each (the same as
+  `sentry-v2ctl ack`). It only appears when a unit is held.
 - Active actions: every throttle and freeze in force, when it was
   applied and when it rolls back, with **Roll back** (asks you to confirm).
 - Pressure: avg10, avg60 and avg300 for every watched cgroup, with a
@@ -45,7 +48,9 @@ The latest incidents, newest first, filterable by unit and severity. New
 ones appear as they happen, through a subscription to the daemon.
 
 Select an incident to open its bundle: what happened, the likely related
-SELinux denials with their confidence and the reasons they're linked, the
+SELinux denials with their confidence and the reasons they're linked, a
+root command that pulls those exact denials from the audit log and runs
+them through `audit2allow -w` so you can see why they were refused, the
 decision and the actions taken, the journal lines around the incident, and
 the raw bundle JSON.
 
@@ -53,6 +58,11 @@ the raw bundle JSON.
 
 Every loaded policy with its signal, actions, configured mode and effective
 mode, a banner if the last reload failed, and **Reload configuration**.
+
+There's no button to load a policy fix. The daemon's SELinux domain can't
+load policy, and it shouldn't: `audit2allow` output loaded unread is how a
+mislabelled file turns into a permanent hole. The command is there so you
+can read the answer and decide.
 
 Policies are read-only here on purpose. Edit the files under
 `/etc/sentry-v2/policies.d/`, check them with `sentry-v2ctl policy
@@ -68,7 +78,7 @@ then applies the usual rules:
 |---|---|
 | Administrative access on | Everything. |
 | Limited access, member of `sentry-v2` | View every tab. |
-| Limited access, member of `sentry-v2` and `sentry-v2-admin` | Also roll back, pause, resume and reload. |
+| Limited access, member of `sentry-v2` and `sentry-v2-admin` | Also roll back, allow held units again, pause, resume and reload. |
 | Limited access, neither group | Nothing; the page says you don't have access. |
 
 A refused change shows the daemon's reason and a hint about the admin

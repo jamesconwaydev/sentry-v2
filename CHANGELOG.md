@@ -23,6 +23,10 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   `flapping` alert bundle goes out, and `sentry-v2ctl ack UNIT` releases
   it. Holds survive restarts. `status` lists held units and
   `sentry_v2_units_held` counts them.
+- The Cockpit page lists held units with **Allow actions again**, and each
+  incident's bundle shows a root `ausearch … | audit2allow -w` command for
+  its own denials, so you can see why SELinux refused them before you
+  change anything.
 
 ### Fixed
 

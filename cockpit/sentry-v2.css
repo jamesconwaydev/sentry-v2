@@ -156,6 +156,10 @@ main:focus { outline: none; }
 .card.attention { border-color: var(--danger); border-top-width: 3px; }
 .card.attention h2 { color: var(--danger); }
 .lead { margin: 0 0 0.75rem; max-width: 80ch; }
+.review { margin-top: 1rem; }
+.review h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+.review p { margin: 0.25rem 0; max-width: 80ch; }
+.review pre { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0.5rem 0; }
 
 /* buttons */
 
