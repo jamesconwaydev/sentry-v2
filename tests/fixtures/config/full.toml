@@ -7,6 +7,7 @@ max_action_duration = "10m"
 
 [protection]
 protected = ["nginx.service"]
+allow_slices = true
 
 [correlation]
 min_confidence = 0.7

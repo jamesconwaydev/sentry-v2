@@ -234,6 +234,9 @@ class Executor:
             return self._finish(rec, "failed", "no unit target")
         if is_protected(unit, self.protection.protected):
             return self._finish(rec, "failed", "protected")
+        # a slice's limits and freezer reach every unit under it
+        if unit.endswith(".slice") and not self.protection.allow_slices:
+            return self._finish(rec, "failed", "slice actions need protection.allow_slices")
         if refusal := self._check_limits(rec.action, unit):
             return self._finish(rec, "failed", refusal)
         if rec.mode == "dry-run":

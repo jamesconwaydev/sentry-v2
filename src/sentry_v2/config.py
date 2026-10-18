@@ -507,7 +507,10 @@ def load_config(main: Path, policies_dir: Path) -> Config:
     root = _Reader(_toml(main), main)
     daemon, limits = _daemon(root), _limits(root)
     pr = _section(root, "protection")
-    protection = ProtectionConfig(protected=pr.get("protected", _strs, _NO_STRS))
+    protection = ProtectionConfig(
+        protected=pr.get("protected", _strs, _NO_STRS),
+        allow_slices=pr.get("allow_slices", _bool, False),
+    )
     pr.finish()
     correlation, redaction = _correlation(root), _redaction(root)
     sinks, metrics, control = _sinks(root, daemon.state_dir), _metrics(root), _control(root)

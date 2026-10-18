@@ -222,6 +222,23 @@ def test_protected_target_untouched(h: Harness) -> None:
     assert h.mgr.calls == []
 
 
+def test_slice_actions_need_allow_slices(h: Harness) -> None:
+    inc = psi_incident("app.slice")
+    refused = ("failed", "slice actions need protection.allow_slices")
+
+    async def main() -> None:
+        recs = await h.ex.handle(
+            inc, [(policy(), Freeze(60)), (policy(mode="dry-run"), Freeze(60))]
+        )
+        assert [(r.status, r.error) for r in recs] == [refused] * 2
+        h.ex.protection = ProtectionConfig(allow_slices=True)
+        recs = await h.ex.handle(inc, [(policy(mode="dry-run"), Freeze(60))])
+        assert [r.status for r in recs] == ["dry_run"]
+
+    run(main)
+    assert h.mgr.calls == []
+
+
 def test_avc_incident_only_notifies(h: Harness) -> None:
     avc = AvcEvent(
         ts_us=1, serial=1, denied=True, perms=("read",), scontext="s", scontext_type="httpd_t",

@@ -100,7 +100,7 @@ transition and the newest line for an id wins.
 | `planned` | Written, with the values to restore, before the D-Bus call. |
 | `applied` | systemd accepted the change. Throttles and freezes now have an `expires_at`. |
 | `rolled_back` | Undone. `error` may carry a note, such as `unit gone`, `unit inactive` or `changed since; left as is`. |
-| `failed` | Not applied. `error` says why: `protected`, `limit`, `already active`, `rollback pending`, `unit not found`, `no unit target` and so on. |
+| `failed` | Not applied. `error` says why: `protected`, `slice actions need protection.allow_slices`, `limit`, `already active`, `rollback pending`, `unit not found`, `no unit target` and so on. |
 | `rollback_failed` | Every rollback attempt failed. See [Stuck rollbacks](#stuck-rollbacks). |
 | `dry_run` | What would have happened, with `params` showing what would have been written. |
 

@@ -91,12 +91,19 @@ before you do.
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `protected` | list of strings | `[]` | Unit name patterns (`fnmatch` style, case-sensitive) that are never throttled, frozen or reloaded, on top of the built-in list. |
+| `allow_slices` | boolean | `false` | Let actions target `.slice` units. Off, a policy that matches a slice records the action as `failed` with `slice actions need protection.allow_slices`, in dry-run too. |
 
 The built-in list can't be turned off: `init.scope`, `-.slice`,
 `system.slice`, `user.slice`, `sshd.service`, `systemd-journald.service`,
 `dbus-broker.service`, `dbus.service`, `systemd-logind.service`,
 `auditd.service`, `sentry-v2.service`, `systemd-*.service`, and the login
 sessions `user-*.slice`, `session-*.scope` and `user@*.service`.
+
+Why are slices off by default? A `MemoryHigh` on `app.slice` squeezes
+every service inside it, and freezing it freezes them all, which is rarely
+what a policy written with one noisy job in mind should do. A PSI policy
+whose `cgroups` pattern only matches services can't hit a slice anyway;
+this guards the patterns that match more than you meant.
 
 The example config ships with `protected = ["nginx.service"]` as a
 placeholder. Replace it with the services you can least afford to stall.

@@ -51,6 +51,7 @@ def test_minimal_defaults() -> None:
     assert cfg.sinks.webhook is None
     assert cfg.metrics.enabled is False and cfg.metrics.port == 9787
     assert cfg.correlation.avc_burst == 5
+    assert cfg.protection.allow_slices is False
 
 
 def test_full_global_config() -> None:
@@ -58,6 +59,7 @@ def test_full_global_config() -> None:
     assert cfg.daemon.log_level == "debug" and cfg.daemon.queue_size == 500
     assert cfg.limits.max_action_duration == 600.0
     assert cfg.protection.protected == ("nginx.service",)
+    assert cfg.protection.allow_slices is True
     assert cfg.redaction.patterns == (r"secret-\d+",)
     assert cfg.sinks.file.max_age == 7 * 86400 and cfg.sinks.file.max_size == 512 * 1024**2
     assert cfg.sinks.webhook and cfg.sinks.webhook.timeout == 10.0

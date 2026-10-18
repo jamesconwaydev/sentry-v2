@@ -37,6 +37,7 @@ class LimitsConfig:
 @dataclass(frozen=True)
 class ProtectionConfig:
     protected: tuple[str, ...] = ()
+    allow_slices: bool = False
 
 
 @dataclass(frozen=True)

@@ -129,7 +129,8 @@ Sentry-v2 changes running services, so it's built to be boring about it.
 - Protected units. SSH, journald, D-Bus, logind, auditd, systemd's own
   services, the top-level slices, everyone's login sessions and Sentry-v2
   itself are never throttled, frozen or reloaded. Add your own with
-  `protection.protected`.
+  `protection.protected`. Slices, which reach every unit under them, are
+  off limits too until you set `protection.allow_slices`.
 - Rollback guarantees. Each throttle and freeze is written to disk
   with the values it will restore before systemd is touched, then undone at
   expiry, on shutdown, and on the next start after a crash. A throttle you

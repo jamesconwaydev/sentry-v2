@@ -37,6 +37,10 @@ breaker_cooldown = "15m"
 # daemon). The default is an empty list; nginx is here as an example. Add
 # whatever would hurt most if it stalled for a minute.
 protected = ["nginx.service"]
+# A throttle or freeze on a .slice reaches every unit under it, so actions
+# on slices are refused unless this is true. Leave it off unless a policy
+# really means to squeeze a whole group of services at once.
+allow_slices = false
 
 [correlation]
 # How long events stay in memory for matching.
