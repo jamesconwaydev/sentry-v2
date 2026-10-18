@@ -495,3 +495,32 @@ def test_redact_errors(tmp_path, capsys):
     assert "invalid:" in capsys.readouterr().err
     assert main(["redact", str(tmp_path / "missing"), *CFG]) == 1
     assert "cannot read" in capsys.readouterr().err
+
+
+def _bundle(tmp_path, incident):
+    return _event(tmp_path, {"schema": "sentry-v2/bundle/1", "incident": incident})
+
+
+def test_policy_test_replays_saved_bundles(tmp_path, capsys):
+    unit = {"source": "journal", "kind": "failed", "ts_us": 5_000_000,
+            "unit": "batch-1.service", "result": "watchdog", "main_pid": None}  # fmt: skip
+    assert main(["--json", *_bundle(tmp_path, {"kind": "unit_failed", "trigger": unit})]) == 0
+    assert [p["action"] for p in json.loads(capsys.readouterr().out)] == ["freeze", "backup_reload"]
+
+    psi = {**{k: v for k, v in PSI.items() if k not in ("kind", "pressure")}, "source": "psi"}
+    assert main(_bundle(tmp_path, {"kind": "psi", "trigger": {**psi, "kind": "full"}})) == 0
+    assert "memory_high=80%" in capsys.readouterr().out
+
+    avc = {"source": "audit", "serial": 1, "denied": True, "perms": ["read"], "ts_us": 1_000_000,
+           "scontext": "u:r:httpd_t:s0", "scontext_type": "httpd_t", "tcontext": "x",
+           "tclass": "file"}  # fmt: skip
+    related = [{**avc, "serial": i, "ts_us": 1_000_000 + i} for i in range(1, 5)]
+    inc = {"kind": "avc", "trigger": avc, "related": related,
+           "correlations": [{"avc": related[0], "confidence": 1.0, "reasons": []}]}  # fmt: skip
+    assert main(_bundle(tmp_path, inc)) == 0
+    assert "denials" in capsys.readouterr().out
+
+
+def test_policy_test_alert_bundle_has_nothing_to_replay(tmp_path, capsys):
+    assert main(_bundle(tmp_path, {"kind": "alert", "target": "a.service"})) == 1
+    assert "alert bundle has no events" in capsys.readouterr().err

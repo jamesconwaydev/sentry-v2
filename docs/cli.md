@@ -302,6 +302,19 @@ is enough to test a PSI policy.
 To test correlation, pass a list: denials followed by the failure, with
 `ts_us` values a second or two apart.
 
+Or skip writing events and hand it a bundle the daemon already saved. The
+trigger and every denial in it are replayed with their original
+timestamps, so last night's incident becomes this morning's test case:
+
+```console
+$ sentry-v2ctl show 0199f2a1-8150-7d44-a2b6-0c1d2e3f4a5b > /tmp/billing.json
+$ sentry-v2ctl policy test --event /tmp/billing.json
+```
+
+Edit a policy, run it again, and see whether the outcome changes before
+the next incident does it for you. Alert bundles (breaker, stuck rollback)
+have no events, so they're refused.
+
 ### redact [FILE]
 
 Run the redaction patterns from the configuration over `FILE`, or stdin
