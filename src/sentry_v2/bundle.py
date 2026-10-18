@@ -19,7 +19,11 @@ from sentry_v2.ids import uuid7
 SCHEMA_ID = "sentry-v2/bundle/1"
 REDACTED = "[REDACTED]"
 
+_SECRET_NAMES = "password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret"  # noqa: S105 - names, not a secret
+
 DEFAULT_PATTERNS = (
+    # first, so the bare Authorization pattern below never sees half of one
+    rf'(?i)"(?:authorization|{_SECRET_NAMES})"\s*:\s*"(?:[^"\\]|\\.)*"',
     # before the bearer pattern, which would leave "Authorization: [REDACTED]"
     # for this one to swallow the next word after
     r"(?i)authorization:\s*\S+(?:\s+\S+)?",
@@ -27,7 +31,11 @@ DEFAULT_PATTERNS = (
     r"://[^/\s:@]+:[^/\s@]+@",
     r"AKIA[0-9A-Z]{16}",
     r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|\Z)",
-    r"(?i)(password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)=\S+",
+    r'(?i)\bresponse="?[0-9a-f]{32,}"?',  # HTTP Digest
+    r"eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*",  # JWT
+    # before the pairs pattern, which would leave "--[REDACTED]" behind
+    rf"(?i)--(?:[a-z0-9]+[-_]){{0,3}}(?:{_SECRET_NAMES})(?:=|\s+)\S+",
+    rf"(?i)(?:{_SECRET_NAMES})=\S+",
 )
 
 

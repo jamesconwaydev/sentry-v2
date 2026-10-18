@@ -9,6 +9,11 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 ### Added
 
 - Published on PyPI as `sentry-v2`.
+- `sentry-v2ctl redact` shows what the configured redaction leaves of a
+  file or stdin, so you can check before anything reaches a sink.
+- Redaction catches more by default: `--password x` and `--db-password=x`
+  style flags, JSON-quoted secrets such as `"Authorization": "Basic …"`,
+  HTTP Digest `response=` values and JSON Web Tokens.
 
 ## [0.1.0] - 2026-10-15
 

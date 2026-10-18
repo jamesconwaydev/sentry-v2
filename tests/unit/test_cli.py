@@ -1,4 +1,5 @@
 import contextlib
+import io
 import json
 import shutil
 import socket
@@ -462,3 +463,35 @@ def test_rollback_and_restore_wait_longer(stub, capsys, monkeypatch):
     monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
     _, _, err = run(stub, capsys, "rollback", "--all")
     assert err == "Rolling back… this can take a while if systemd is slow\n"
+
+
+def test_redact_file_stdin_and_json(tmp_path, capsys, monkeypatch):
+    f = tmp_path / "t.txt"
+    f.write_text("app --password hunter2 --port 80\n")
+    assert main(["redact", str(f), *CFG]) == 0
+    assert capsys.readouterr().out == "app [REDACTED] --port 80\n"
+    monkeypatch.setattr("sys.stdin", io.StringIO("token=a [REDACTED] b"))
+    assert main(["--json", "redact", *CFG]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "redactions": 1,
+        "text": "[REDACTED] [REDACTED] b",
+    }
+
+
+def test_redact_uses_configured_patterns(tmp_path, capsys):
+    cfg = tmp_path / "c.toml"
+    cfg.write_text("[redaction]\npatterns = ['cust-\\d+']\nuse_defaults = false\n")
+    f = tmp_path / "t.txt"
+    f.write_text("cust-42 token=a")
+    args = ["--config", str(cfg), "--policies", str(tmp_path / "none")]
+    assert main(["redact", str(f), *args]) == 0
+    assert capsys.readouterr().out == "[REDACTED] token=a"
+
+
+def test_redact_errors(tmp_path, capsys):
+    bad = tmp_path / "bad.toml"
+    bad.write_text("[redaction]\npatterns = ['(']\n")
+    assert main(["redact", "x", "--config", str(bad), "--policies", str(tmp_path / "none")]) == 1
+    assert "invalid:" in capsys.readouterr().err
+    assert main(["redact", str(tmp_path / "missing"), *CFG]) == 1
+    assert "cannot read" in capsys.readouterr().err

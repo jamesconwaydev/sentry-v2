@@ -208,6 +208,23 @@ def test_api_keys_and_authorization_headers(text: str, expected: str) -> None:
     assert RED.scrub(text) == expected
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("app --password hunter2 --port 80", "app [REDACTED] --port 80"),
+        ("x --db-password=s3 --mysql-root-password  s4 y", "x [REDACTED] [REDACTED] y"),
+        ("--token-file /etc/app/token", "--token-file /etc/app/token"),
+        ('{"Authorization": "Basic dXNl\\"cjpw", "a": 1}', '{[REDACTED], "a": 1}'),
+        ('{"api_key":"k1","password" : "k2"}', "{[REDACTED],[REDACTED]}"),
+        ('nonce="n", response="6629fae49393a05397450978507c4ef1"', 'nonce="n", [REDACTED]'),
+        ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig-_D end", "jwt [REDACTED] end"),
+        ("mkdir -p /x", "mkdir -p /x"),
+    ],
+)
+def test_flags_json_digest_and_jwt(text: str, expected: str) -> None:
+    assert RED.scrub(text) == expected
+
+
 def test_pem_keeps_surroundings() -> None:
     assert RED.scrub(PEM) == "x [REDACTED] y"
 

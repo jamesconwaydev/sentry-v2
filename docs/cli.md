@@ -30,7 +30,7 @@ reach your terminal.
 |---|---|
 | `status`, `top`, `incidents`, `show`, `actions`, `policies` | root, or membership of `sentry-v2` |
 | `rollback`, `pause`, `resume`, `reload`, `restore` | root, or membership of both `sentry-v2` and `sentry-v2-admin` |
-| `policy validate`, `policy test` | read access to the configuration files; no daemon needed |
+| `policy validate`, `policy test`, `redact` | read access to the configuration files; no daemon needed |
 
 ```console
 # usermod -aG sentry-v2,sentry-v2-admin alice
@@ -249,7 +249,7 @@ $ sentry-v2 --check
 It takes the same `--config` and `--policies` options and exits 2 on an
 invalid configuration.
 
-`policy validate` and `policy test` load the configuration directly, so they
+`policy validate`, `policy test` and `redact` load the configuration directly, so they
 work before the daemon is installed as a service, in CI, or on a laptop.
 
 | Option | Default | Meaning |
@@ -301,3 +301,18 @@ is enough to test a PSI policy.
 
 To test correlation, pass a list: denials followed by the failure, with
 `ts_us` values a second or two apart.
+
+### redact [FILE]
+
+Run the redaction patterns from the configuration over `FILE`, or stdin
+when it's left out or `-`, and print the result:
+
+```console
+$ echo 'app --password hunter2 --port 80' | sentry-v2ctl redact
+app [REDACTED] --port 80
+$ echo 'token=abc' | sentry-v2ctl redact --json
+{"redactions": 1, "text": "[REDACTED]\n"}
+```
+
+It exits 1 on an invalid configuration or an unreadable file. See
+[bundles.md](bundles.md#redaction) for the built-in patterns.

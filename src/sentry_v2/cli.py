@@ -16,6 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .bundle import REDACTED, Redactor
 from .client import ControlClient, ControlError, NotRunning, PermissionDenied
 from .config import ConfigError, load_config
 from .config_types import Config
@@ -404,6 +405,25 @@ def _test(args: argparse.Namespace) -> int:
     return 0
 
 
+def _redact(args: argparse.Namespace) -> int:
+    try:
+        redactor = Redactor.from_config(_load(args).redaction)
+    except ConfigError as e:
+        print(f"invalid: {_clean(e)}", file=sys.stderr)
+        return 1
+    try:
+        text = sys.stdin.read() if args.file == "-" else Path(args.file).read_text()
+    except (OSError, UnicodeDecodeError) as e:
+        print(f"cannot read {_clean(args.file)}: {_clean(e)}", file=sys.stderr)
+        return 1
+    out = redactor.scrub(text)
+    if args.json:
+        print(json.dumps({"redactions": out.count(REDACTED) - text.count(REDACTED), "text": out}))
+    else:
+        sys.stdout.write(out)
+    return 0
+
+
 # -- entry point ----------------------------------------------------------------------
 
 
@@ -471,6 +491,10 @@ def _parser() -> argparse.ArgumentParser:
                 metavar="FILE",
                 help="JSON event or list; kind is unit_failed, psi or avc",
             )
+    red = add("redact", "show what redaction leaves of some text")
+    red.add_argument("file", nargs="?", default="-", help="text to scrub (default stdin)")
+    red.add_argument("--config", default=DEFAULT_CONFIG)
+    red.add_argument("--policies", default=DEFAULT_POLICIES, help="policies.d directory")
     return p
 
 
@@ -482,6 +506,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.cmd == "policy":
             return _validate(args) if args.sub == "validate" else _test(args)
+        if args.cmd == "redact":
+            return _redact(args)
         return _daemon(args)
     except NotRunning as e:
         print(_clean(e), file=sys.stderr)
