@@ -14,6 +14,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - Redaction catches more by default: `--password x` and `--db-password=x`
   style flags, JSON-quoted secrets such as `"Authorization": "Basic …"`,
   HTTP Digest `response=` values and JSON Web Tokens.
+- `sentry-v2ctl policy test --event` takes a saved bundle as well as raw
+  events, and replays its trigger and denials through the correlator and
+  your policies.
 
 ### Fixed
 

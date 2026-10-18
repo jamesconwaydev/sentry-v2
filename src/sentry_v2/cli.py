@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .bundle import REDACTED, Redactor
+from .bundle import REDACTED, SCHEMA_ID, Redactor
 from .client import ControlClient, ControlError, NotRunning, PermissionDenied
 from .config import ConfigError, load_config
 from .config_types import Config
@@ -307,6 +307,30 @@ def _event(d: dict[str, Any], default_ts: int) -> Event:
     raise ValueError(f'"kind" must be unit_failed, psi or avc, not {kind!r}')
 
 
+_KIND_OF_SOURCE = {"journal": "unit_failed", "psi": "psi", "audit": "avc"}
+
+
+def _bundle_events(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    """A saved bundle's trigger and denials, as `policy test` events."""
+    inc = bundle["incident"]
+    if "trigger" not in inc:
+        raise ValueError(f"a {inc.get('kind')} bundle has no events to replay")
+    avcs = [e for e in inc.get("related", ()) if e.get("source") == "audit"]
+    avcs += [c["avc"] for c in inc.get("correlations", ())]
+    out, seen = [], set()
+    for d in (inc["trigger"], *avcs):
+        if (key := json.dumps(d, sort_keys=True)) in seen:
+            continue
+        seen.add(key)
+        d = dict(d)
+        source = d.pop("source")
+        kind = d.pop("kind", None)
+        if source == "psi":
+            d["pressure"] = kind
+        out.append({"kind": _KIND_OF_SOURCE[source], **d})
+    return out
+
+
 def _ramp(ev: PsiEvent, whens: list[PsiWhen]) -> list[PsiEvent]:
     """A lone PSI trigger can't outlast `sustained`, so replay it up to the policy period."""
     out: list[PsiEvent] = []
@@ -360,6 +384,8 @@ def _spec(spec: object) -> tuple[str, str]:
 def _plan(args: argparse.Namespace) -> list[dict[str, str]]:
     cfg = _load(args)
     raw = json.loads(Path(args.event).read_text())
+    if isinstance(raw, dict) and raw.get("schema") == SCHEMA_ID:
+        raw = _bundle_events(raw)
     now_us = int(time.time() * _US)
     events = [_event(d, now_us) for d in (raw if isinstance(raw, list) else [raw])]
     if not events:
@@ -489,7 +515,7 @@ def _parser() -> argparse.ArgumentParser:
                 "--event",
                 required=True,
                 metavar="FILE",
-                help="JSON event or list; kind is unit_failed, psi or avc",
+                help="JSON event, list of events, or a saved bundle",
             )
     red = add("redact", "show what redaction leaves of some text")
     red.add_argument("file", nargs="?", default="-", help="text to scrub (default stdin)")
