@@ -691,3 +691,72 @@ def test_logtail_persistent_read_error_does_not_spin(tmp_path, monkeypatch):
     asyncio.run(go())
     held.close()
     assert ticks > 20 and src.error is not None
+
+
+def test_netlink_overruns_counted_and_reported_as_audit_drops():
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    a.setblocking(False)
+
+    class Overrun:
+        calls = 0
+
+        def fileno(self):
+            return a.fileno()
+
+        def recv(self, n):
+            self.calls += 1
+            if self.calls <= 2:
+                raise OSError(errno.ENOBUFS, "No buffer space available")
+            return a.recv(n)
+
+        def getsockopt(self, *args):
+            return 425984
+
+        def close(self):
+            a.close()
+
+    class Fake(NetlinkSource):
+        def __init__(self) -> None:
+            self._sock = Overrun()
+            self._loop = None
+
+    q = EventQueue()
+    c = AuditCollector(q, CgroupFS(), Fake, flush_interval=0.01)
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.02)
+        b.send(nl(1320, "audit(1.0:1): "))
+        await asyncio.sleep(0.05)
+        health = c.health()
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+        return health
+
+    health = asyncio.run(go())
+    b.close()
+    assert health["overruns"] == 2 and health["rcvbuf"] == 425984
+    assert q.dropped["audit"] == 2
+
+
+def test_netlink_asks_for_a_bigger_receive_buffer(monkeypatch):
+    calls = []
+
+    class Sock:
+        def __init__(self, *a):
+            pass
+
+        def setblocking(self, flag):
+            pass
+
+        def setsockopt(self, level, opt, value):
+            calls.append((level, opt, value))
+
+        def bind(self, addr):
+            pass
+
+    monkeypatch.setattr(socket, "AF_NETLINK", 16, raising=False)
+    monkeypatch.setattr(socket, "socket", Sock)
+    NetlinkSource()
+    assert calls == [(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)]

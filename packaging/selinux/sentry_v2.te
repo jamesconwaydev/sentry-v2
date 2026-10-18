@@ -54,7 +54,7 @@ allow sentry_v2_t self:tcp_socket create_stream_socket_perms;
 allow sentry_v2_t self:udp_socket create_socket_perms;
 
 # AVC collector: AF_NETLINK/NETLINK_AUDIT socket bound to the multicast group.
-allow sentry_v2_t self:netlink_audit_socket { create bind read getattr nlmsg_read nlmsg_readpriv };
+allow sentry_v2_t self:netlink_audit_socket { create bind read getattr getopt setopt nlmsg_read nlmsg_readpriv };
 # AVC collector fallback: tail /var/log/audit/audit.log when netlink is refused.
 logging_read_audit_log(sentry_v2_t)
 

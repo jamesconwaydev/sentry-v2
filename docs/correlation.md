@@ -16,6 +16,15 @@ the correlator falls behind, the oldest event is dropped and counted per
 collector in `sentry_v2_events_dropped_total` and in
 `sentry-v2ctl status`.
 
+Denials can be lost earlier than that, in an AVC storm. The kernel queues
+audit records on the netlink socket until the daemon reads them, and when
+that buffer fills it drops them and tells the reader with `ENOBUFS`. The
+daemon asks for an 8 MiB buffer, and the kernel grants at most
+`net.core.rmem_max` (about 208 KiB on EL10 out of the box; the audit
+collector's `rcvbuf` health field shows what you got). Each overrun, and
+each record the reader sheds when its own 10 000-record queue is full,
+counts as an `audit` drop. The overruns alone show as `overruns`.
+
 The correlator keeps the last `correlation.retention` (60 s) of events,
 ordered by timestamp. Events arriving slightly out of order are slotted in
 where they belong.

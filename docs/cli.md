@@ -74,7 +74,7 @@ sentry-v2 0.1.0  running for 2h14m  mode dry-run
 COLLECTOR  HEALTH
 psi        state=ok, triggers=6, restarts=0, last_error=None
 journal    state=ok, restarts=0, last_error=None
-audit      source=netlink, user_avc_truncated=0, restarts=0, last_error=None
+audit      source=netlink, user_avc_truncated=0, overruns=0, rcvbuf=425984, restarts=0, last_error=None
 
 no active actions
 ```
