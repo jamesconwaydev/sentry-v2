@@ -135,6 +135,10 @@ def _status(r: dict[str, Any]) -> str:
         out.append(_table(_action_rows(r["active_actions"]), _ACTION_HEAD))
     else:
         out.append("no active actions")
+    if held := r.get("held"):
+        out.append("")
+        out.append(_table([[h["unit"], _when(h["since"])] for h in held], ["HELD", "SINCE"]))
+        out.append("Held units refuse new actions until you run sentry-v2ctl ack UNIT.")
     return "\n".join(out)
 
 
@@ -218,6 +222,7 @@ _HUMAN: dict[str, Callable[[dict[str, Any]], str]] = {
     "policies": _policies,
     "show": lambda r: json.dumps(r["bundle"], indent=2),
     "rollback": _rolled_back,
+    "ack": lambda r: _clean(f"acknowledged {r['acknowledged']}; actions on it are allowed again"),
     "pause": lambda r: "paused" if r["paused"] else "resumed",
     "resume": lambda r: "paused" if r["paused"] else "resumed",
     "reload": lambda r: "reloaded the configuration",
@@ -236,6 +241,8 @@ def _call_args(args: argparse.Namespace) -> dict[str, Any]:
             return {"all": True} if args.all else {"id": args.id}
         case "restore":
             return {"backup_id": args.backup_id}
+        case "ack":
+            return {"unit": args.unit}
     return {}
 
 
@@ -494,6 +501,7 @@ def _parser() -> argparse.ArgumentParser:
     g = r.add_mutually_exclusive_group(required=True)
     g.add_argument("id", nargs="?", help="action id, or a unique 6+ character start or end of one")
     g.add_argument("--all", action="store_true", help="undo every active action")
+    add("ack", "let a unit held for acting too often be acted on again").add_argument("unit")
     add("pause", "stop applying actions; keep watching")
     add("resume", "start applying actions again")
     add("reload", "re-read the configuration")

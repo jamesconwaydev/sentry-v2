@@ -237,6 +237,8 @@ def _limits(root: _Reader) -> LimitsConfig:
         breaker_failures=r.get("breaker_failures", _int_in(1, 1000), d.breaker_failures),
         breaker_window=r.get("breaker_window", _pos_duration, d.breaker_window),
         breaker_cooldown=r.get("breaker_cooldown", _pos_duration, d.breaker_cooldown),
+        flap_actions=r.get("flap_actions", _int_in(0, 1000), d.flap_actions),
+        flap_window=r.get("flap_window", _pos_duration, d.flap_window),
     )
     r.finish()
     return out

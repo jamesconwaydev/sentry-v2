@@ -100,7 +100,7 @@ transition and the newest line for an id wins.
 | `planned` | Written, with the values to restore, before the D-Bus call. |
 | `applied` | systemd accepted the change. Throttles and freezes now have an `expires_at`. |
 | `rolled_back` | Undone. `error` may carry a note, such as `unit gone`, `unit inactive` or `changed since; left as is`. |
-| `failed` | Not applied. `error` says why: `protected`, `slice actions need protection.allow_slices`, `limit`, `already active`, `rollback pending`, `unit not found`, `no unit target` and so on. |
+| `failed` | Not applied. `error` says why: `protected`, `slice actions need protection.allow_slices`, `held after repeated actions; …`, `limit`, `already active`, `rollback pending`, `unit not found`, `no unit target` and so on. |
 | `rollback_failed` | Every rollback attempt failed. See [Stuck rollbacks](#stuck-rollbacks). |
 | `dry_run` | What would have happened, with `params` showing what would have been written. |
 
@@ -229,6 +229,42 @@ dry-run never adds to. So a dry-run bundle shows a `limit` refusal only if
 enforced actions already fill the limit; a burst of dry-run incidents
 doesn't count its own would-be throttles. Protection checks and cooldowns,
 on the other hand, are previewed exactly as enforce mode would apply them.
+
+## Units that keep coming back
+
+Picture a service that leaks memory. It climbs, gets throttled, pressure
+falls, the throttle expires, and it climbs again. Every action works, so
+nothing looks wrong, and the cooldown just spaces out the next round. The
+fix isn't a fourth throttle. It's a person looking at the leak.
+
+So Sentry-v2 counts enforced actions per unit. When one unit reaches
+`limits.flap_actions` (3) inside `limits.flap_window` (30 minutes), it's
+put on hold:
+
+- The action that tipped it over is left alone and expires on schedule.
+  Everything is still put back.
+- New throttles, freezes and reloads on that unit are refused with
+  `held after repeated actions; sentry-v2ctl ack releases it`, in dry-run
+  too. `notify` keeps working, so you still get each incident's bundle.
+- A critical `flapping` alert bundle goes out once, with the unit and the
+  count.
+
+The hold lasts until you release it, across restarts too (it's kept in
+`state/held.json` next to the action journal):
+
+```console
+$ sentry-v2ctl status
+…
+HELD                 SINCE
+app-reports.service  4m ago
+Held units refuse new actions until you run sentry-v2ctl ack UNIT.
+$ sentry-v2ctl ack app-reports.service
+acknowledged app-reports.service; actions on it are allowed again
+```
+
+Acknowledging also forgets the unit's recent actions, so the next one
+starts a fresh count. Dry-run actions never count. Neither do refusals or
+failed applies.
 
 ## The circuit breaker
 

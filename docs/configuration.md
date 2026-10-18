@@ -81,6 +81,8 @@ A restart rolls back every active throttle and freeze first.
 | `breaker_failures` | integer, 1 to 1000 | `3` | systemd failures that trip the circuit breaker. |
 | `breaker_window` | duration | `"10m"` | The window those failures must fall within. |
 | `breaker_cooldown` | duration | `"15m"` | How long the tripped breaker forces dry-run. |
+| `flap_actions` | integer, 0 to 1000 | `3` | Enforced actions on one unit, inside `flap_window`, that put the unit on hold. `0` turns the flap guard off. |
+| `flap_window` | duration | `"30m"` | The window those actions must fall within. |
 
 Raising `max_active_actions` lengthens the worst-case shutdown time. See
 [actions-and-safety.md](actions-and-safety.md#how-long-a-stop-can-take)

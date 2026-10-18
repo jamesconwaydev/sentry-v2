@@ -524,3 +524,16 @@ def test_policy_test_replays_saved_bundles(tmp_path, capsys):
 def test_policy_test_alert_bundle_has_nothing_to_replay(tmp_path, capsys):
     assert main(_bundle(tmp_path, {"kind": "alert", "target": "a.service"})) == 1
     assert "alert bundle has no events" in capsys.readouterr().err
+
+
+def test_ack_and_held_in_status(stub, capsys):
+    stub.replies["ack"] = {"ok": True, "result": {"acknowledged": "app.service"}}
+    rc, out, _ = run(stub, capsys, "ack", "app.service")
+    assert rc == 0 and "acknowledged app.service" in out
+    assert stub.seen[-1]["args"] == {"unit": "app.service"}
+    stub.replies["status"] = {
+        "ok": True,
+        "result": {**STATUS, "held": [{"unit": "app.service", "since": 1.0}]},
+    }
+    rc, out, _ = run(stub, capsys, "status")
+    assert "HELD" in out and "app.service" in out and "sentry-v2ctl ack UNIT" in out

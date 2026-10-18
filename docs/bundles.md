@@ -62,9 +62,10 @@ since the epoch.
 
 ### Alert bundles
 
-Two events produce a bundle without an incident: a rollback that gave up
-(`rollback_failed`) and the circuit breaker opening (`breaker_open`). They
-have `severity = "critical"`, `incident.kind = "alert"`, the alert name in
+Three events produce a bundle without an incident: a rollback that gave
+up (`rollback_failed`), the circuit breaker opening (`breaker_open`), and
+a unit put on hold for acting too often (`flapping`, with the unit in
+`incident.target`). They have `severity = "critical"`, `incident.kind = "alert"`, the alert name in
 `incident.alert`, and for a failed rollback the action record in
 `decision.actions`.
 

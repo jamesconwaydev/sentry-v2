@@ -32,6 +32,8 @@ class LimitsConfig:
     breaker_failures: int = 3
     breaker_window: float = 600.0
     breaker_cooldown: float = 900.0
+    flap_actions: int = 3  # 0 turns the flap guard off
+    flap_window: float = 1800.0
 
 
 @dataclass(frozen=True)

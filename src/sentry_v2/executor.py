@@ -49,7 +49,7 @@ from .policy import (
     effective_mode,
     is_protected,
 )
-from .state import REVERSIBLE, ActionJournal, ActionKind, ActionRecord, Status
+from .state import REVERSIBLE, ActionJournal, ActionKind, ActionRecord, HoldList, Status
 from .systemd import SystemdError, SystemdManager, UnitNotFound
 
 log = logging.getLogger(__name__)
@@ -129,6 +129,8 @@ class Executor:
         self._failures: deque[float] = deque()
         self._open_until: float | None = None
         self._pending_alerts: list[tuple[str, dict[str, Any]]] = []
+        self._applied: dict[str, deque[float]] = {}  # unit -> recent enforced apply times
+        self._held = HoldList(journal.path.parent / "held.json")
 
     # -- control -----------------------------------------------------------
 
@@ -147,6 +149,20 @@ class Executor:
     def stuck(self) -> list[ActionRecord]:
         """Records whose rollback failed; new actions on their targets are refused."""
         return list(self._failed.values())
+
+    def held(self) -> dict[str, float]:
+        """Units refusing new actions after acting too often: unit -> when it was held."""
+        return dict(self._held.units)
+
+    async def ack(self, unit: str) -> bool:
+        """Release a held unit and forget its recent actions. False if it wasn't held."""
+        async with self._lock:
+            if self._held.units.pop(unit, None) is None:
+                return False
+            self._applied.pop(unit, None)
+            self._save_held()
+        log.info("%s acknowledged; actions on it are allowed again", unit)
+        return True
 
     def breaker_state(self) -> dict[str, Any]:
         """{"open", "until", "failures"}: whether apply failures have forced dry-run."""
@@ -263,6 +279,7 @@ class Executor:
                 rec = dataclasses.replace(rec, backup_id=backup_id)
             await actions.apply(spec, unit, params, self.mgr)
             now = self._clock()
+            self._count_applied(unit, now)
             if not isinstance(spec, Throttle | Freeze):
                 return self._finish(rec, "applied", applied_at=now)
             duration = min(spec.duration, self.limits.max_action_duration)
@@ -305,6 +322,8 @@ class Executor:
         return final
 
     def _check_limits(self, kind: ActionKind, unit: str) -> str | None:
+        if unit in self._held.units:
+            return "held after repeated actions; sentry-v2ctl ack releases it"
         if kind not in REVERSIBLE:
             return None
         if any(r.target == unit for r in self._failed.values()):
@@ -320,6 +339,31 @@ class Executor:
             if freezes >= self.limits.max_concurrent_freezes:
                 return "limit"
         return None
+
+    def _count_applied(self, unit: str, now: float) -> None:
+        """Hold a unit once it reaches flap_actions enforced actions inside flap_window."""
+        times = self._applied.setdefault(unit, deque())
+        times.append(now)
+        while times[0] <= now - self.limits.flap_window:
+            times.popleft()
+        n = self.limits.flap_actions
+        if not n or len(times) < n or unit in self._held.units:
+            return
+        self._held.units[unit] = now
+        self._save_held()
+        log.error(
+            "%s: %d actions in %gs; holding it until someone runs sentry-v2ctl ack",
+            unit, len(times), self.limits.flap_window,
+        )  # fmt: skip
+        self._pending_alerts.append(
+            ("flapping", {"target": unit, "actions": len(times), "window": self.limits.flap_window})
+        )
+
+    def _save_held(self) -> None:
+        try:
+            self._held.save()
+        except OSError:  # still held in memory; a restart would forget it
+            log.exception("cannot save %s", self._held.path)
 
     def _prune(self, now: float) -> None:
         while self._failures and self._failures[0] < now - self.limits.breaker_window:
@@ -463,7 +507,13 @@ class Executor:
         stay stuck until an operator runs `rollback(id)`.
         """
         async with self._lock:
-            for rec in self.journal.load().values():
+            self._held.load()
+            since = self._clock() - self.limits.flap_window
+            records = self.journal.load().values()
+            for rec in sorted(records, key=lambda r: r.applied_at or 0.0):
+                if rec.mode == "enforce" and rec.applied_at and rec.applied_at > since:
+                    self._applied.setdefault(rec.target, deque()).append(rec.applied_at)
+            for rec in records:
                 if rec.status == "rollback_failed":
                     log.warning(
                         "%s %s on %s: earlier rollback failed; refusing new actions on it "

@@ -134,6 +134,38 @@ class ActionJournal:
         _fsync_dir(self.path.parent)
 
 
+class HoldList:
+    """`held.json`: units held after acting too often, until someone acknowledges them.
+
+    Small and rewritten whole on every change, atomically.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.units: dict[str, float] = {}  # unit -> wall time it was held
+
+    def load(self) -> None:
+        try:
+            raw = json.loads(self.path.read_text())
+            self.units = {str(u): float(t) for u, t in raw.items()}
+        except FileNotFoundError:
+            self.units = {}
+        except (OSError, ValueError, TypeError, AttributeError) as e:
+            log.error("%s: unreadable, starting with no held units: %s", self.path, e)
+            self.units = {}
+
+    def save(self) -> None:
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, json.dumps(self.units).encode())
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp, self.path)
+        _fsync_dir(self.path.parent)
+
+
 def _fsync_dir(path: Path) -> None:
     fd = os.open(path, os.O_RDONLY)
     try:

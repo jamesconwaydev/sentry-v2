@@ -138,7 +138,9 @@ Sentry-v2 changes running services, so it's built to be boring about it.
   failing raises a critical bundle and blocks new actions on that unit.
 - Limits. Five active actions, one freeze at a time and 30 minutes per
   action by default. Three systemd failures in ten minutes trip the
-  breaker for fifteen.
+  breaker for fifteen. A unit acted on three times in half an hour is put
+  on hold until you `sentry-v2ctl ack` it, because by then it needs a
+  person, not a fourth throttle.
 
 The details, including the worst-case time a stop can take, are in
 [actions and safety](docs/actions-and-safety.md).

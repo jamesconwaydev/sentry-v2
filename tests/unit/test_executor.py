@@ -826,3 +826,74 @@ def test_monotonic_deadline_bounds_wall_clock_jump(h: Harness) -> None:
         assert h.journal.load()[rec.id].status == "rolled_back"
 
     run(main)
+
+
+HELD = "held after repeated actions; sentry-v2ctl ack releases it"
+
+
+def test_flapping_unit_is_held_until_acknowledged(fake_cgroupfs: Path) -> None:
+    h = Harness(fake_cgroupfs, flap_actions=3, flap_window=600.0)
+    throttle = (policy(), Throttle(64 * MiB, None, 60))
+
+    async def main() -> None:
+        for _ in range(3):
+            [rec] = await h.ex.handle(psi_incident(), [throttle])
+            assert rec.status == "applied"
+            await h.clock.advance(120)  # expired and rolled back each time
+        assert list(h.ex.held()) == [UNIT]
+        assert [(k, d["target"], d["actions"]) for k, d in h.alerts] == [("flapping", UNIT, 3)]
+        dry = (policy(mode="dry-run"), Throttle(64 * MiB, None, 60))
+        recs = await h.ex.handle(psi_incident(), [throttle, dry, (policy(), Notify())])
+        assert [(r.status, r.error) for r in recs] == [("failed", HELD)] * 2 + [("applied", None)]
+        assert h.ex.active() == []
+
+        # a restart keeps the hold
+        again = Harness(fake_cgroupfs, flap_actions=3, flap_window=600.0)
+        await again.ex.replay()
+        assert list(again.ex.held()) == [UNIT]
+        assert await again.ex.ack(UNIT) and not await again.ex.ack(UNIT)
+        [rec] = await again.ex.handle(psi_incident(), [throttle])
+        assert rec.status == "applied" and again.ex.held() == {}  # the count started over
+        await again.ex.shutdown()
+
+    run(main)
+
+
+def test_flap_window_and_off_switch(fake_cgroupfs: Path) -> None:
+    throttle = (policy(), Throttle(64 * MiB, None, 60))
+
+    async def go(h: Harness, gap: float) -> None:
+        for _ in range(4):
+            await h.ex.handle(psi_incident(), [throttle])
+            await h.clock.advance(gap)
+
+    spread = Harness(fake_cgroupfs, flap_actions=3, flap_window=600.0)
+    run(lambda: go(spread, 301))  # never three inside ten minutes
+    assert spread.ex.held() == {} and spread.alerts == []
+    off = Harness(fake_cgroupfs, flap_actions=0, flap_window=600.0)
+    run(lambda: go(off, 120))
+    assert off.ex.held() == {}
+
+
+def test_replay_counts_recent_enforced_actions(h: Harness) -> None:
+    now = h.clock()
+    h.journal.append(stored(id="a", status="rolled_back", applied_at=now - 100))
+    h.journal.append(stored(id="b", status="rolled_back", applied_at=now - 50))
+    h.journal.append(stored(id="c", status="rolled_back", applied_at=now - 4000))
+    h.journal.append(stored(id="d", status="dry_run", mode="dry-run", applied_at=None))
+
+    async def main() -> None:
+        await h.ex.replay()
+        assert h.ex.held() == {}
+        await h.ex.handle(psi_incident(), [(policy(), Throttle(64 * MiB, None, 60))])
+        assert list(h.ex.held()) == [UNIT]  # default: 3 inside 30 minutes
+        await h.ex.shutdown()
+
+    run(main)
+
+
+def test_unreadable_hold_list_starts_empty(h: Harness) -> None:
+    h.journal_path.parent.mkdir(parents=True, exist_ok=True)
+    (h.journal_path.parent / "held.json").write_text("[1, 2")
+    run(h.ex.replay)
+    assert h.ex.held() == {}

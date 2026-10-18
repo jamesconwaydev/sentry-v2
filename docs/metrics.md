@@ -36,6 +36,7 @@ another port, label it too (see [hardening.md](hardening.md#selinux)).
 | `sentry_v2_actions_total` | counter | `policy`, `action`, `mode`, `result` | Actions attempted. `mode` is the mode actually used (`dry-run` or `enforce`); `result` is the record's status when the incident was handled: `applied`, `failed`, `dry_run`, or `planned` for an apply whose outcome was unknown and is being rolled back. |
 | `sentry_v2_actions_active` | gauge | | Throttles and freezes awaiting rollback. |
 | `sentry_v2_rollbacks_stuck` | gauge | | Units whose rollback failed for good. Each one refuses new actions until you run `sentry-v2ctl rollback` on it. |
+| `sentry_v2_units_held` | gauge | | Units on hold after `limits.flap_actions` actions inside `limits.flap_window`. Each refuses new actions until you run `sentry-v2ctl ack` on it. |
 | `sentry_v2_breaker_open` | gauge | | 1 while the circuit breaker forces dry-run after repeated systemd failures, otherwise 0. |
 | `sentry_v2_incidents_total` | counter | `kind` | Incidents opened: `unit_failed`, `psi` or `avc`. |
 | `sentry_v2_avc_correlated_total` | counter | | Denials linked to an incident. |
@@ -65,6 +66,10 @@ groups:
         expr: sentry_v2_rollbacks_stuck > 0
         annotations:
           summary: "a sentry-v2 rollback failed; see sentry-v2ctl actions"
+      - alert: SentryV2UnitHeld
+        expr: sentry_v2_units_held > 0
+        annotations:
+          summary: "sentry-v2 keeps acting on the same unit; see sentry-v2ctl status"
       - alert: SentryV2BreakerOpen
         expr: sentry_v2_breaker_open == 1
         annotations:

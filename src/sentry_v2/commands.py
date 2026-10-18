@@ -8,7 +8,8 @@ status     -                           {version, mode, paused, uptime_s,
                                        active_actions: [record], breaker: {open,
                                        until, failures}, sinks: {failures: {sink: n},
                                        dropped: {sink: n}}, last_reload_error,
-                                       events_dropped: {collector: n}}
+                                       events_dropped: {collector: n},
+                                       held: [{unit, since}]}
 psi        -                           {cgroups: [{cgroup, resource, kind, avg10,
                                        avg60, avg300}]}
 incidents  since?: RFC 3339, unit?,    {incidents: [{id, ts, severity, kind, target,
@@ -17,6 +18,7 @@ show       id: UUID                    {bundle: <sentry-v2/bundle/1 document>}
 actions    -                           {active: [record], recent: [record]} (recent:
                                        last 100, newest first)
 rollback   id?: str, all?: bool        {rolled_back: [record]}
+ack        unit: str                   {acknowledged: unit}
 pause      -                           {paused: true}
 resume     -                           {paused: false}
 reload     -                           {reloaded: true}
@@ -114,6 +116,7 @@ class Commands:
             "show": self.show,
             "actions": self.actions,
             "rollback": self.rollback,
+            "ack": self.ack,
             "pause": self.pause,
             "resume": self.resume,
             "reload": self.reload,
@@ -137,6 +140,7 @@ class Commands:
             "sinks": {"failures": dict(d.sinks.failures), "dropped": dict(d.sinks.dropped)},
             "last_reload_error": d.last_reload_error,
             "events_dropped": dict(d.queue.dropped),
+            "held": [{"unit": u, "since": t} for u, t in d.executor.held().items()],
         }
 
     async def psi(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -197,6 +201,12 @@ class Commands:
         else:
             raise CommandError("give id or all")
         return {"rolled_back": self._records(done)}
+
+    async def ack(self, args: dict[str, Any]) -> dict[str, Any]:
+        unit = _required(args, "unit", str)
+        if not await self.d.executor.ack(unit):
+            raise CommandError(f"{unit} is not held")
+        return {"acknowledged": unit}
 
     async def pause(self, args: dict[str, Any]) -> dict[str, Any]:
         self.d.paused = True

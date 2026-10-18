@@ -30,6 +30,11 @@ max_action_duration = "30m"
 breaker_failures = 3
 breaker_window = "10m"
 breaker_cooldown = "15m"
+# A unit acted on three times inside thirty minutes is put on hold: its
+# current action still expires, but nothing new touches it until someone
+# runs `sentry-v2ctl ack <unit>`. Set flap_actions = 0 to turn this off.
+flap_actions = 3
+flap_window = "30m"
 
 [protection]
 # Units that are never throttled or frozen, on top of the built-in list

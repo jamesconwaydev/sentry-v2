@@ -40,6 +40,7 @@ from .metrics import (
     BREAKER_OPEN,
     PSI_AVG10,
     ROLLBACKS_STUCK,
+    UNITS_HELD,
     MetricsServer,
     build_registry,
 )
@@ -60,7 +61,7 @@ SAMPLE_TTL = 15.0
 INCIDENT_HISTORY = 500
 COMPACT_EVERY = 86400.0  # the action journal, besides once at startup
 RECENT_ACTIONS = 100
-MUTATING = {"rollback", "pause", "resume", "reload", "restore"}
+MUTATING = {"rollback", "ack", "pause", "resume", "reload", "restore"}
 # Replay can outlast TimeoutStartSec (see the executor's worst case), so
 # while it runs systemd is asked for another minute every half minute.
 EXTEND_EVERY = 30.0
@@ -193,6 +194,10 @@ class Daemon:
         self.registry.gauge_func(
             ROLLBACKS_STUCK, "Targets whose rollback failed and that refuse new actions.",
             lambda: [({}, len({r.target for r in self.executor.stuck()}))],
+        )  # fmt: skip
+        self.registry.gauge_func(
+            UNITS_HELD, "Units held after acting too often, until acknowledged.",
+            lambda: [({}, len(self.executor.held()))],
         )  # fmt: skip
         self.registry.gauge_func(
             BREAKER_OPEN, "1 while the circuit breaker forces dry-run.",

@@ -508,6 +508,12 @@ def test_pause_resume_rollback_and_psi(env: Env) -> None:
         with pytest.raises(CommandError, match="id must be a string"):
             await cmd.rollback({"id": 3})
         assert await cmd.rollback({"all": True}) == {"rolled_back": []}
+        with pytest.raises(CommandError, match=r"x\.service is not held"):
+            await cmd.ack({"unit": "x.service"})
+        d.executor._held.units["x.service"] = 5.0
+        assert (await cmd.status({}))["held"] == [{"unit": "x.service", "since": 5.0}]
+        assert await cmd.ack({"unit": "x.service"}) == {"acknowledged": "x.service"}
+        assert (await cmd.status({}))["held"] == []
 
         sample = PsiEvent(
             ts_us=now_us(), cgroup="system.slice", resource="io", kind="some",
@@ -858,6 +864,7 @@ def test_metrics_show_stuck_rollbacks_and_the_breaker(env: Env) -> None:
     async def body() -> None:
         text = await scrape(port)
         assert "sentry_v2_rollbacks_stuck 1.0" in text
+        assert "sentry_v2_units_held 0.0" in text
         assert "sentry_v2_breaker_open 0.0" in text
         for _ in range(d.cfg.limits.breaker_failures):
             d.executor._apply_failed()

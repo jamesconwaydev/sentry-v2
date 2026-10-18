@@ -29,7 +29,7 @@ reach your terminal.
 | Commands | Needs |
 |---|---|
 | `status`, `top`, `incidents`, `show`, `actions`, `policies` | root, or membership of `sentry-v2` |
-| `rollback`, `pause`, `resume`, `reload`, `restore` | root, or membership of both `sentry-v2` and `sentry-v2-admin` |
+| `rollback`, `ack`, `pause`, `resume`, `reload`, `restore` | root, or membership of both `sentry-v2` and `sentry-v2-admin` |
 | `policy validate`, `policy test`, `redact` | read access to the configuration files; no daemon needed |
 
 ```console
@@ -83,6 +83,9 @@ The three collectors are `psi`, `journal` and `audit`. If one stops or
 crashes, the daemon restarts it with backoff (1 s doubling to 60 s), and
 `restarts` and `last_error` say so. A PSI collector that finds PSI turned
 off in the kernel reports `state=disabled` and is left stopped.
+
+Units on hold after acting too often are listed under `HELD`, with how
+long ago they were held.
 
 `--json` adds the breaker state, sink failure and drop counts, and events
 dropped per collector.
@@ -174,6 +177,21 @@ An unknown id fails with `error: no such action` and exit code 1.
 A rollback retries for minutes when systemd is slow to answer, so
 `rollback` and `restore` wait up to 15 minutes for the daemon's reply
 where other commands give up after 10 seconds.
+
+### ack UNIT
+
+Release a unit the flap guard put on hold, so policies can act on it
+again. Its recent actions are forgotten, so the count starts over.
+
+```console
+$ sentry-v2ctl ack app-reports.service
+acknowledged app-reports.service; actions on it are allowed again
+```
+
+A unit that isn't held is an error (`app-reports.service is not held`,
+exit 1). `status` lists the held ones; see
+[actions-and-safety.md](actions-and-safety.md#units-that-keep-coming-back)
+for why a unit gets held.
 
 ### pause, resume
 

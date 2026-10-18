@@ -17,6 +17,12 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - `sentry-v2ctl policy test --event` takes a saved bundle as well as raw
   events, and replays its trigger and denials through the correlator and
   your policies.
+- A flap guard. A unit that gets `limits.flap_actions` (3) enforced
+  actions inside `limits.flap_window` (30 minutes) is put on hold: its
+  current action expires as normal, new ones are refused, a critical
+  `flapping` alert bundle goes out, and `sentry-v2ctl ack UNIT` releases
+  it. Holds survive restarts. `status` lists held units and
+  `sentry_v2_units_held` counts them.
 
 ### Fixed
 
