@@ -15,6 +15,14 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   style flags, JSON-quoted secrets such as `"Authorization": "Basic …"`,
   HTTP Digest `response=` values and JSON Web Tokens.
 
+### Fixed
+
+- An AVC storm could overflow the audit socket and lose denials without a
+  trace. The daemon now asks for an 8 MiB receive buffer (capped by
+  `net.core.rmem_max`), counts kernel overruns and its own reader-queue
+  drops as `audit` events dropped, and shows `overruns` and `rcvbuf` in the
+  audit collector's health.
+
 ## [0.1.0] - 2026-10-15
 
 The first release.

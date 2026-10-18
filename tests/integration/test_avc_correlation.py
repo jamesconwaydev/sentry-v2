@@ -45,7 +45,12 @@ def test_domain() -> Iterator[None]:
 
 
 def test_audit_collector_uses_netlink() -> None:
-    assert ctl("status")["collectors"]["audit"]["source"] == "netlink"
+    audit = ctl("status")["collectors"]["audit"]
+    assert audit["source"] == "netlink"
+    # the default is net.core.rmem_default; a setsockopt that went through
+    # (not denied by the policy module) gets twice min(asked, rmem_max)
+    rmem_default = int(Path("/proc/sys/net/core/rmem_default").read_text())
+    assert audit["rcvbuf"] > rmem_default and audit["overruns"] == 0
 
 
 def test_denial_is_correlated_with_the_failed_unit(
