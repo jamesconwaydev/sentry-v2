@@ -1,4 +1,4 @@
-%global upstream_version 0.2.0
+%global upstream_version 0.2.1
 %global selinuxtype targeted
 %global modulename sentry_v2
 
@@ -169,6 +169,9 @@ fi
 %{_datadir}/cockpit/sentry-v2/sentry-v2.css
 
 %changelog
+* Mon Oct 19 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.1-1
+- Relicensed to Apache-2.0
+
 * Mon Oct 19 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.0-1
 - Flap guard, slice opt-in, wider redaction, bundle replay, audit overrun counts
 

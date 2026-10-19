@@ -6,11 +6,16 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-19
+
+Nothing in the code changed. This release exists so the packages you
+download say Apache-2.0.
+
 ### Changed
 
 - Sentry-v2 is now licensed under Apache-2.0 instead of AGPL-3.0-or-later.
   Copies of 0.1.0 and 0.2.0 you already have keep the AGPL terms they came
-  with; everything from the next release on is Apache-2.0.
+  with; from 0.2.1 on it's Apache-2.0.
 
 ## [0.2.0] - 2026-10-19
 
@@ -118,6 +123,7 @@ The first release.
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,
   hardening, troubleshooting, architecture and development guides.
 
-[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.1.0
