@@ -6,6 +6,12 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Sentry-v2 is now licensed under Apache-2.0 instead of AGPL-3.0-or-later.
+  Copies of 0.1.0 and 0.2.0 you already have keep the AGPL terms they came
+  with; everything from the next release on is Apache-2.0.
+
 ## [0.2.0] - 2026-10-19
 
 Sentry-v2 now notices when it keeps acting on the same unit and stops to

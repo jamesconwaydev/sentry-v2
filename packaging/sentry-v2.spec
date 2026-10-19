@@ -10,7 +10,7 @@ Version:        %{upstream_version}
 Release:        1%{?dist}
 Summary:        Correlates PSI, journal failures and SELinux denials, with reversible remediation
 
-License:        AGPL-3.0-or-later
+License:        Apache-2.0
 URL:            https://github.com/jamesconwaydev/sentry-v2
 Source0:        %{name}-%{version}.tar.gz
 

@@ -50,7 +50,7 @@ Fork the repo, branch from `main`, and make your change with tests; a bug fix st
 
 `main` is protected. Every change lands through a pull request that passes CI, and we squash-merge, so the PR title becomes the commit message on `main`. Write it as a Conventional Commit.
 
-There's no DCO sign-off or CLA. By contributing you agree that your work is released under the project's [AGPL-3.0](LICENSE) licence.
+There's no DCO sign-off or CLA. By contributing you agree that your work is released under the project's [Apache-2.0](LICENSE) licence.
 
 ## Reporting bugs and security problems
 

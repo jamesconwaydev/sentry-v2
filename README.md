@@ -7,7 +7,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/jamesconwaydev/sentry-v2/ci.yml?branch=main&label=CI)](https://github.com/jamesconwaydev/sentry-v2/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jamesconwaydev/sentry-v2?include_prereleases&sort=semver)](https://github.com/jamesconwaydev/sentry-v2/releases)
 [![PyPI](https://img.shields.io/pypi/v/sentry-v2)](https://pypi.org/project/sentry-v2/)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/downloads/release/python-3120/)
 [![EL10](https://img.shields.io/badge/platform-EL10-red)](docs/installation.md)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/jamesconwaydev/sentry-v2/badge)](https://securityscorecards.dev/viewer/?uri=github.com/jamesconwaydev/sentry-v2)
@@ -171,5 +171,5 @@ The full index is [docs/README.md](docs/README.md), and changes are in the
 
 ## License
 
-[AGPL-3.0-or-later](LICENSE). Maintained by James Conway
+[Apache-2.0](LICENSE). Maintained by James Conway
 ([@jamesconwaydev](https://github.com/jamesconwaydev)).

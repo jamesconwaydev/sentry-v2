@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Correlates PSI, journal failures and SELinux denials, and applies reversible remediation."
 readme = "README.md"
 requires-python = ">=3.12"
-license = { text = "AGPL-3.0-or-later" }
+license = { text = "Apache-2.0" }
 dependencies = []
 
 [project.optional-dependencies]
