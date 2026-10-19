@@ -69,7 +69,7 @@ flowchart LR
 Just want to check policies in CI? `pip install sentry-v2` and run `sentry-v2ctl policy validate`.
 
 Download the RPMs from the
-[v0.1.0 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.1.0)
+[v0.2.0 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.2.0)
 and check them against `SHA256SUMS` before you install:
 
 ```console
@@ -87,7 +87,7 @@ Prefer to build it yourself? See [Installation](docs/installation.md#from-source
 Then install:
 
 ```console
-# dnf install ./sentry-v2-0.1.0-*.noarch.rpm ./sentry-v2-selinux-0.1.0-*.noarch.rpm
+# dnf install ./sentry-v2-0.2.0-*.noarch.rpm ./sentry-v2-selinux-0.2.0-*.noarch.rpm
 ```
 
 EL kernels ship with PSI off. If `cat /proc/pressure/memory` says

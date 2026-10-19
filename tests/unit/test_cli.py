@@ -18,7 +18,7 @@ FIX = Path(__file__).parent.parent / "fixtures" / "config"
 CFG = ["--config", str(FIX / "minimal.toml"), "--policies", str(FIX / "policies.d")]
 
 STATUS = {
-    "version": "0.1.0",
+    "version": "0.2.0",
     "mode": "dry-run",
     "paused": False,
     "uptime_s": 3725,

@@ -6,6 +6,14 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
+Sentry-v2 now notices when it keeps acting on the same unit and stops to
+ask, leaves whole slices alone unless you say otherwise, and lets you see
+what redaction leaves before anything goes out. One change needs a look
+before you upgrade: if a policy of yours throttles a slice on purpose,
+set `protection.allow_slices` first.
+
 ### Added
 
 - Published on PyPI as `sentry-v2`.
@@ -104,5 +112,6 @@ The first release.
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,
   hardening, troubleshooting, architecture and development guides.
 
-[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.1.0
