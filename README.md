@@ -27,6 +27,80 @@ five minutes, or freezes it until the disk calms down, and puts everything
 back when the time is up. Out of the box it does none of that. It starts
 in dry-run and stays there until you decide it has earned more.
 
+![Sentry-v2 running its demo on a Rocky Linux 10 test VM: two services are denied the same file, one dies, its denial is linked at 0.976 and the other is left out, and a memory hog gets a dry-run throttle.](assets/demo.gif)
+
+That's a real run of [`examples/demo/run.sh`](examples/demo) on a Rocky
+Linux 10.2 test VM, with both policies in dry-run. Run it yourself on a
+throwaway VM; it cleans up after itself.
+
+## What one incident looks like
+
+Two services were denied the same file within a second of each other.
+One died. This is the bundle Sentry-v2 wrote for it, trimmed to the parts
+that matter; the [full bundle](examples/demo/incident-unit-failed.json) is
+unedited apart from the hostname and machine ID.
+
+```json
+{
+  "severity": "warning",
+  "incident": {
+    "kind": "unit_failed",
+    "target": "demo-app-99ae0869.service",
+    "trigger": { "source": "journal", "kind": "failed", "result": "exit-code" },
+    "correlations": [
+      {
+        "avc": {
+          "perms": ["read"],
+          "scontext": "system_u:system_r:sentry_demo_app_t:s0",
+          "tcontext": "unconfined_u:object_r:sentry_demo_secret_t:s0",
+          "tclass": "file",
+          "comm": "sentry-demo-app",
+          "cgroup_at_receipt": "sentry.slice/sentry-test.slice/demo-app-99ae0869.service"
+        },
+        "confidence": 0.976,
+        "reasons": [
+          "pid in unit cgroup",
+          "scontext type matches unit domain",
+          "comm matches ExecStart"
+        ]
+      }
+    ]
+  },
+  "context": {
+    "psi": {
+      "sentry.slice/sentry-test.slice": {
+        "memory": { "some": { "avg10": 12.15, "avg60": 4.2, "avg300": 3.1 } }
+      }
+    }
+  },
+  "decision": {
+    "policy": "demo-app-failed",
+    "mode": "dry-run",
+    "actions": [{ "action": "notify", "status": "dry_run" }]
+  }
+}
+```
+
+How to read it:
+
+- The linked denial scored 0.976 because three things lined up: the
+  denied process was in the failed unit's cgroup, its SELinux domain is the
+  unit's, and its name matches the unit's `ExecStart`. The weights and the
+  arithmetic are in [Correlation](docs/correlation.md#scoring).
+- The denial that isn't there: `sentry_demo_other_t` was denied the
+  same file in the same window, and `ausearch` shows it. It ran in another
+  unit's cgroup, under another domain and binary, so it scored nothing and
+  stayed out. The integration test
+  [`test_unrelated_denial_in_window_is_left_out`](tests/integration/test_avc_correlation.py)
+  checks exactly this on a real host with SELinux enforcing.
+- The pressure in the unit's slice when it failed. Tasks there spent
+  about 12% of the last ten seconds stalled on memory, because a memory hog
+  was running next door.
+- The decision. This policy only notifies, and it's in dry-run. The
+  hog's own bundle, [`incident-memory-pressure.json`](examples/demo/incident-memory-pressure.json),
+  shows what the other policy would have done: set `MemoryHigh` to 80% of
+  the hog's usage and `CPUWeight` to 50 for five minutes, marked `dry_run`.
+
 ## What it does
 
 - Watches cgroup v2 Pressure Stall Information through kernel triggers,
@@ -45,24 +119,21 @@ in dry-run and stays there until you decide it has earned more.
   subpackage, `sentry-v2ctl`, an optional localhost Prometheus endpoint and
   a Cockpit page. Runtime dependencies come from BaseOS and AppStream only.
 
-## How it fits together
+## Compatibility
 
-```mermaid
-flowchart LR
-    subgraph Collectors
-        PSI[PSI triggers]
-        J[Journal: unit failures]
-        A[Audit: AVC denials]
-    end
-    PSI & J & A --> C[Correlator]
-    C --> P[Policy engine]
-    P --> E[Executor<br/>journal, limits, rollback]
-    E --> SD[(systemd over D-Bus)]
-    E --> S[Sinks<br/>file, webhook, syslog,<br/>Splunk HEC, Elasticsearch]
-    E --- CS{{Control socket}}
-    CS --> CLI[sentry-v2ctl]
-    CS --> CP[Cockpit page]
-```
+| | Needs | Tested on |
+|---|---|---|
+| Distribution | Rocky Linux 10, AlmaLinux 10, RHEL 10 or CentOS Stream 10 | Rocky Linux 10.2 (integration suite), Rocky Linux 10 container (CI) |
+| Kernel | The EL10 kernel, with PSI turned on (`psi=1`, see below) | 6.12.0-211.16.1.el10_2 |
+| cgroups | cgroup v2, the EL10 default | cgroup2fs |
+| systemd | The one EL10 ships, over D-Bus | 257 |
+| SELinux | Any mode. Correlation needs denials, so enforcing or permissive | `selinux-policy-targeted` 42.1.18, enforcing |
+| Audit | The audit netlink multicast socket; falls back to `/var/log/audit/audit.log` | audit 4.0.3 |
+| Python | 3.12, `python3-systemd`, `python3-dbus`, all from BaseOS and AppStream | 3.12.15 |
+
+EL9, Debian, Ubuntu and cgroup v1 aren't supported. AlmaLinux, RHEL and
+CentOS Stream 10 use the same packages, but the test runs above are on
+Rocky.
 
 ## Quickstart
 
@@ -109,14 +180,44 @@ Then add a policy of your own and start the daemon:
 ok: 4 policies
 # systemctl enable --now sentry-v2
 # sentry-v2ctl status
+sentry-v2 0.2.1  running for 3s  mode dry-run
+
+COLLECTOR  HEALTH
+psi        state=ok, triggers=0, restarts=0, last_error=None
+journal    state=ok, restarts=0, last_error=None
+audit      source=netlink, user_avc_truncated=0, overruns=0, rcvbuf=425984, restarts=0, last_error=None
+
+no active actions
 ```
 
+It's healthy when `mode` says `dry-run` (until you change it), every
+collector says `state=ok` or, for audit, `source=netlink`, and `restarts`
+stays at 0. `state=disabled` on `psi` means PSI is still off;
+`source=logfile` on `audit` is a working fallback, explained in
+[Troubleshooting](docs/troubleshooting.md#denials-come-from-the-audit-log-not-netlink).
+
 Then break something on purpose and read the bundle; the
-[quickstart guide](docs/quickstart.md) walks through it.
+[quickstart guide](docs/quickstart.md) walks through it, and the
+[demo](examples/demo) stages a fuller incident on a test VM.
 
 ## Safety
 
 Sentry-v2 changes running services, so it's built to be boring about it.
+
+| Action | What it changes | When it ends | How it's undone |
+|---|---|---|---|
+| `throttle` | The unit's `MemoryHigh` and `CPUWeight`, runtime only | At the policy's `duration`, 30 minutes at most by default | The values it read before are written back at expiry, on stop and after a crash. A value you changed by hand meanwhile is left alone. |
+| `freeze` | Pauses every process in the unit's cgroup | At `duration`, or early once pressure drops below `release_below` | Thawed at expiry, on stop and after a crash |
+| `backup_reload` | Copies the unit's files, then reloads it | At once | Never automatic: `sentry-v2ctl restore <backup id>` |
+| `notify` | Nothing; writes a bundle | | |
+
+Every action except `notify` needs both `daemon.mode` and the policy's
+`mode` set to `enforce`, a target that isn't protected, and room under the
+limits below. Things it never does on its own: restart, stop or kill a
+service; change SELinux policy or booleans; touch a protected unit, or a
+slice unless you allow it; keep acting on a unit that needed three actions
+in half an hour; or change anything at all in dry-run, which is where it
+starts.
 
 - Dry-run by default. The daemon and every shipped policy start in
   dry-run, which runs the whole pipeline and records what it would have
@@ -144,6 +245,60 @@ Sentry-v2 changes running services, so it's built to be boring about it.
 
 The details, including the worst-case time a stop can take, are in
 [actions and safety](docs/actions-and-safety.md).
+
+## When it gets it wrong
+
+A linked denial is a lead, not a verdict. Here's where the scoring can
+mislead you, and what happens when something underneath fails.
+
+- **Two copies of the same service.** Instances of a template unit
+  (`app@1`, `app@2`) share a domain and a binary. Once the correlator
+  knows that domain, a denial from one instance can score 0.76 against the
+  other's failure (domain and name, no cgroup), which clears the 0.5
+  cut-off. The reasons in the bundle show it: no `pid in unit cgroup`.
+- **A denial from a process that's already gone.** The cgroup is read when
+  the denial arrives. If the process has exited by then, only the domain and
+  name can count.
+- **Timing.** Only denials from 5 s before to 1 s after the failure count.
+  A service that's denied early and dies later needs a wider
+  `correlation.before`.
+- **Dropped records.** `USER_AVC` records over 1000 bytes are dropped and
+  counted in `user_avc_truncated`; denials the kernel drops before the
+  daemon reads them show up as `overruns`. Both are in `sentry-v2ctl
+  status`.
+- **The daemon crashes.** systemd restarts it after 5 s, and the first
+  thing it does is roll back every throttle and freeze still on record. A
+  unit frozen at the time stays frozen until then; `systemctl thaw` works
+  if you can't wait.
+- **A rollback fails.** It's retried 10 times. Then the record is marked
+  `rollback_failed`, a critical bundle goes to every sink, and no new
+  action touches that unit until you retry with `sentry-v2ctl rollback ID`.
+- **systemd keeps refusing.** Three failed systemd calls in ten minutes
+  trip the circuit breaker, and everything runs in dry-run for fifteen.
+- **The host reboots.** Throttles are runtime-only, so they're gone with
+  the reboot whatever else happened.
+
+More of this, with the fixes, is in [Troubleshooting](docs/troubleshooting.md)
+and [Actions and safety](docs/actions-and-safety.md).
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    subgraph Collectors
+        PSI[PSI triggers]
+        J[Journal: unit failures]
+        A[Audit: AVC denials]
+    end
+    PSI & J & A --> C[Correlator]
+    C --> P[Policy engine]
+    P --> E[Executor<br/>journal, limits, rollback]
+    E --> SD[(systemd over D-Bus)]
+    E --> S[Sinks<br/>file, webhook, syslog,<br/>Splunk HEC, Elasticsearch]
+    E --- CS{{Control socket}}
+    CS --> CLI[sentry-v2ctl]
+    CS --> CP[Cockpit page]
+```
 
 ## Documentation
 

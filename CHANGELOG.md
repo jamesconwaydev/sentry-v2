@@ -15,6 +15,12 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - An integration test that starts an unrelated denied service in the same
   window as a failing one and checks its denial stays out of the bundle.
 
+### Changed
+
+- The README leads with the demo recording and a real incident, then
+  adds a compatibility table, a safety table and a section on false
+  positives and failure modes.
+
 ### Fixed
 
 - A bundle for a failed unit outside `system.slice` showed pressure for
