@@ -6,6 +6,13 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A bundle for a failed unit outside `system.slice` showed pressure for
+  `system.slice` once the unit had lost its cgroup. It now reads the unit's
+  own slice from systemd, so a service in `sentry-test.slice` gets
+  `sentry.slice/sentry-test.slice` and its parents.
+
 ## [0.2.1] - 2026-10-19
 
 Nothing in the code changed. This release exists so the packages you

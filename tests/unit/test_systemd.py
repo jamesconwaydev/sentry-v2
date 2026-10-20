@@ -18,6 +18,7 @@ from sentry_v2.systemd import (
     _iface_for,
     _props_from_dbus,
     _translate,
+    slice_cgroup,
 )
 
 run = asyncio.run
@@ -76,6 +77,7 @@ def test_props_from_dbus() -> None:
         "CPUWeight": 100,
         "MainPID": 7,
         "ControlGroup": "/system.slice/a.service",
+        "Slice": "system.slice",
         "ExecStart": [["/bin/a", ["a", "-x"], False, 0, 0, 0, 0, 0, 0, 0]],
     }
     assert _props_from_dbus(unit, typed) == UnitProps(
@@ -88,12 +90,27 @@ def test_props_from_dbus() -> None:
         drop_in_paths=("/etc/systemd/system/a.service.d/x.conf",),
         exec_start=("/bin/a",),
         cgroup="system.slice/a.service",
+        slice="system.slice",
     )
 
 
 def test_props_from_dbus_missing_optional() -> None:
     p = _props_from_dbus({"ActiveState": "inactive"}, {})
     assert p.memory_high == UNSET and p.exec_start == () and p.cgroup == ""
+
+
+@pytest.mark.parametrize(
+    ("name", "path"),
+    [
+        ("system.slice", "system.slice"),
+        ("sentry-test.slice", "sentry.slice/sentry-test.slice"),
+        ("user-1000.slice", "user.slice/user-1000.slice"),
+        ("a-b-c.slice", "a.slice/a-b.slice/a-b-c.slice"),
+        ("-.slice", ""),
+    ],
+)
+def test_slice_cgroup(name: str, path: str) -> None:
+    assert slice_cgroup(name) == path
 
 
 def test_iface_for() -> None:

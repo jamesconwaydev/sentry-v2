@@ -60,6 +60,7 @@ class UnitProps:
     drop_in_paths: tuple[str, ...]
     exec_start: tuple[str, ...]
     cgroup: str  # relative to the cgroup root, like CgroupFS paths
+    slice: str = ""  # kept after the unit stops, unlike cgroup
 
 
 class SystemdManager(Protocol):
@@ -85,7 +86,17 @@ def _props_from_dbus(unit_props: Mapping[str, Any], typed_props: Mapping[str, An
         # ExecStart is a(sasbttttuii): the first field of each entry is the binary path
         exec_start=tuple(str(e[0]) for e in typed_props.get("ExecStart", ())),
         cgroup=str(typed_props.get("ControlGroup", "")).lstrip("/"),
+        slice=str(typed_props.get("Slice", "")),
     )
+
+
+def slice_cgroup(name: str) -> str:
+    """Where a slice's cgroup lives: each dash in `a-b.slice` is a level, so `a.slice/a-b.slice`."""
+    stem = name.removesuffix(".slice")
+    if stem in ("", "-"):
+        return ""
+    parts = stem.split("-")
+    return "/".join("-".join(parts[: i + 1]) + ".slice" for i in range(len(parts)))
 
 
 def _iface_for(unit: str) -> str:

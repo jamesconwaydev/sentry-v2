@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import time
 from pathlib import Path
 from typing import Any
@@ -131,3 +132,15 @@ def test_avc_bundles_have_no_psi_context(fake_cgroupfs: Path) -> None:
     avc = Incident(inc.id, "avc", inc.ts_us, "httpd_t", inc.trigger, (), ())
     ctx = asyncio.run(r.context(avc))
     assert (ctx.psi, ctx.unit_props, ctx.journal_tail) == ({}, None, [])
+
+
+def test_failed_unit_that_lost_its_cgroup_shows_its_own_slice(fake_cgroupfs: Path) -> None:
+    gone = dataclasses.replace(NGINX, active_state="failed", cgroup="", slice="sentry-test.slice")
+    slice_dir = fake_cgroupfs / "cgroup" / "sentry.slice" / "sentry-test.slice"
+    slice_dir.mkdir(parents=True)
+    (slice_dir / "memory.pressure").write_text("some avg10=8.91 avg60=0.00 avg300=0.00 total=1\n")
+    r = reporter(fake_cgroupfs, FakeSystemd(units={"nginx.service": gone}), [])
+
+    ctx = asyncio.run(r.context(failure()))
+    assert "sentry.slice/sentry-test.slice" in ctx.psi
+    assert "system.slice" not in ctx.psi

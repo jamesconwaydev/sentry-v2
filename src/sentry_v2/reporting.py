@@ -20,7 +20,7 @@ from .cgroupfs import CgroupFS
 from .collectors.journal import ReaderLike, unit_tail
 from .events import Incident
 from .state import ActionRecord
-from .systemd import SystemdManager, UnitProps
+from .systemd import SystemdManager, UnitProps, slice_cgroup
 
 log = logging.getLogger(__name__)
 
@@ -172,8 +172,13 @@ class Reporter:
                 log.warning("cannot read the journal for %s: %r", unit, e)
         if incident.kind == "psi":
             cgroup = incident.target
-        elif incident.kind == "unit_failed":  # it has usually lost its cgroup: show the slice
-            cgroup = props.cgroup if props and props.cgroup else "system.slice"
+        elif incident.kind == "unit_failed":  # it has usually lost its cgroup: show its slice
+            if props and props.cgroup:
+                cgroup = props.cgroup
+            elif props and props.slice:
+                cgroup = slice_cgroup(props.slice)
+            else:  # no properties at all: services land in system.slice by default
+                cgroup = "system.slice"
         else:  # an AVC burst has no cgroup of its own
             cgroup = ""
         unit_props = dataclasses.asdict(props) if props else None
