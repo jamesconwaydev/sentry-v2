@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 
 from contracts import NGINX
-from sentry_v2 import __version__, actions, commands, daemon
+from sentry_v2 import __version__, actions, commands, daemon, executor
 from sentry_v2.cgroupfs import CgroupFS
 from sentry_v2.collectors.audit import parse_audit_text
 from sentry_v2.control import CommandError
@@ -1011,3 +1011,69 @@ def test_failed_reload_leaves_running_state_untouched(
         assert (d.cfg, d.sinks, d.reporter.redactor) == before[:3]
 
     drive(d, body)
+
+
+def _frozen_by_a_dead_run(env: Env) -> None:
+    env.mgr.units["nginx.service"] = dataclasses.replace(NGINX, freezer_state="frozen")
+    ActionJournal(env.state / "state" / "actions.jsonl").append(
+        ActionRecord(
+            id="r1",
+            policy="p",
+            action="freeze",
+            target="nginx.service",
+            mode="enforce",
+            status="applied",
+            previous={"freezer_state": "running"},
+            applied_at=1.0,
+            expires_at=2.0,
+            error=None,
+            incident_id="i1",
+        )
+    )
+
+
+def test_rollback_only_thaws_what_a_dead_run_left(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _frozen_by_a_dead_run(env)
+    monkeypatch.setattr(daemon, "DBusSystemd", lambda: env.mgr)
+    monkeypatch.setattr(daemon, "CgroupFS", lambda: env.fs)
+
+    rc = main(["--rollback-only", "--config", str(env.config), "--policies", str(env.policies)])
+
+    assert rc == 0
+    assert env.mgr.units["nginx.service"].freezer_state == "running"
+    (rec,) = ActionJournal(env.state / "state" / "actions.jsonl").load().values()
+    assert rec.status == "rolled_back"
+    # no collectors, sinks or control socket: it undoes and exits
+    assert not env.sock.exists()
+
+
+def test_rollback_only_falls_back_to_defaults_when_the_config_is_broken(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _frozen_by_a_dead_run(env)
+    good = daemon.load_config(env.config, env.policies)
+    env.config.write_text("this is not toml [\n")
+    monkeypatch.setattr(daemon, "DBusSystemd", lambda: env.mgr)
+    monkeypatch.setattr(daemon, "CgroupFS", lambda: env.fs)
+    monkeypatch.setattr(daemon, "default_config", lambda: good)  # its state dir is env.state
+
+    rc = main(["--rollback-only", "--config", str(env.config), "--policies", str(env.policies)])
+
+    assert rc == 0
+    assert env.mgr.units["nginx.service"].freezer_state == "running"
+
+
+def test_rollback_only_reports_a_rollback_that_failed(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _frozen_by_a_dead_run(env)
+    env.mgr.fail["thaw"] = RuntimeError("bus gone")
+    monkeypatch.setattr(daemon, "DBusSystemd", lambda: env.mgr)
+    monkeypatch.setattr(daemon, "CgroupFS", lambda: env.fs)
+    monkeypatch.setattr(executor, "ROLLBACK_ATTEMPTS", 1)
+
+    rc = main(["--rollback-only", "--config", str(env.config), "--policies", str(env.policies)])
+
+    assert rc == 1

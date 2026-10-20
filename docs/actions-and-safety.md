@@ -161,6 +161,15 @@ TimeoutStopSec=1300s
 
 ## Crash recovery
 
+Whenever the daemon stops, for any reason, systemd runs
+`sentry-v2 --rollback-only` (`ExecStopPost=` in the unit). It undoes every
+throttle and freeze the journal still has open, then exits. After a clean
+stop that's nothing; after a SIGKILL, a crash or the watchdog it's whatever
+the daemon was holding. It doesn't need the daemon to start again: if the
+configuration can't be loaded, it uses the default settings and the default
+state directory. It has no sinks, so a rollback that fails here is logged,
+stays in the journal and is reported by the next start.
+
 On start, the daemon replays the journal before any collector runs, so no
 new incident can race with a leftover action:
 

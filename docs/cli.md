@@ -267,6 +267,12 @@ $ sentry-v2 --check
 It takes the same `--config` and `--policies` options and exits 2 on an
 invalid configuration.
 
+`sentry-v2 --rollback-only` undoes the throttles and freezes a stopped
+daemon left active and exits: 0 when everything was put back, 1 if a
+rollback failed. The unit runs it after every stop, so you rarely need it
+by hand. Don't run it while the daemon is running; stop the daemon instead,
+which rolls back too.
+
 `policy validate`, `policy test` and `redact` load the configuration directly, so they
 work before the daemon is installed as a service, in CI, or on a laptop.
 

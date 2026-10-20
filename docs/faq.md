@@ -14,7 +14,8 @@ limits you set: by default at most five throttles or freezes at once, one
 freeze at a time, none longer than 30 minutes, and never on the protected
 units (SSH, journald, D-Bus, logind, auditd, systemd's own services, the
 top-level slices, itself, and whatever you add). Throttles and freezes
-always expire and are rolled back on stop and after a crash. See
+always expire and are rolled back on stop, and straight after a crash or a
+kill, even if the daemon can't start again. See
 [actions-and-safety.md](actions-and-safety.md).
 
 ## Does it restart services?

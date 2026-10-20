@@ -9,6 +9,11 @@ Wants=dbus.service
 Type=notify-reload
 NotifyAccess=main
 ExecStart=/usr/bin/sentry-v2
+# Runs after every stop, whatever caused it. After a clean stop there's
+# nothing left to undo; after a SIGKILL or a crash it puts throttles and
+# freezes back straight away, even if a broken configuration then keeps the
+# daemon from starting again (it falls back to the default settings).
+ExecStopPost=/usr/bin/sentry-v2 --rollback-only
 WatchdogSec=30s
 Restart=on-failure
 RestartSec=5s

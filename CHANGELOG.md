@@ -6,6 +6,15 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A daemon that was killed or crashed while holding a throttle or freeze,
+  and then couldn't start again (for example because its configuration no
+  longer loaded), left that unit throttled or frozen until someone fixed
+  it. The unit now runs `sentry-v2 --rollback-only` after every stop, which
+  puts everything back straight away and falls back to the default settings
+  if the configuration is broken.
+
 ## [0.2.3] - 2026-10-20
 
 ### Added

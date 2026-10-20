@@ -36,6 +36,7 @@ def test_unit_file_hardening() -> None:
         "Restart": "on-failure",
         "RestartPreventExitStatus": "2",
         "ExecStart": "/usr/bin/sentry-v2",
+        "ExecStopPost": "/usr/bin/sentry-v2 --rollback-only",
         "TimeoutStopSec": "780s",
         "TimeoutStartSec": "780s",
         "NoNewPrivileges": "yes",

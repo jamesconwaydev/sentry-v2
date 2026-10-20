@@ -29,7 +29,7 @@ from .collectors.audit import AuditCollector, Source, open_source
 from .collectors.journal import JournalCollector, ReaderLike, open_reader
 from .collectors.psi import PsiCollector, trigger_specs
 from .commands import Commands
-from .config import ConfigError, load_config
+from .config import ConfigError, default_config, load_config
 from .config_types import Config
 from .control import ControlServer
 from .correlate import Correlator
@@ -557,11 +557,38 @@ def _check(config: Path, policies: Path) -> int:
     return 0
 
 
+async def rollback_only(cfg: Config, fs: CgroupFS, mgr: SystemdManager) -> int:
+    """Undo whatever a run that died left active, then exit. 1 if a rollback failed.
+
+    The unit runs this as ExecStopPost=, so it follows every stop: after a
+    clean one there's nothing left to do, and after a SIGKILL or a crash the
+    throttles and freezes are put back even if the daemon can't come up
+    again. There are no sinks here; a failed rollback is logged and stays in
+    the journal for the next start, which refuses new actions on that unit.
+    """
+
+    async def unsent(*_: object) -> None:
+        return None
+
+    state = cfg.daemon.state_dir
+    executor = Executor(
+        mgr, fs, ActionJournal(state / "state" / "actions.jsonl"), cfg.limits, cfg.protection,
+        unsent, unsent, time.time, state / "backups", daemon_mode=cfg.daemon.mode,
+    )  # fmt: skip
+    await executor.replay()
+    return 1 if executor.stuck() else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="sentry-v2", description="The sentry-v2 daemon.")
     parser.add_argument("--config", type=Path, default=Path("/etc/sentry-v2/sentry-v2.toml"))
     parser.add_argument("--policies", type=Path, default=Path("/etc/sentry-v2/policies.d"))
     parser.add_argument("--check", action="store_true", help="validate the configuration and exit")
+    parser.add_argument(
+        "--rollback-only",
+        action="store_true",
+        help="undo the throttles and freezes a stopped daemon left active, then exit",
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     args = parser.parse_args(argv)
     if args.check:
@@ -570,6 +597,13 @@ def main(argv: list[str] | None = None) -> int:
     handler = logging.StreamHandler()
     handler.setFormatter(JournalFormatter("%(message)s"))
     logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+    if args.rollback_only:
+        try:
+            cfg = load_config(args.config, args.policies)
+        except ConfigError as e:
+            log.warning("%s; rolling back with the default settings", e)
+            cfg = default_config()
+        return asyncio.run(rollback_only(cfg, CgroupFS(), DBusSystemd()))
     try:
         daemon = Daemon(
             (args.config, args.policies),

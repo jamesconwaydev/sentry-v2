@@ -264,10 +264,12 @@ mislead you, and what happens when something underneath fails.
   counted in `user_avc_truncated`; denials the kernel drops before the
   daemon reads them show up as `overruns`. Both are in `sentry-v2ctl
   status`.
-- **The daemon crashes.** systemd restarts it after 5 s, and the first
-  thing it does is roll back every throttle and freeze still on record. A
-  unit frozen at the time stays frozen until then; `systemctl thaw` works
-  if you can't wait.
+- **The daemon crashes or is killed.** systemd runs
+  `sentry-v2 --rollback-only` as soon as it exits, which puts back every
+  throttle and freeze still on record, then restarts the daemon after 5 s.
+  If the daemon can't come back, say because its configuration no longer
+  loads, the rollback has already happened. If the rollback itself can't
+  reach systemd, the next start tries again.
 - **A rollback fails.** It's retried 10 times. Then the record is marked
   `rollback_failed`, a critical bundle goes to every sink, and no new
   action touches that unit until you retry with `sentry-v2ctl rollback ID`.

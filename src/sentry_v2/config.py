@@ -531,3 +531,8 @@ def load_config(main: Path, policies_dir: Path) -> Config:
     return Config(
         daemon, limits, protection, correlation, redaction, sinks, metrics, control, tuple(policies)
     )
+
+
+def default_config() -> Config:
+    """Every default, no policies: what an empty configuration file means."""
+    return load_config(Path(os.devnull), Path(os.devnull))
