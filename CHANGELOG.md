@@ -6,6 +6,16 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Property-based fuzz tests, with Hypothesis, for every parser that reads
+  input the daemon doesn't control.
+
+### Changed
+
+- CI and the release workflow install their Python tools from hash-pinned
+  requirement files (`make requirements` regenerates them).
+
 ## [0.2.4] - 2026-10-20
 
 ### Changed

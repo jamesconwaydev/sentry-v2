@@ -127,6 +127,7 @@ def serve_https(cert: Path, key: Path, port: int = 0) -> Iterator[HttpsServer]:
 
     srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), Handler)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(cert, key)
     srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
     state.url = f"https://127.0.0.1:{srv.server_address[1]}"

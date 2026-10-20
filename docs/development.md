@@ -31,9 +31,17 @@ $ make lint typecheck test
 | `typecheck` | `mypy --strict` over `src`. |
 | `test` | The unit tests with coverage. The build fails under 90 % line coverage. |
 | `format` | Applies `ruff` fixes and formatting. |
+| `requirements` | Regenerates the hash-pinned `requirements/dev.txt` and `requirements/release.txt` with `uv pip compile`. Run it after changing the `dev` extra or `requirements/release.in`. |
 
 CI runs the same checks on every pull request; the tests run in a Rocky
-Linux 10 container with the distro bindings installed.
+Linux 10 container with the distro bindings installed. CI and the release
+workflow install their tools only from the hash-pinned files in
+`requirements/`, then install Sentry-v2 itself with `--no-deps`.
+
+`tests/unit/test_fuzz.py` fuzzes every parser that reads input the daemon
+doesn't control (netlink buffers, audit records and log lines, pressure
+files, durations, sizes and redaction) with Hypothesis. A parser may return
+or raise the error its caller handles, and nothing else.
 
 The unit tests need no root and no systemd. They use fixture cgroup trees,
 captured journal and audit records, an in-memory systemd, local HTTP and

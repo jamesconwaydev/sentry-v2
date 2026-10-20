@@ -1,7 +1,7 @@
 VENV ?= .venv
 BIN := $(VENV)/bin
 
-.PHONY: lint schema format typecheck test itest rpm clean
+.PHONY: lint schema format typecheck test itest rpm clean requirements
 
 lint:
 	$(BIN)/ruff check .
@@ -68,3 +68,9 @@ clean:
 	rm -rf build dist htmlcov .coverage .mypy_cache .ruff_cache .pytest_cache
 	find . -name __pycache__ -not -path './$(VENV)/*' -prune -exec rm -rf {} +
 	rm -rf src/*.egg-info rpmbuild
+
+# CI and the release workflow install only these hash-pinned files. Run after
+# changing the dev extra in pyproject.toml or requirements/release.in.
+requirements:
+	uv pip compile pyproject.toml --extra dev --generate-hashes --universal --python-version 3.12 -q -o requirements/dev.txt
+	uv pip compile requirements/release.in --generate-hashes --universal --python-version 3.12 -q -o requirements/release.txt
