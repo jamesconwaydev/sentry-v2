@@ -6,6 +6,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-10-20
+
 ### Changed
 
 - A throttle's rollback now looks at each value on its own. Before, if
@@ -193,7 +195,8 @@ The first release.
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,
   hardening, troubleshooting, architecture and development guides.
 
-[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.3...HEAD
+[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.4...HEAD
+[0.2.4]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.3...v0.2.4
 [0.2.3]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.0...v0.2.1

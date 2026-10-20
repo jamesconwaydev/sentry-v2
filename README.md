@@ -140,7 +140,7 @@ Rocky.
 Just want to check policies in CI? `pip install sentry-v2` and run `sentry-v2ctl policy validate`.
 
 Download the RPMs from the
-[v0.2.3 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.2.3)
+[v0.2.4 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.2.4)
 and check them against `SHA256SUMS` before you install:
 
 ```console
@@ -158,7 +158,7 @@ Prefer to build it yourself? See [Installation](https://github.com/jamesconwayde
 Then install:
 
 ```console
-# dnf install ./sentry-v2-0.2.3-*.noarch.rpm ./sentry-v2-selinux-0.2.3-*.noarch.rpm
+# dnf install ./sentry-v2-0.2.4-*.noarch.rpm ./sentry-v2-selinux-0.2.4-*.noarch.rpm
 ```
 
 EL kernels ship with PSI off. If `cat /proc/pressure/memory` says
@@ -180,7 +180,7 @@ Then add a policy of your own and start the daemon:
 ok: 4 policies
 # systemctl enable --now sentry-v2
 # sentry-v2ctl status
-sentry-v2 0.2.3  running for 3s  mode dry-run
+sentry-v2 0.2.4  running for 3s  mode dry-run
 
 COLLECTOR  HEALTH
 psi        state=ok, triggers=0, restarts=0, last_error=None
