@@ -6,6 +6,11 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `examples/demo/run.sh sibling` stages a harder case: two instances of
+  one service, both denied, one failing.
+
 ### Changed
 
 - A denial whose process was in another unit's cgroup when it arrived is
@@ -14,10 +19,11 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   0.76. Denials whose cgroup couldn't be read still score on domain and
   name.
 
-### Added
+### Fixed
 
-- `examples/demo/run.sh sibling` stages that case: two instances of one
-  service, both denied, one failing.
+- The README's images and links now work on PyPI as well as GitHub.
+- The RPM installs the licence to `/usr/share/licenses/sentry-v2/`, where
+  `rpm -qL` and auditors look for it.
 
 ## [0.2.2] - 2026-10-20
 

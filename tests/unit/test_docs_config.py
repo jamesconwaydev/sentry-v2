@@ -16,6 +16,10 @@ from sentry_v2.config_types import Config
 ROOT = Path(__file__).parents[2]
 DOCS = ROOT / "docs"
 DEMO = ROOT / "examples" / "demo"
+REPO_URL = (
+    r"^https://(github\.com/jamesconwaydev/sentry-v2/(blob|tree)/main/"
+    r"|raw\.githubusercontent\.com/jamesconwaydev/sentry-v2/main/)"
+)
 PAGES = sorted([ROOT / "README.md", ROOT / "CHANGELOG.md", *DOCS.glob("*.md"), DEMO / "README.md"])
 
 
@@ -101,11 +105,17 @@ def _anchors(page: Path) -> set[str]:
 def test_relative_links_resolve(page: Path) -> None:
     text = re.sub(r"```.*?```", "", page.read_text(), flags=re.S)
     broken = []
-    for target in re.findall(r"\]\(([^)\s]+)\)", text) + re.findall(r'srcset="([^"]+)"', text):
+    for target in re.findall(r"\]\(([^)\s]+)\)", text) + re.findall(
+        r'(?:srcset|src)="([^"]+)"', text
+    ):
+        # The README uses absolute links so they work on PyPI too; check the
+        # ones into this repository as if they were relative.
+        base = ROOT if re.match(REPO_URL, target) else page.parent
+        target = re.sub(REPO_URL, "", target)
         if re.match(r"[a-z]+:", target):
             continue
         path, _, anchor = target.partition("#")
-        dest = (page.parent / path).resolve() if path else page
+        dest = (base / path).resolve() if path else page
         if not dest.exists() or (anchor and dest.suffix == ".md" and anchor not in _anchors(dest)):
             broken.append(target)
     assert not broken, f"{page.name}: broken links {broken}"

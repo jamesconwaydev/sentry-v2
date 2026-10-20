@@ -92,3 +92,10 @@ def test_spec_ships_every_cockpit_file() -> None:
 def test_spec_import_check_covers_every_module() -> None:
     spec = (PACKAGING / "sentry-v2.spec").read_text()
     assert re.search(r"^%pyproject_check_import$", spec, re.MULTILINE)
+
+
+def test_spec_installs_the_licence_where_rpm_looks() -> None:
+    # /usr/share/licenses/sentry-v2/LICENSE; the subpackages require this one
+    spec = (PACKAGING / "sentry-v2.spec").read_text()
+    main_files = spec.split("%files -f %{pyproject_files}", 1)[1].split("%files ", 1)[0]
+    assert "%license LICENSE" in main_files

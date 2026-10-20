@@ -143,6 +143,7 @@ fi
 
 %files -f %{pyproject_files}
 %doc README.md
+%license LICENSE
 %{_bindir}/sentry-v2
 %{_bindir}/sentry-v2ctl
 %{_unitdir}/sentry-v2.service
