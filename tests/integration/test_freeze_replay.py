@@ -70,10 +70,13 @@ def test_freeze_is_thawed_when_the_killed_daemon_cannot_start_again(
     try:
         with open(CONFIG, "a") as f:
             f.write("this is not toml [\n")
-        sh("systemctl", "kill", "--signal=SIGKILL", "sentry-v2")
-        # ExecStopPost thaws it at once; the restart then exits 2 and stays down
+        # A crash takes down the main process only. (Plain `systemctl kill`
+        # signals the whole cgroup, including the ExecStopPost it sets off.)
+        sh("systemctl", "kill", "--kill-whom=main", "--signal=SIGKILL", "sentry-v2")
+        # ExecStopPost thaws it before the restart (RestartSec=5s) even begins;
+        # the restart then exits 2 and stays down
         wait_for(
-            lambda: show(unit, "FreezerState") == "running", 15, "ExecStopPost to thaw the unit"
+            lambda: show(unit, "FreezerState") == "running", 4, "ExecStopPost to thaw the unit"
         )
         wait_for(
             lambda: show("sentry-v2", "ExecMainStatus") == "2",
