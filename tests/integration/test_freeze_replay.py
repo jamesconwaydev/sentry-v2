@@ -80,7 +80,10 @@ def test_freeze_is_thawed_when_the_killed_daemon_cannot_start_again(
             30,
             "the restart to fail on the config",
         )
-        assert show("sentry-v2", "ActiveState") == "failed"
+        # ExecStopPost runs again after the failed start, then the unit settles
+        wait_for(
+            lambda: show("sentry-v2", "ActiveState") == "failed", 30, "the daemon to stay down"
+        )
         assert show(unit, "FreezerState") == "running"
     finally:
         shutil.copy2(saved, CONFIG)
