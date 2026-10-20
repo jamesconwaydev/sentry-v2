@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from sentry_v2.config_types import CorrelationConfig
-from sentry_v2.correlate import Correlator, score
+from sentry_v2.correlate import AUDIT_WAIT_MAX_US, Correlator, score
 from sentry_v2.events import AvcEvent, PsiEvent, UnitEvent
 from sentry_v2.policy import Notify, Policy, PolicyEngine, PsiWhen
 
@@ -219,9 +219,9 @@ def test_comm_parentheses_stripped_and_systemd_executor_ignored() -> None:
 
 
 def test_unit_info_supplies_domain_and_exec_names() -> None:
-    def info(unit: str) -> tuple[set[str], str | None]:
+    def info(unit: str) -> tuple[set[str], str | None, int | None]:
         assert unit == "web.service"
-        return {"httpd"}, "httpd_t"
+        return {"httpd"}, "httpd_t", None
 
     c = correlator(unit_info=info)
     a = avc(T - S, cgroup_at_receipt=None, unit_at_receipt=None)
@@ -455,3 +455,51 @@ def test_configure_keeps_pending_failures() -> None:
     c.configure(CorrelationConfig(after=3.0), [])
     assert c.tick(T + 2 * S) == []  # the new, longer `after` applies to the pending one
     assert len(c.tick(T + 3 * S)) == 1
+
+
+def test_failure_waits_for_the_audit_stream_to_catch_up() -> None:
+    c = correlator()
+    c.ingest(failed(T))
+    # the after window has closed, but audit has only been read up to T
+    assert c.tick(T + 2 * S, audit_until_us=T) == []
+    late = avc(T - S // 2)  # read 8 s late under load, still within the window
+    c.ingest(late)
+    [inc] = c.tick(T + 3 * S, audit_until_us=T + 3 * S)
+    assert [x.avc for x in inc.correlations] == [late]
+    assert inc.audit_caught_up
+
+
+def test_failure_is_finalised_anyway_once_audit_is_too_far_behind() -> None:
+    c = correlator()
+    c.ingest(failed(T))
+    hi = T + S  # failure + after
+    assert c.tick(hi + AUDIT_WAIT_MAX_US - 1, audit_until_us=T) == []
+    [inc] = c.tick(hi + AUDIT_WAIT_MAX_US, audit_until_us=T)
+    assert not inc.audit_caught_up
+
+
+def test_without_an_audit_watermark_timing_is_unchanged() -> None:
+    c = correlator()
+    c.ingest(failed(T))
+    [inc] = c.tick(T + S)
+    assert inc.audit_caught_up
+
+
+def test_dead_main_process_matches_by_pid() -> None:
+    gone = avc(T - S, pid=4242, cgroup_at_receipt=None, unit_at_receipt=None, comm="x", exe="/x")
+    c = score(gone, "web.service", None, set(), main_pid=4242)
+    assert c is not None
+    assert c.reasons == ("pid was the unit's main process",)
+    assert c.confidence == pytest.approx(0.9)
+    assert score(gone, "web.service", None, set(), main_pid=4243) is None
+
+
+def test_main_pid_from_unit_info_is_used_at_finalisation() -> None:
+    def info(unit: str) -> tuple[set[str], str | None, int | None]:
+        return set(), None, 4242
+
+    c = correlator(unit_info=info)
+    c.ingest(avc(T - S, pid=4242, cgroup_at_receipt=None, unit_at_receipt=None))
+    c.ingest(failed(T))
+    [inc] = c.tick(T + S)
+    assert inc.correlations[0].reasons == ("pid was the unit's main process",)

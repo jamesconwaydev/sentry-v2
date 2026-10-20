@@ -76,6 +76,7 @@ def test_props_from_dbus() -> None:
         "MemoryHigh": 2**64 - 1,
         "CPUWeight": 100,
         "MainPID": 7,
+        "ExecMainPID": 7,
         "ControlGroup": "/system.slice/a.service",
         "Slice": "system.slice",
         "ExecStart": [["/bin/a", ["a", "-x"], False, 0, 0, 0, 0, 0, 0, 0]],
@@ -91,6 +92,7 @@ def test_props_from_dbus() -> None:
         exec_start=("/bin/a",),
         cgroup="system.slice/a.service",
         slice="system.slice",
+        exec_main_pid=7,
     )
 
 

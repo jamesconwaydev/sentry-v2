@@ -252,11 +252,16 @@ A linked denial is a lead, not a verdict. Here's where the scoring can
 mislead you, and what happens when something underneath fails.
 
 - **A denial from a process that's already gone.** The cgroup is read when
-  the denial arrives. If the process has exited by then, only the domain and
-  name can count, and a sibling running the same binary in the same domain
+  the denial arrives. If the process has exited by then, its PID still
+  counts when it was the unit's main process; otherwise only the domain
+  and name can, and a sibling running the same binary in the same domain
   (two instances of a template unit, say) can score 0.76 against the wrong
   one. The reasons show it: no `pid in unit cgroup`. When the cgroup is
   known and belongs to another unit, the denial is left out.
+- **A denial storm.** On a busy host the daemon can fall seconds behind the
+  audit stream. A failure waits until audit has been read past its window,
+  for up to 30 s; after that it goes out with `audit_caught_up: false`, and
+  denials may be missing from it.
 - **Timing.** Only denials from 5 s before to 1 s after the failure count.
   A service that's denied early and dies later needs a wider
   `correlation.before`.

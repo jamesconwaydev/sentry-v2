@@ -50,6 +50,7 @@ Each denial is scored on three signals:
 | Reason in the bundle | Weight | When it applies |
 |---|---|---|
 | `pid in unit cgroup` | 0.9 | The denied process was in the failed unit's cgroup when the denial was received. |
+| `pid was the unit's main process` | 0.9 | The process had already exited, so its cgroup couldn't be read, but its PID is the unit's last main PID (`ExecMainPID`, which systemd keeps after the process exits). Used only when the cgroup is unknown. |
 | `scontext type matches unit domain` | 0.6 | The denial's source type (for example `httpd_t`) is the unit's SELinux domain. |
 | `comm matches ExecStart` | 0.4 | The process name or executable matches one of the unit's `ExecStart` binaries. |
 
@@ -77,8 +78,26 @@ If that cgroup belongs to a different unit, the denial isn't scored at all.
 Two instances of a template unit (`app@a`, `app@b`) run the same binary in
 the same domain, so without this rule a denial from `app@b` would score
 0.76 against `app@a`'s failure on domain and name alone. When the cgroup
-couldn't be read, because the process had already exited, the domain and
-name still count.
+couldn't be read, because the process had already exited, the unit's last
+main PID, the domain and the name still count.
+
+### When the daemon falls behind the audit stream
+
+On a busy host, especially a small one where auditd and setroubleshootd
+are also working through a denial storm, the daemon can read denials
+seconds after the kernel logged them. On a 1-vCPU Rocky 10 test VM it fell
+8.8 s behind. Two things would go wrong if the correlator didn't allow for
+it: the failure would be finalised before its denials arrived, and a
+denied process that had exited in the meantime would have no cgroup left
+to read.
+
+So the audit collector notes how far it has read: the last moment its
+source had nothing left to hand over. A failure is finalised only once
+that point is past the end of its window, plus 0.2 s for records still on
+their way from the kernel. If audit is more than 30 s behind, the failure
+goes out anyway with `incident.audit_caught_up` set to `false`, which means
+denials may be missing from it. The second problem is what the
+`pid was the unit's main process` reason is for.
 
 For the name check, systemd's `(name)` form of a process about to exec is
 unwrapped, and executables under `/usr/lib/systemd/` are ignored: a denied

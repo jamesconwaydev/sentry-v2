@@ -4,6 +4,7 @@ import errno
 import socket
 import struct
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -760,3 +761,69 @@ def test_netlink_asks_for_a_bigger_receive_buffer(monkeypatch):
     monkeypatch.setattr(socket, "socket", Sock)
     NetlinkSource()
     assert calls == [(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)]
+
+
+def test_collector_records_when_its_source_has_caught_up(tmp_path):
+    class Drained(Stub):
+        def caught_up(self):
+            return 4.0
+
+    q = EventQueue()
+    c = AuditCollector(
+        q, CgroupFS(tmp_path, tmp_path), lambda: Drained([avc(1), rec("EOE", 1)]),
+        lambda: 5_000_000, 0.01,
+    )  # fmt: skip
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    assert c.caught_up_us is None
+    asyncio.run(go())
+    assert c.caught_up_us == 4_000_000
+
+
+def test_collector_not_caught_up_while_a_record_group_is_open(tmp_path):
+    class Drained(Stub):
+        def caught_up(self):
+            return 4.0
+
+    q = EventQueue()
+    # no EOE and the clock stands still, so serial 1 stays open in the assembler
+    c = AuditCollector(
+        q, CgroupFS(tmp_path, tmp_path), lambda: Drained([avc(1)]), lambda: 5_000_000, 0.01
+    )
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    asyncio.run(go())
+    assert c.caught_up_us is None
+
+
+def test_logtail_caught_up_only_while_idle_at_eof(tmp_path):
+    log = tmp_path / "audit.log"
+    log.write_text("")
+
+    async def go():
+        src = LogTailSource(log, interval=0.01)
+        assert src.caught_up() is None
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.05)
+        idle = src.caught_up()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        await it.aclose()
+        return idle
+
+    idle = asyncio.run(go())
+    assert idle is not None and abs(idle - time.time()) < 5

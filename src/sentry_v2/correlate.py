@@ -26,12 +26,18 @@ _S = 1_000_000
 # earlier than the journal clock would have recorded it.
 _AUDIT_SLACK_US = 999
 _MAX_DOMAINS = 4096
+# A failure waits for the audit stream to be read past its window, plus this
+# much for records still on their way from the kernel...
+AUDIT_SETTLE_US = 200_000
+# ...but no longer than this; then it goes out marked audit_caught_up=False.
+AUDIT_WAIT_MAX_US = 30_000_000
 
-UnitInfo = Callable[[str], tuple[set[str], str | None]]
+# ExecStart basenames, SELinux domain if known, and the last main PID
+UnitInfo = Callable[[str], tuple[set[str], str | None, int | None]]
 
 
-def _no_unit_info(unit: str) -> tuple[set[str], str | None]:
-    return set(), None
+def _no_unit_info(unit: str) -> tuple[set[str], str | None, int | None]:
+    return set(), None, None
 
 
 def _ts(ev: Event) -> int:
@@ -51,7 +57,11 @@ def _exec_names(avc: AvcEvent) -> set[str]:
 
 
 def score(
-    avc: AvcEvent, unit: str, unit_domain: str | None, exec_names: set[str]
+    avc: AvcEvent,
+    unit: str,
+    unit_domain: str | None,
+    exec_names: set[str],
+    main_pid: int | None = None,
 ) -> Correlation | None:
     """How likely `avc` belongs to `unit`, or None if nothing links them."""
     if avc.unit_at_receipt is not None and avc.unit_at_receipt != unit:
@@ -62,6 +72,9 @@ def score(
     cgroup_leaf = (avc.cgroup_at_receipt or "").rstrip("/").rsplit("/", 1)[-1]
     if unit in (avc.unit_at_receipt, cgroup_leaf):
         found.append(("pid in unit cgroup", 0.9))
+    elif avc.cgroup_at_receipt is None and main_pid is not None and avc.pid == main_pid:
+        # gone before its cgroup could be read, but systemd remembers it
+        found.append(("pid was the unit's main process", 0.9))
     if unit_domain is not None and avc.scontext_type == unit_domain:
         found.append(("scontext type matches unit domain", 0.6))
     if _exec_names(avc) & exec_names:
@@ -89,8 +102,10 @@ class Correlator:
 
     `ingest` returns incidents that are complete on arrival (PSI, AVC
     bursts). Unit failures wait `after` seconds for late denials and come
-    out of `tick`. `unit_info` maps a unit to its ExecStart basenames and,
-    if known, its SELinux domain; the caller resolves these ahead of time.
+    out of `tick`, once the audit stream has been read past their window
+    (see `tick`). `unit_info` maps a unit to its ExecStart basenames, its
+    SELinux domain and its last main PID, where known; the caller resolves
+    these ahead of time.
     """
 
     def __init__(
@@ -136,12 +151,25 @@ class Correlator:
             case PsiEvent():
                 return self._on_psi(ev)
 
-    def tick(self, now_us: int) -> list[Incident]:
-        """Finalise unit failures whose `after` window has closed."""
+    def tick(self, now_us: int, audit_until_us: int | None = None) -> list[Incident]:
+        """Finalise unit failures whose `after` window has closed.
+
+        `audit_until_us` is how far the audit stream has been read and
+        ingested. Under load the daemon can fall seconds behind it, so a
+        failure also waits until audit has caught up past its window, for
+        at most AUDIT_WAIT_MAX_US. None (no audit collector) doesn't wait.
+        """
         self._evict(now_us)
-        ready = [f for f in self._pending if now_us >= f.ts_us + self._after_us]
-        self._pending = [f for f in self._pending if now_us < f.ts_us + self._after_us]
-        return [self._finalise(f) for f in ready]
+        out, waiting = [], []
+        for f in self._pending:
+            hi = f.ts_us + self._after_us
+            caught_up = audit_until_us is None or audit_until_us >= hi + AUDIT_SETTLE_US
+            if now_us >= hi and (caught_up or now_us >= hi + AUDIT_WAIT_MAX_US):
+                out.append(self._finalise(f, caught_up))
+            else:
+                waiting.append(f)
+        self._pending = waiting
+        return out
 
     # -- internals ---------------------------------------------------------
 
@@ -189,8 +217,8 @@ class Correlator:
             and e.invocation_id == f.invocation_id
         )
 
-    def _finalise(self, failure: UnitEvent) -> Incident:
-        exec_names, domain = self._unit_info(failure.unit)
+    def _finalise(self, failure: UnitEvent, audit_caught_up: bool = True) -> Incident:
+        exec_names, domain, main_pid = self._unit_info(failure.unit)
         lo = failure.ts_us - self._before_us - _AUDIT_SLACK_US
         hi = failure.ts_us + self._after_us
         correlations = []
@@ -198,7 +226,7 @@ class Correlator:
             if not (isinstance(ev, AvcEvent) and ev.denied):
                 continue
             learned = domain or self._learned_domain(failure.unit, ev.ts_us)
-            c = score(ev, failure.unit, learned, exec_names)
+            c = score(ev, failure.unit, learned, exec_names, main_pid)
             if c is not None and c.confidence >= self._cfg.min_confidence:
                 correlations.append(c)
         related = tuple(e for e in self._events if self._same_invocation(e, failure))
@@ -210,6 +238,7 @@ class Correlator:
             failure,
             related,
             tuple(correlations),
+            audit_caught_up=audit_caught_up,
         )
 
     def _learned_domain(self, unit: str, before_us: int) -> str | None:

@@ -100,6 +100,7 @@ class Incident:
     related: tuple[Event, ...]
     correlations: tuple[Correlation, ...]
     sustained: float | None = None  # psi only: the policy period the stall outlasted
+    audit_caught_up: bool = True  # unit_failed only: False if denials may be missing
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

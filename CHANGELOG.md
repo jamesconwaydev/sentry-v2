@@ -22,6 +22,14 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   it. The unit now runs `sentry-v2 --rollback-only` after every stop, which
   puts everything back straight away and falls back to the default settings
   if the configuration is broken.
+- In a denial storm the daemon can read denials seconds late. A failure
+  was finalised a second after it happened, before its own denials had
+  been read, and a denied process that had exited by then had no cgroup
+  left to match. On a 1-vCPU test VM a failing service's denial was missed
+  this way. A failure now waits until the audit stream has been read past
+  its window (at most 30 s, after which the bundle says
+  `audit_caught_up: false`), and a denial from a process that has exited
+  still matches if its PID was the unit's main process.
 
 ## [0.2.3] - 2026-10-20
 

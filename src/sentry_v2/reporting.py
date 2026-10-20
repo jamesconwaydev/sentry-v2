@@ -84,10 +84,12 @@ class Reporter:
 
     # -- unit info -----------------------------------------------------------
 
-    def unit_info(self, unit: str) -> tuple[set[str], str | None]:
+    def unit_info(self, unit: str) -> tuple[set[str], str | None, int | None]:
         """Called synchronously by the correlator: whatever is cached right now."""
         props = self._units.get(unit, (0.0, 0.0, None))[2]
-        return ({p.rsplit("/", 1)[-1] for p in props.exec_start} if props else set()), None
+        if props is None:
+            return set(), None, None
+        return {p.rsplit("/", 1)[-1] for p in props.exec_start}, None, props.exec_main_pid or None
 
     def refresh(self, unit: str) -> None:
         """Fetch a unit's properties in the background unless they are fresh."""

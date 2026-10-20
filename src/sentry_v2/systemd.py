@@ -61,6 +61,7 @@ class UnitProps:
     exec_start: tuple[str, ...]
     cgroup: str  # relative to the cgroup root, like CgroupFS paths
     slice: str = ""  # kept after the unit stops, unlike cgroup
+    exec_main_pid: int = 0  # the last main process, also kept after it exits
 
 
 class SystemdManager(Protocol):
@@ -87,6 +88,7 @@ def _props_from_dbus(unit_props: Mapping[str, Any], typed_props: Mapping[str, An
         exec_start=tuple(str(e[0]) for e in typed_props.get("ExecStart", ())),
         cgroup=str(typed_props.get("ControlGroup", "")).lstrip("/"),
         slice=str(typed_props.get("Slice", "")),
+        exec_main_pid=int(typed_props.get("ExecMainPID", 0)),
     )
 
 

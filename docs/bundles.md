@@ -43,7 +43,7 @@ $ check-jsonschema --schemafile docs/reference/bundle.schema.json bundle.json
 | `ts` | RFC 3339, UTC | When the bundle was built, to the microsecond. |
 | `severity` | `info`, `warning`, `critical` | See [Severity](#severity). |
 | `host` | object | `hostname`, `machine_id`, `kernel`, `os_release` (the `PRETTY_NAME`). |
-| `incident` | object | `id`, `kind` (`unit_failed`, `psi`, `avc` or `alert`), `ts_us`, `target`, the `trigger` event, `related` events, `correlations`, and for PSI the `sustained` period it outlasted. |
+| `incident` | object | `id`, `kind` (`unit_failed`, `psi`, `avc` or `alert`), `ts_us`, `target`, the `trigger` event, `related` events, `correlations`, for PSI the `sustained` period it outlasted, and `audit_caught_up`, which is `false` on a `unit_failed` bundle the daemon had to send while still behind the audit stream, so denials may be missing ([why](correlation.md#when-the-daemon-falls-behind-the-audit-stream)). |
 | `context` | object | `psi`: pressure for the incident's cgroup and each parent, keyed by cgroup path, then resource, then `some`/`full`. `unit`: the unit's systemd properties (or `null`). `journal`: the unit's last 50 journal lines this boot, oldest first. |
 | `correlations` | array | The scored denials, each with `avc`, `confidence` and `reasons`. The same list as `incident.correlations`, at the top level so it's easy to query. |
 | `decision` | object | `policy` and `mode` of the first planned action, and `actions`: every action record for this incident. With no matching policy, `policy` and `mode` are `null` and `actions` is empty. |

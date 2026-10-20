@@ -12,6 +12,7 @@ import errno
 import logging
 import os
 import re
+import select
 import socket
 import struct
 import time
@@ -158,6 +159,11 @@ class AvcAssembler:
         self._groups.setdefault(rec.serial, (now, []))[1].append(rec)
         return []
 
+    @property
+    def pending(self) -> bool:
+        """Some record group is still waiting for the rest of its records."""
+        return bool(self._groups)
+
     def flush(self, now: float) -> list[AvcEvent]:
         due = [s for s, (t, _) in self._groups.items() if now - t >= self._flush_after]
         return [ev for s in due for ev in self._build(self._groups.pop(s)[1])]
@@ -211,6 +217,10 @@ class Source(Protocol):
 
     def records(self) -> AsyncGenerator[AuditRecord, None]: ...
 
+    def caught_up(self) -> float | None:
+        """Wall time up to which every record has been yielded, if it is now."""
+        ...
+
     def close(self) -> None: ...
 
 
@@ -227,6 +237,7 @@ class NetlinkSource:
             raise OSError("AF_NETLINK is not available on this platform")
         self._sock = socket.socket(af, socket.SOCK_RAW, NETLINK_AUDIT)
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._q: asyncio.Queue[AuditRecord | OSError] | None = None
         try:
             self._sock.setblocking(False)
             with contextlib.suppress(OSError):
@@ -235,6 +246,17 @@ class NetlinkSource:
         except OSError:
             self._sock.close()
             raise
+
+    def caught_up(self) -> float | None:
+        """Now, if nothing is waiting on the socket or in the queue behind it."""
+        if self._q is None or not self._q.empty():
+            return None
+        try:
+            if select.select([self._sock], [], [], 0)[0]:
+                return None
+        except (OSError, ValueError):
+            return None
+        return time.time()
 
     @property
     def rcvbuf(self) -> int:
@@ -251,6 +273,7 @@ class NetlinkSource:
     async def records(self) -> AsyncGenerator[AuditRecord, None]:
         loop = self._loop = asyncio.get_running_loop()
         q: asyncio.Queue[AuditRecord | OSError] = asyncio.Queue(self.max_queued)
+        self._q = q
 
         def push(item: AuditRecord | OSError) -> None:
             if q.full():
@@ -298,9 +321,14 @@ class LogTailSource:
         self._path = path
         self._interval = interval
         self.error: str | None = None
+        self._read_to_eof_at: float | None = None  # set while idle after a full read
 
     def close(self) -> None:
         pass  # the file handle is released when records() is closed
+
+    def caught_up(self) -> float | None:
+        """When the file was last read to its end, while waiting for more."""
+        return self._read_to_eof_at
 
     def _fail(self, e: OSError) -> None:
         if self.error is None:
@@ -371,7 +399,10 @@ class LogTailSource:
                             fh.close()
                             fh = None
                         self._fail(e)
+                if self.error is None and not buf:
+                    self._read_to_eof_at = time.time()
                 await asyncio.sleep(self._interval)
+                self._read_to_eof_at = None
         finally:
             if fh is not None:
                 fh.close()
@@ -413,6 +444,8 @@ class AuditCollector:
         self._asm = AvcAssembler()
         self._source: Source | None = None
         self._lost = 0
+        # µs up to which every audit record has been published to the queue
+        self.caught_up_us: int | None = None
 
     def health(self) -> dict[str, object]:
         out: dict[str, object] = {
@@ -452,8 +485,16 @@ class AuditCollector:
             try:
                 self._publish(self._asm.flush(self._now()))
                 self._count_lost()
+                self._note_caught_up()
             except Exception:
                 log.exception("audit flush failed")
+
+    def _note_caught_up(self) -> None:
+        caught_up = getattr(self._source, "caught_up", None)
+        if caught_up is None or self._asm.pending:
+            return
+        if (t := caught_up()) is not None:
+            self.caught_up_us = int(t * 1_000_000)
 
     async def run(self) -> None:
         self._source = source = self._factory()

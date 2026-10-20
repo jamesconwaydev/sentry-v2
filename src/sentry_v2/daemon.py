@@ -167,6 +167,7 @@ class Daemon:
         self._next_compact = 0.0
         self._seen_dropped: Counter[str] = Counter()
         self._seen_failures: Counter[str] = Counter()
+        self._audit_until: int | None = None
 
         self.queue = EventQueue(cfg.daemon.queue_size)
         self.engine = PolicyEngine(cfg.policies, clock)
@@ -389,7 +390,11 @@ class Daemon:
             await asyncio.sleep(TICK)
             try:
                 now = self.clock()
-                await self._handle_all(self.correlator.tick(int(now * 1_000_000)))
+                if not len(self.queue):  # everything audit published is ingested
+                    audit = self._collectors.get("audit")
+                    self._audit_until = getattr(audit, "caught_up_us", None)
+                ticked = self.correlator.tick(int(now * 1_000_000), self._audit_until)
+                await self._handle_all(ticked)
                 horizon = (now - SAMPLE_TTL) * 1_000_000
                 self.samples = {k: s for k, s in self.samples.items() if s.ts_us >= horizon}
                 self.reporter.prune()

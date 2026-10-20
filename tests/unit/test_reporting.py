@@ -82,7 +82,7 @@ def test_cached_props_are_reused_and_drain_waits_for_bundles(fake_cgroupfs: Path
         r.refresh("nginx.service")
         r.refresh("nginx.service")  # fresh, or already in flight: no second fetch
         await asyncio.sleep(0.01)
-        assert r.unit_info("nginx.service") == ({"nginx"}, None)
+        assert r.unit_info("nginx.service") == ({"nginx"}, None, 42)
         await r.sinks_notify(incident, [])
         await r.drain(5)
         (bundle,) = out
@@ -103,7 +103,7 @@ def test_prune_drops_stale_unit_info(fake_cgroupfs: Path, monkeypatch: pytest.Mo
         await asyncio.sleep(0.01)
         monkeypatch.setattr(reporting, "UNIT_INFO_TTL", 0.0)
         r.prune()
-        assert r.unit_info("nginx.service") == (set(), None)
+        assert r.unit_info("nginx.service") == (set(), None, None)
 
     asyncio.run(main())
 

@@ -78,4 +78,5 @@ NGINX = UnitProps(
     drop_in_paths=(),
     exec_start=("/usr/sbin/nginx",),
     cgroup="system.slice/nginx.service",
+    exec_main_pid=42,
 )
