@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import shutil
 import tempfile
+import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -90,15 +91,19 @@ def test_denial_is_correlated_with_the_failed_unit(
     assert best["avc"]["unit_at_receipt"] == unit
 
 
-def _denial_times(scontext_type: str) -> list[int]:
-    """Microsecond timestamps of today's AVC denials from `scontext_type`."""
+def _denials(scontext_type: str) -> list[tuple[int, str]]:
+    """(microsecond timestamp, pid) of today's AVC denials from `scontext_type`."""
     out = sh("ausearch", "--input-logs", "-m", "AVC", "-ts", "today", check=False).stdout
     return [
-        int(m[1]) * 1_000_000 + int(m[2]) * 1000
+        (int(m[1]) * 1_000_000 + int(m[2]) * 1000, p[1])
         for line in out.splitlines()
         if "denied" in line and f":{scontext_type}:" in line
-        if (m := re.search(r"audit\((\d+)\.(\d+):", line))
+        if (m := re.search(r"audit\((\d+)\.(\d+):", line)) and (p := re.search(r" pid=(\d+)", line))
     ]
+
+
+def _denial_times(scontext_type: str) -> list[int]:
+    return [ts for ts, _pid in _denials(scontext_type)]
 
 
 def test_unrelated_denial_in_window_is_left_out(
@@ -133,3 +138,38 @@ def test_unrelated_denial_in_window_is_left_out(
     assert any(
         failed - 5_000_000 <= t <= failed + 1_000_000 for t in _denial_times("sentry_test_other_t")
     ), other
+
+
+def test_sibling_with_same_domain_and_binary_is_left_out(
+    test_domain: None, transient_unit: Callable[..., str]
+) -> None:
+    """Two units running the same binary in the same domain: only the failing one's denial counts."""
+    script = f"read -r line < {SECRET}; /usr/bin/sleep 3; exit 1"
+    unit = transient_unit("avc", [str(SHELL), "-c", script])
+    time.sleep(1)  # the failing unit's own denial comes first and teaches its domain
+    transient_unit("sib", [str(SHELL), "-c", f"read -r line < {SECRET}; /usr/bin/sleep 10"])
+
+    summary = wait_for(
+        lambda: next(
+            (
+                i
+                for i in ctl("incidents", "--unit", unit)["incidents"]
+                if i["kind"] == "unit_failed"
+            ),
+            None,
+        ),
+        30,
+        "the unit_failed incident",
+    )
+    bundle = ctl("show", summary["id"])["bundle"]
+    assert bundle["correlations"], bundle
+    assert {c["avc"]["unit_at_receipt"] for c in bundle["correlations"]} == {unit}, bundle
+
+    # Both processes were denied inside the window; only one of them is linked.
+    failed = bundle["incident"]["ts_us"]
+    pids = {
+        pid
+        for ts, pid in _denials("sentry_test_t")
+        if failed - 5_000_000 <= ts <= failed + 1_000_000
+    }
+    assert len(pids) >= 2, pids

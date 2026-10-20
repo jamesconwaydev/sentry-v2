@@ -6,6 +6,19 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A denial whose process was in another unit's cgroup when it arrived is
+  no longer scored against a failure. Two instances of a template unit
+  share a binary and a domain, so a sibling's denial used to be linked at
+  0.76. Denials whose cgroup couldn't be read still score on domain and
+  name.
+
+### Added
+
+- `examples/demo/run.sh sibling` stages that case: two instances of one
+  service, both denied, one failing.
+
 ## [0.2.2] - 2026-10-20
 
 ### Added

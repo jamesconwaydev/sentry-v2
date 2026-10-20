@@ -22,6 +22,13 @@ installed and Sentry-v2 running (see [Installation](../../docs/installation.md))
 It takes about a minute, most of it spent building the SELinux module.
 `PACE=0` drops the pauses between steps.
 
+`run.sh sibling` stages a harder case: two instances of one templated
+service, `demo-app@a…` and `demo-app@b…`, running the same binary in the
+same domain. Both are denied; only the first dies. The second instance's
+denial matches on domain and name, but its process sat in another unit's
+cgroup, so it stays out of the bundle. Sentry-v2 0.2.2 and earlier linked
+it at 0.76.
+
 ## What it does
 
 1. Builds and loads `sentry_demo.te`. It defines two confined domains,

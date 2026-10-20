@@ -9,7 +9,7 @@ cooldown = "1s"
 
 [policy.when]
 signal = "unit_failed"
-units = ["demo-app-*.service"]
+units = ["demo-app-*.service", "demo-app@*.service"]
 
 [[policy.do]]
 action = "notify"

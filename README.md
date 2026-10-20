@@ -251,14 +251,12 @@ The details, including the worst-case time a stop can take, are in
 A linked denial is a lead, not a verdict. Here's where the scoring can
 mislead you, and what happens when something underneath fails.
 
-- **Two copies of the same service.** Instances of a template unit
-  (`app@1`, `app@2`) share a domain and a binary. Once the correlator
-  knows that domain, a denial from one instance can score 0.76 against the
-  other's failure (domain and name, no cgroup), which clears the 0.5
-  cut-off. The reasons in the bundle show it: no `pid in unit cgroup`.
 - **A denial from a process that's already gone.** The cgroup is read when
   the denial arrives. If the process has exited by then, only the domain and
-  name can count.
+  name can count, and a sibling running the same binary in the same domain
+  (two instances of a template unit, say) can score 0.76 against the wrong
+  one. The reasons show it: no `pid in unit cgroup`. When the cgroup is
+  known and belongs to another unit, the denial is left out.
 - **Timing.** Only denials from 5 s before to 1 s after the failure count.
   A service that's denied early and dies later needs a wider
   `correlation.before`.

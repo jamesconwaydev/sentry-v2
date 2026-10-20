@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# One failing service, two SELinux denials and a memory hog, on a test box.
+# Stage a small incident on a test box and show what Sentry-v2 makes of it.
 #
-#   sudo examples/demo/run.sh        (PACE=0 to skip the pauses)
+#   sudo examples/demo/run.sh [unrelated|sibling]     (PACE=0 to skip the pauses)
+#
+# unrelated (the default): a memory hog, then two services in different
+# SELinux domains denied the same file at the same moment; one dies.
+# sibling: two instances of one templated service, same binary and domain,
+# both denied; only the first dies.
 #
 # Needs root on an EL10 VM you don't mind poking, with SELinux enforcing,
 # PSI on, selinux-policy-devel installed, and sentry-v2 running. Everything
@@ -21,6 +26,9 @@ SUFFIX=$(od -An -N4 -tx1 /dev/urandom | tr -d ' \n')
 APP=demo-app-$SUFFIX.service
 OTHER=demo-other-$SUFFIX.service
 HOG=demo-hog-$SUFFIX.service
+SIB_A=demo-app@a$SUFFIX.service
+SIB_B=demo-app@b$SUFFIX.service
+SCENARIO=${1:-unrelated}
 
 say() {
 	printf '\n\033[1;36m# %s\033[0m\n' "$*"
@@ -31,6 +39,10 @@ die() {
 	exit 1
 }
 
+case $SCENARIO in
+unrelated | sibling) ;;
+*) die "usage: run.sh [unrelated|sibling]" ;;
+esac
 [ "$(id -u)" = 0 ] || die "run me as root"
 [ "$(getenforce 2>/dev/null)" = Enforcing ] || die "SELinux has to be enforcing"
 [ -e /usr/share/selinux/devel/Makefile ] || die "needs selinux-policy-devel (dnf install selinux-policy-devel)"
@@ -41,7 +53,7 @@ sentry-v2ctl status >/dev/null || die "sentry-v2 isn't running (systemctl enable
 WORK=$(mktemp -d)
 cleanup() {
 	set +e
-	for unit in "$APP" "$OTHER" "$HOG"; do
+	for unit in "$APP" "$OTHER" "$HOG" "$SIB_A" "$SIB_B"; do
 		systemctl stop "$unit" 2>/dev/null
 		systemctl reset-failed "$unit" 2>/dev/null
 	done
@@ -72,8 +84,9 @@ print(next((i["id"] for i in json.load(sys.stdin)["incidents"] if i["kind"] == s
 	die "no $kind incident for $unit after $3 s"
 }
 
-# The part of a bundle worth reading in a terminal. argv[1] lists the
-# domains that were denied in the window, to show which ones were left out.
+# The part of a bundle worth reading in a terminal. argv[1] lists what else
+# was denied in the window, as domain:TYPE or unit:NAME, to show what was
+# left out.
 read -r -d '' EXCERPT <<'PY' || true
 import json, sys
 
@@ -87,18 +100,20 @@ if inc["kind"] == "unit_failed":
 best = {}
 for c in inc["correlations"]:
     a = c["avc"]
-    key = (a["scontext_type"], " ".join(a["perms"]), a["tcontext"].split(":")[2], a["comm"])
+    key = (a["scontext_type"], " ".join(a["perms"]), a["tcontext"].split(":")[2], a["comm"],
+           a["unit_at_receipt"] or "unknown unit")
     if key not in best or c["confidence"] > best[key]["confidence"]:
         best[key] = c
-seen = {key[0] for key in best}
-for (scontext, perms, tcontext, comm), c in best.items():
-    print(f"linked     {scontext} denied {perms} on {tcontext} (comm {comm})")
+seen = {f"domain:{key[0]}" for key in best} | {f"unit:{key[4]}" for key in best}
+for (scontext, perms, tcontext, comm, unit), c in best.items():
+    print(f"linked     {scontext} denied {perms} on {tcontext}")
+    print(f"           comm {comm}, in {unit}")
     print(f"           confidence {c['confidence']}")
     for reason in c["reasons"]:
         print(f"             + {reason}")
 for other in sys.argv[1].split():
     if other not in seen:
-        print(f"left out   {other}: denied in the same window, scored below min_confidence")
+        print(f"left out   {other.split(':', 1)[1]}: denied in the same window, not linked")
 for cgroup, res in b["context"]["psi"].items():
     if "memory" in res:
         m = res["memory"]["some"]
@@ -127,6 +142,30 @@ restorecon "$POLICY"
 sentry-v2ctl reload
 sentry-v2ctl policies | grep -E '^(POLICY|demo-)'
 
+if [ "$SCENARIO" = sibling ]; then
+	say "Two copies of one service: same binary, same SELinux domain. Only the first dies."
+	read -r sdate stime < <(LC_ALL=C date '+%x %T')
+	systemd-run --quiet --unit "$SIB_A" --slice "$SLICE" -- \
+		"$APP_BIN" -c "read -r line < $SECRET; sleep 3; exit 1"
+	sleep 1
+	systemd-run --quiet --unit "$SIB_B" --slice "$SLICE" -- \
+		"$APP_BIN" -c "read -r line < $SECRET; sleep 30"
+	failed=$(wait_incident "$SIB_A" unit_failed 30)
+	systemctl is-failed "$SIB_A" || true
+
+	say "What the audit log saw in that window"
+	LC_ALL=C ausearch --input-logs -m AVC -ts "$sdate" "$stime" --raw 2>/dev/null |
+		grep -o 'pid=[0-9]* comm="[^"]*".*scontext=[^ ]*' | sed -E 's/pid=([0-9]+) comm="([^"]+)".*scontext=[^:]+:[^:]+:([^:]+):.*/denied  \3  (comm \2, pid \1)/' |
+		sort | uniq -c || true
+
+	say "What Sentry-v2 made of it"
+	sentry-v2ctl --json show "$failed" | python3 -c "$EXCERPT" "unit:$SIB_B"
+
+	say "Full bundle, still on disk after this script cleans up:"
+	echo "sentry-v2ctl show $failed"
+	exit 0
+fi
+
 say "Start a memory hog: 80 MiB of churn under MemoryHigh=40M"
 systemd-run --quiet --unit "$HOG" --slice "$SLICE" \
 	-p MemoryHigh=40M -p MemorySwapMax=64M -p MemoryMax=96M -- python3 -c '
@@ -153,7 +192,7 @@ LC_ALL=C ausearch --input-logs -m AVC -ts "$sdate" "$stime" --raw 2>/dev/null |
 	sort | uniq -c || true
 
 say "What Sentry-v2 made of it: the failure"
-sentry-v2ctl --json show "$failed" | python3 -c "$EXCERPT" "sentry_demo_app_t sentry_demo_other_t"
+sentry-v2ctl --json show "$failed" | python3 -c "$EXCERPT" "domain:sentry_demo_other_t"
 
 say "And the memory hog"
 sentry-v2ctl --json show "$psi" | python3 -c "$EXCERPT" ""

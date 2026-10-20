@@ -54,6 +54,10 @@ def score(
     avc: AvcEvent, unit: str, unit_domain: str | None, exec_names: set[str]
 ) -> Correlation | None:
     """How likely `avc` belongs to `unit`, or None if nothing links them."""
+    if avc.unit_at_receipt is not None and avc.unit_at_receipt != unit:
+        # The process was seen in another unit, so a shared domain or binary
+        # (a sibling template instance, say) points away from this one.
+        return None
     found: list[tuple[str, float]] = []
     cgroup_leaf = (avc.cgroup_at_receipt or "").rstrip("/").rsplit("/", 1)[-1]
     if unit in (avc.unit_at_receipt, cgroup_leaf):

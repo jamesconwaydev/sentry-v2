@@ -148,6 +148,34 @@ def test_avc_from_other_unit_excluded() -> None:
     assert score(other, "web.service", "httpd_t", {"httpd"}) is None
 
 
+def test_sibling_instance_with_same_domain_and_binary_excluded() -> None:
+    own = avc(
+        T - 2 * S, cgroup_at_receipt="system.slice/web@a.service", unit_at_receipt="web@a.service"
+    )
+    sibling = avc(
+        T - S,
+        pid=43,
+        cgroup_at_receipt="system.slice/web@b.service",
+        unit_at_receipt="web@b.service",
+    )
+    clock = Clock(T)
+    c = correlator(clock)
+    for e in (own, sibling, failed(T, unit="web@a.service")):
+        assert c.ingest(e) == []
+    (inc,) = c.tick(T + S)
+    # the sibling shares httpd_t and the httpd binary, but its process sat in
+    # another unit's cgroup: that's evidence against, not a 0.76 link
+    assert [x.avc.unit_at_receipt for x in inc.correlations] == ["web@a.service"]
+    assert score(sibling, "web@a.service", "httpd_t", {"httpd"}) is None
+
+
+def test_unknown_cgroup_still_scores_on_domain_and_binary() -> None:
+    gone = avc(T - S, cgroup_at_receipt=None, unit_at_receipt=None)
+    c = score(gone, "web.service", "httpd_t", {"httpd"})
+    assert c is not None
+    assert c.confidence == pytest.approx(0.76)
+
+
 def test_pid_exited_before_failure_still_matches_by_receipt_cgroup() -> None:
     gone = avc(T - S, unit_at_receipt=None, cgroup_at_receipt="system.slice/web.service")
     c = score(gone, "web.service", None, set())

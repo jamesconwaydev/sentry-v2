@@ -73,6 +73,13 @@ at 0.8 or above makes the bundle's severity at least `warning`.
 The cgroup is read from `/proc/<pid>/cgroup` the moment the denial arrives,
 because by the time the unit has failed the process is usually gone.
 
+If that cgroup belongs to a different unit, the denial isn't scored at all.
+Two instances of a template unit (`app@a`, `app@b`) run the same binary in
+the same domain, so without this rule a denial from `app@b` would score
+0.76 against `app@a`'s failure on domain and name alone. When the cgroup
+couldn't be read, because the process had already exited, the domain and
+name still count.
+
 For the name check, systemd's `(name)` form of a process about to exec is
 unwrapped, and executables under `/usr/lib/systemd/` are ignored: a denied
 exec is reported against `systemd-executor`, which says nothing about the
