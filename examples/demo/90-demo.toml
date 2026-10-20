@@ -1,0 +1,37 @@
+# Policies for examples/demo/run.sh. Both are dry-run: they record what they
+# would do and write a bundle, and never touch a unit. run.sh installs this
+# file for the length of the demo and removes it afterwards.
+
+[[policy]]
+name = "demo-app-failed"
+mode = "dry-run"
+cooldown = "1s"
+
+[policy.when]
+signal = "unit_failed"
+units = ["demo-app-*.service"]
+
+[[policy.do]]
+action = "notify"
+
+[[policy]]
+name = "demo-memory-throttle"
+mode = "dry-run"
+cooldown = "10m"
+
+[policy.when]
+signal = "psi"
+resource = "memory"
+kind = "some"
+threshold = "100ms/2s"
+sustained = "2s"
+cgroups = ["sentry.slice/sentry-test.slice/demo-hog-*.service"]
+
+[[policy.do]]
+action = "throttle"
+memory_high = "80%"
+cpu_weight = 50
+duration = "5m"
+
+[[policy.do]]
+action = "notify"

@@ -1,0 +1,312 @@
+{
+  "schema": "sentry-v2/bundle/1",
+  "id": "01a15ac8-3e9a-714e-9bc9-9ab28a32779e",
+  "ts": "2026-10-20T19:27:15.098766Z",
+  "severity": "warning",
+  "host": {
+    "hostname": "rocky10-test-vm",
+    "machine_id": "00000000000000000000000000000000",
+    "kernel": "6.12.0-211.16.1.el10_2.0.1.x86_64",
+    "os_release": "Rocky Linux 10.2 (Red Quartz)"
+  },
+  "incident": {
+    "id": "01a15ac8-3e4b-711f-8d2f-68f8f88d772e",
+    "kind": "unit_failed",
+    "ts_us": 1792524433872461,
+    "target": "demo-app-99ae0869.service",
+    "trigger": {
+      "ts_us": 1792524433872461,
+      "source": "journal",
+      "unit": "demo-app-99ae0869.service",
+      "kind": "failed",
+      "result": "exit-code",
+      "exit_code": null,
+      "exit_status": null,
+      "invocation_id": "96155b16ef074d398d9c249d632a57cd",
+      "main_pid": null
+    },
+    "related": [
+      {
+        "ts_us": 1792524433869900,
+        "source": "journal",
+        "unit": "demo-app-99ae0869.service",
+        "kind": "exited",
+        "result": null,
+        "exit_code": "exited",
+        "exit_status": "1",
+        "invocation_id": "96155b16ef074d398d9c249d632a57cd",
+        "main_pid": null
+      }
+    ],
+    "correlations": [
+      {
+        "avc": {
+          "ts_us": 1792524431831000,
+          "source": "audit",
+          "serial": 251569,
+          "denied": true,
+          "perms": [
+            "read"
+          ],
+          "scontext": "system_u:system_r:sentry_demo_app_t:s0",
+          "scontext_type": "sentry_demo_app_t",
+          "tcontext": "unconfined_u:object_r:sentry_demo_secret_t:s0",
+          "tclass": "file",
+          "comm": "sentry-demo-app",
+          "exe": "/usr/local/libexec/sentry-demo-app",
+          "pid": 1300995,
+          "permissive": false,
+          "cgroup_at_receipt": "sentry.slice/sentry-test.slice/demo-app-99ae0869.service",
+          "unit_at_receipt": "demo-app-99ae0869.service",
+          "raw": "verdict=denied perms=read pid=1300995 comm=sentry-demo-app name=sentry-demo-secret dev=vda1 ino=25294594 scontext=system_u:system_r:sentry_demo_app_t:s0 tcontext=unconfined_u:object_r:sentry_demo_secret_t:s0 tclass=file permissive=0"
+        },
+        "confidence": 0.94,
+        "reasons": [
+          "pid in unit cgroup",
+          "comm matches ExecStart"
+        ]
+      },
+      {
+        "avc": {
+          "ts_us": 1792524431832000,
+          "source": "audit",
+          "serial": 251570,
+          "denied": true,
+          "perms": [
+            "read"
+          ],
+          "scontext": "system_u:system_r:sentry_demo_app_t:s0",
+          "scontext_type": "sentry_demo_app_t",
+          "tcontext": "unconfined_u:object_r:sentry_demo_secret_t:s0",
+          "tclass": "file",
+          "comm": "sentry-demo-app",
+          "exe": "/usr/local/libexec/sentry-demo-app",
+          "pid": 1300995,
+          "permissive": false,
+          "cgroup_at_receipt": "sentry.slice/sentry-test.slice/demo-app-99ae0869.service",
+          "unit_at_receipt": "demo-app-99ae0869.service",
+          "raw": "verdict=denied perms=read pid=1300995 comm=sentry-demo-app name=sentry-demo-secret dev=vda1 ino=25294594 scontext=system_u:system_r:sentry_demo_app_t:s0 tcontext=unconfined_u:object_r:sentry_demo_secret_t:s0 tclass=file permissive=0"
+        },
+        "confidence": 0.976,
+        "reasons": [
+          "pid in unit cgroup",
+          "scontext type matches unit domain",
+          "comm matches ExecStart"
+        ]
+      }
+    ],
+    "sustained": null
+  },
+  "context": {
+    "psi": {
+      "sentry.slice/sentry-test.slice": {
+        "memory": {
+          "some": {
+            "avg10": 12.15,
+            "avg60": 4.2,
+            "avg300": 3.1,
+            "total_us": 16376930
+          },
+          "full": {
+            "avg10": 12.15,
+            "avg60": 4.18,
+            "avg300": 3.07,
+            "total_us": 16258193
+          }
+        },
+        "cpu": {
+          "some": {
+            "avg10": 13.47,
+            "avg60": 4.68,
+            "avg300": 4.47,
+            "total_us": 28027621
+          },
+          "full": {
+            "avg10": 13.47,
+            "avg60": 4.64,
+            "avg300": 3.93,
+            "total_us": 23130345
+          }
+        },
+        "io": {
+          "some": {
+            "avg10": 32.92,
+            "avg60": 11.1,
+            "avg300": 9.14,
+            "total_us": 51234222
+          },
+          "full": {
+            "avg10": 32.62,
+            "avg60": 11.03,
+            "avg300": 9.12,
+            "total_us": 51125238
+          }
+        }
+      },
+      "sentry.slice": {
+        "memory": {
+          "some": {
+            "avg10": 12.15,
+            "avg60": 4.2,
+            "avg300": 3.1,
+            "total_us": 16376930
+          },
+          "full": {
+            "avg10": 12.15,
+            "avg60": 4.18,
+            "avg300": 3.07,
+            "total_us": 16258193
+          }
+        },
+        "cpu": {
+          "some": {
+            "avg10": 13.47,
+            "avg60": 4.68,
+            "avg300": 4.47,
+            "total_us": 28028727
+          },
+          "full": {
+            "avg10": 13.47,
+            "avg60": 4.64,
+            "avg300": 3.93,
+            "total_us": 23131451
+          }
+        },
+        "io": {
+          "some": {
+            "avg10": 32.92,
+            "avg60": 11.1,
+            "avg300": 9.14,
+            "total_us": 51234936
+          },
+          "full": {
+            "avg10": 32.62,
+            "avg60": 11.03,
+            "avg300": 9.12,
+            "total_us": 51125952
+          }
+        }
+      }
+    },
+    "unit": {
+      "memory_high": 18446744073709551615,
+      "cpu_weight": 18446744073709551615,
+      "freezer_state": "running",
+      "active_state": "failed",
+      "main_pid": 0,
+      "fragment_path": "/run/systemd/transient/demo-app-99ae0869.service",
+      "drop_in_paths": [],
+      "exec_start": [
+        "/usr/local/libexec/sentry-demo-app"
+      ],
+      "cgroup": "",
+      "slice": "sentry-test.slice"
+    },
+    "journal": [
+      {
+        "ts_us": 1792524431789996,
+        "priority": 6,
+        "message": "Started demo-app-99ae0869.service - [systemd-run] /usr/local/libexec/sentry-demo-app -c \"echo 'loading config'; read -r line < /usr/local/libexec/sentry-demo-secret; sleep 2; exit 1\"."
+      },
+      {
+        "ts_us": 1792524431831592,
+        "priority": 6,
+        "message": "loading config"
+      },
+      {
+        "ts_us": 1792524431842487,
+        "priority": 6,
+        "message": "/usr/local/libexec/sentry-demo-app: line 1: /usr/local/libexec/sentry-demo-secret: Permission denied"
+      },
+      {
+        "ts_us": 1792524433869900,
+        "priority": 5,
+        "message": "demo-app-99ae0869.service: Main process exited, code=exited, status=1/FAILURE"
+      },
+      {
+        "ts_us": 1792524433872461,
+        "priority": 4,
+        "message": "demo-app-99ae0869.service: Failed with result 'exit-code'."
+      }
+    ]
+  },
+  "correlations": [
+    {
+      "avc": {
+        "ts_us": 1792524431831000,
+        "source": "audit",
+        "serial": 251569,
+        "denied": true,
+        "perms": [
+          "read"
+        ],
+        "scontext": "system_u:system_r:sentry_demo_app_t:s0",
+        "scontext_type": "sentry_demo_app_t",
+        "tcontext": "unconfined_u:object_r:sentry_demo_secret_t:s0",
+        "tclass": "file",
+        "comm": "sentry-demo-app",
+        "exe": "/usr/local/libexec/sentry-demo-app",
+        "pid": 1300995,
+        "permissive": false,
+        "cgroup_at_receipt": "sentry.slice/sentry-test.slice/demo-app-99ae0869.service",
+        "unit_at_receipt": "demo-app-99ae0869.service",
+        "raw": "verdict=denied perms=read pid=1300995 comm=sentry-demo-app name=sentry-demo-secret dev=vda1 ino=25294594 scontext=system_u:system_r:sentry_demo_app_t:s0 tcontext=unconfined_u:object_r:sentry_demo_secret_t:s0 tclass=file permissive=0"
+      },
+      "confidence": 0.94,
+      "reasons": [
+        "pid in unit cgroup",
+        "comm matches ExecStart"
+      ]
+    },
+    {
+      "avc": {
+        "ts_us": 1792524431832000,
+        "source": "audit",
+        "serial": 251570,
+        "denied": true,
+        "perms": [
+          "read"
+        ],
+        "scontext": "system_u:system_r:sentry_demo_app_t:s0",
+        "scontext_type": "sentry_demo_app_t",
+        "tcontext": "unconfined_u:object_r:sentry_demo_secret_t:s0",
+        "tclass": "file",
+        "comm": "sentry-demo-app",
+        "exe": "/usr/local/libexec/sentry-demo-app",
+        "pid": 1300995,
+        "permissive": false,
+        "cgroup_at_receipt": "sentry.slice/sentry-test.slice/demo-app-99ae0869.service",
+        "unit_at_receipt": "demo-app-99ae0869.service",
+        "raw": "verdict=denied perms=read pid=1300995 comm=sentry-demo-app name=sentry-demo-secret dev=vda1 ino=25294594 scontext=system_u:system_r:sentry_demo_app_t:s0 tcontext=unconfined_u:object_r:sentry_demo_secret_t:s0 tclass=file permissive=0"
+      },
+      "confidence": 0.976,
+      "reasons": [
+        "pid in unit cgroup",
+        "scontext type matches unit domain",
+        "comm matches ExecStart"
+      ]
+    }
+  ],
+  "decision": {
+    "policy": "demo-app-failed",
+    "mode": "dry-run",
+    "actions": [
+      {
+        "id": "01a15ac8-3e4c-71f8-a024-2c59cc198605",
+        "policy": "demo-app-failed",
+        "action": "notify",
+        "target": "demo-app-99ae0869.service",
+        "mode": "dry-run",
+        "status": "dry_run",
+        "previous": {},
+        "applied_at": null,
+        "expires_at": null,
+        "error": null,
+        "incident_id": "01a15ac8-3e4b-711f-8d2f-68f8f88d772e",
+        "configured_mode": "dry-run",
+        "params": {},
+        "backup_id": null
+      }
+    ]
+  }
+}

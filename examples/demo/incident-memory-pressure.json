@@ -1,0 +1,249 @@
+{
+  "schema": "sentry-v2/bundle/1",
+  "id": "01a15ac8-252a-71c1-83d3-4540dbd43be1",
+  "ts": "2026-10-20T19:27:08.586962Z",
+  "severity": "info",
+  "host": {
+    "hostname": "rocky10-test-vm",
+    "machine_id": "00000000000000000000000000000000",
+    "kernel": "6.12.0-211.16.1.el10_2.0.1.x86_64",
+    "os_release": "Rocky Linux 10.2 (Red Quartz)"
+  },
+  "incident": {
+    "id": "01a15ac8-2442-7075-97c2-faa251abe093",
+    "kind": "psi",
+    "ts_us": 1792524428353273,
+    "target": "sentry.slice/sentry-test.slice/demo-hog-99ae0869.service",
+    "trigger": {
+      "ts_us": 1792524428353273,
+      "source": "psi",
+      "cgroup": "sentry.slice/sentry-test.slice/demo-hog-99ae0869.service",
+      "resource": "memory",
+      "kind": "some",
+      "avg10": 9.04,
+      "avg60": 1.82,
+      "avg300": 0.38,
+      "total_us": 1188293,
+      "triggered": true,
+      "stall_us": 100000,
+      "window_us": 2000000
+    },
+    "related": [
+      {
+        "ts_us": 1792524426854069,
+        "source": "psi",
+        "cgroup": "sentry.slice/sentry-test.slice/demo-hog-99ae0869.service",
+        "resource": "memory",
+        "kind": "some",
+        "avg10": 7.06,
+        "avg60": 1.27,
+        "avg300": 0.26,
+        "total_us": 967258,
+        "triggered": false,
+        "stall_us": null,
+        "window_us": null
+      }
+    ],
+    "correlations": [],
+    "sustained": 2.0
+  },
+  "context": {
+    "psi": {
+      "sentry.slice/sentry-test.slice/demo-hog-99ae0869.service": {
+        "memory": {
+          "some": {
+            "avg10": 9.04,
+            "avg60": 1.82,
+            "avg300": 0.38,
+            "total_us": 1224632
+          },
+          "full": {
+            "avg10": 9.04,
+            "avg60": 1.82,
+            "avg300": 0.38,
+            "total_us": 1224632
+          }
+        },
+        "cpu": {
+          "some": {
+            "avg10": 8.35,
+            "avg60": 1.69,
+            "avg300": 0.36,
+            "total_us": 1157013
+          },
+          "full": {
+            "avg10": 8.35,
+            "avg60": 1.69,
+            "avg300": 0.36,
+            "total_us": 1157013
+          }
+        },
+        "io": {
+          "some": {
+            "avg10": 14.61,
+            "avg60": 2.75,
+            "avg300": 0.58,
+            "total_us": 1889575
+          },
+          "full": {
+            "avg10": 14.61,
+            "avg60": 2.75,
+            "avg300": 0.58,
+            "total_us": 1889575
+          }
+        }
+      },
+      "sentry.slice/sentry-test.slice": {
+        "memory": {
+          "some": {
+            "avg10": 8.45,
+            "avg60": 2.89,
+            "avg300": 2.81,
+            "total_us": 15222027
+          },
+          "full": {
+            "avg10": 8.45,
+            "avg60": 2.87,
+            "avg300": 2.79,
+            "total_us": 15104860
+          }
+        },
+        "cpu": {
+          "some": {
+            "avg10": 7.76,
+            "avg60": 3.07,
+            "avg300": 4.15,
+            "total_us": 26518619
+          },
+          "full": {
+            "avg10": 7.76,
+            "avg60": 3.02,
+            "avg300": 3.59,
+            "total_us": 21638692
+          }
+        },
+        "io": {
+          "some": {
+            "avg10": 14.16,
+            "avg60": 6.39,
+            "avg300": 8.17,
+            "total_us": 47666961
+          },
+          "full": {
+            "avg10": 14.16,
+            "avg60": 6.38,
+            "avg300": 8.15,
+            "total_us": 47596050
+          }
+        }
+      },
+      "sentry.slice": {
+        "memory": {
+          "some": {
+            "avg10": 8.45,
+            "avg60": 2.89,
+            "avg300": 2.81,
+            "total_us": 15223812
+          },
+          "full": {
+            "avg10": 8.45,
+            "avg60": 2.87,
+            "avg300": 2.79,
+            "total_us": 15106645
+          }
+        },
+        "cpu": {
+          "some": {
+            "avg10": 7.76,
+            "avg60": 3.07,
+            "avg300": 4.15,
+            "total_us": 26519537
+          },
+          "full": {
+            "avg10": 7.76,
+            "avg60": 3.02,
+            "avg300": 3.59,
+            "total_us": 21639609
+          }
+        },
+        "io": {
+          "some": {
+            "avg10": 14.16,
+            "avg60": 6.39,
+            "avg300": 8.17,
+            "total_us": 47666708
+          },
+          "full": {
+            "avg10": 14.16,
+            "avg60": 6.38,
+            "avg300": 8.15,
+            "total_us": 47595797
+          }
+        }
+      }
+    },
+    "unit": {
+      "memory_high": 41943040,
+      "cpu_weight": 18446744073709551615,
+      "freezer_state": "running",
+      "active_state": "active",
+      "main_pid": 1300928,
+      "fragment_path": "/run/systemd/transient/demo-hog-99ae0869.service",
+      "drop_in_paths": [],
+      "exec_start": [
+        "/bin/python3"
+      ],
+      "cgroup": "sentry.slice/sentry-test.slice/demo-hog-99ae0869.service",
+      "slice": "sentry-test.slice"
+    },
+    "journal": [
+      {
+        "ts_us": 1792524424280613,
+        "priority": 6,
+        "message": "Started demo-hog-99ae0869.service - [systemd-run] /bin/python3 -c \"\\nb = bytearray(80 << 20)\\nwhile True:\\n    for i in range(0, len(b), 4096):\\n        b[i] = (b[i] + 1) & 255\\n\"."
+      }
+    ]
+  },
+  "correlations": [],
+  "decision": {
+    "policy": "demo-memory-throttle",
+    "mode": "dry-run",
+    "actions": [
+      {
+        "id": "01a15ac8-2443-71db-962e-a7ddfc88c99c",
+        "policy": "demo-memory-throttle",
+        "action": "throttle",
+        "target": "demo-hog-99ae0869.service",
+        "mode": "dry-run",
+        "status": "dry_run",
+        "previous": {},
+        "applied_at": null,
+        "expires_at": null,
+        "error": null,
+        "incident_id": "01a15ac8-2442-7075-97c2-faa251abe093",
+        "configured_mode": "dry-run",
+        "params": {
+          "memory_high": "80%",
+          "cpu_weight": 50
+        },
+        "backup_id": null
+      },
+      {
+        "id": "01a15ac8-2487-706f-a608-964304a27499",
+        "policy": "demo-memory-throttle",
+        "action": "notify",
+        "target": "demo-hog-99ae0869.service",
+        "mode": "dry-run",
+        "status": "dry_run",
+        "previous": {},
+        "applied_at": null,
+        "expires_at": null,
+        "error": null,
+        "incident_id": "01a15ac8-2442-7075-97c2-faa251abe093",
+        "configured_mode": "dry-run",
+        "params": {},
+        "backup_id": null
+      }
+    ]
+  }
+}

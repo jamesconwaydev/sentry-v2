@@ -1,0 +1,32 @@
+policy_module(sentry_demo, 1.0.0)
+
+# Two confined domains for examples/demo/run.sh. Neither may read
+# sentry_demo_secret_t, so each gets one AVC denial when it tries.
+# run.sh removes this module when it finishes.
+
+type sentry_demo_app_t;
+type sentry_demo_app_exec_t;
+init_daemon_domain(sentry_demo_app_t, sentry_demo_app_exec_t)
+
+type sentry_demo_other_t;
+type sentry_demo_other_exec_t;
+init_daemon_domain(sentry_demo_other_t, sentry_demo_other_exec_t)
+
+type sentry_demo_secret_t;
+files_type(sentry_demo_secret_t)
+
+# Enough to run bash and sleep, nothing more. bash looks up its user in
+# /etc/passwd at start, which would add a second denial to the story.
+corecmd_exec_bin(sentry_demo_app_t)
+libs_use_ld_so(sentry_demo_app_t)
+libs_use_shared_libs(sentry_demo_app_t)
+miscfiles_read_localization(sentry_demo_app_t)
+files_read_etc_files(sentry_demo_app_t)
+auth_read_passwd(sentry_demo_app_t)
+
+corecmd_exec_bin(sentry_demo_other_t)
+libs_use_ld_so(sentry_demo_other_t)
+libs_use_shared_libs(sentry_demo_other_t)
+miscfiles_read_localization(sentry_demo_other_t)
+files_read_etc_files(sentry_demo_other_t)
+auth_read_passwd(sentry_demo_other_t)

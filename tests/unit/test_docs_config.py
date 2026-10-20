@@ -15,7 +15,8 @@ from sentry_v2.config_types import Config
 
 ROOT = Path(__file__).parents[2]
 DOCS = ROOT / "docs"
-PAGES = sorted([ROOT / "README.md", ROOT / "CHANGELOG.md", *DOCS.glob("*.md")])
+DEMO = ROOT / "examples" / "demo"
+PAGES = sorted([ROOT / "README.md", ROOT / "CHANGELOG.md", *DOCS.glob("*.md"), DEMO / "README.md"])
 
 
 def _fields(cls: type, prefix: str = "") -> list[str]:
@@ -64,10 +65,25 @@ def test_policy_examples_load(block: str, tmp_path: Path) -> None:
     assert cfg.policies
 
 
+def test_demo_policies_load_and_never_enforce(tmp_path: Path) -> None:
+    (tmp_path / "sentry-v2.toml").write_text("")
+    cfg = load_config(tmp_path / "sentry-v2.toml", DEMO)
+    assert [p.name for p in cfg.policies] == ["demo-app-failed", "demo-memory-throttle"]
+    assert {p.mode for p in cfg.policies} == {"dry-run"}
+
+
 def test_example_bundle_matches_schema() -> None:
     schema = json.loads((DOCS / "reference" / "bundle.schema.json").read_text())
     (example,) = _blocks(DOCS / "bundles.md", "json")
     jsonschema.validate(json.loads(example), schema)
+
+
+def test_demo_bundles_match_schema() -> None:
+    schema = json.loads((DOCS / "reference" / "bundle.schema.json").read_text())
+    bundles = sorted(DEMO.glob("incident-*.json"))
+    assert len(bundles) == 2
+    for path in bundles:
+        jsonschema.validate(json.loads(path.read_text()), schema)
 
 
 def _slug(heading: str) -> str:

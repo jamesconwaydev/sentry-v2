@@ -6,6 +6,15 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `examples/demo/`: a script that stages a failure, two SELinux denials
+  and a memory hog on a test VM and shows what Sentry-v2 makes of them, in
+  dry-run, then cleans up. Two bundles captured from it on a Rocky 10 VM
+  sit next to it, with a recording in `assets/demo.gif`.
+- An integration test that starts an unrelated denied service in the same
+  window as a failing one and checks its denial stays out of the bundle.
+
 ### Fixed
 
 - A bundle for a failed unit outside `system.slice` showed pressure for

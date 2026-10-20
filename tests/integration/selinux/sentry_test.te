@@ -1,12 +1,18 @@
-policy_module(sentry_test, 1.0.0)
+policy_module(sentry_test, 1.1.0)
 
 # test_avc_correlation.py: a confined domain that is denied one file. The
 # test labels a copy of bash sentry_test_exec_t, runs it as a unit, and
 # expects the denial on sentry_test_secret_t to be tied to that unit.
+# sentry_test_other_t is a second domain, denied the same file from a
+# different unit at the same moment, which must be left out of the bundle.
 
 type sentry_test_t;
 type sentry_test_exec_t;
 init_daemon_domain(sentry_test_t, sentry_test_exec_t)
+
+type sentry_test_other_t;
+type sentry_test_other_exec_t;
+init_daemon_domain(sentry_test_other_t, sentry_test_other_exec_t)
 
 type sentry_test_secret_t;
 files_type(sentry_test_secret_t)
@@ -17,3 +23,9 @@ libs_use_ld_so(sentry_test_t)
 libs_use_shared_libs(sentry_test_t)
 miscfiles_read_localization(sentry_test_t)
 files_read_etc_files(sentry_test_t)
+
+corecmd_exec_bin(sentry_test_other_t)
+libs_use_ld_so(sentry_test_other_t)
+libs_use_shared_libs(sentry_test_other_t)
+miscfiles_read_localization(sentry_test_other_t)
+files_read_etc_files(sentry_test_other_t)
