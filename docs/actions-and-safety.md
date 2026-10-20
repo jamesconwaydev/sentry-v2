@@ -29,11 +29,13 @@ Before it changes anything, the daemon reads the unit's current
 it lives under `/run` and is gone after a reboot even if every other
 safeguard failed.
 
-On rollback the daemon reads the properties again. If any value it wrote
-has changed since, someone else made that change on purpose, so it's left
-alone and the record notes `changed since; left as is`. Otherwise the
-original values are written back exactly as systemd reported them,
-including "unset".
+On rollback the daemon reads the properties again and looks at each value
+on its own. One that still holds what the throttle wrote gets its original
+value back, exactly as systemd reported it, including "unset". One that
+someone has changed since is theirs and is left alone, and the record
+names it: `cpu_weight changed since; left as is`. So if you raise
+`CPUWeight` by hand during a throttle, your weight stays and `MemoryHigh`
+still goes back.
 
 ### `freeze`
 
@@ -99,7 +101,7 @@ transition and the newest line for an id wins.
 |---|---|
 | `planned` | Written, with the values to restore, before the D-Bus call. |
 | `applied` | systemd accepted the change. Throttles and freezes now have an `expires_at`. |
-| `rolled_back` | Undone. `error` may carry a note, such as `unit gone`, `unit inactive` or `changed since; left as is`. |
+| `rolled_back` | Undone. `error` may carry a note, such as `unit gone`, `unit inactive` or `cpu_weight changed since; left as is`. |
 | `failed` | Not applied. `error` says why: `protected`, `slice actions need protection.allow_slices`, `held after repeated actions; …`, `limit`, `already active`, `rollback pending`, `unit not found`, `no unit target` and so on. |
 | `rollback_failed` | Every rollback attempt failed. See [Stuck rollbacks](#stuck-rollbacks). |
 | `dry_run` | What would have happened, with `params` showing what would have been written. |

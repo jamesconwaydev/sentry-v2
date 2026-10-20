@@ -125,17 +125,27 @@ CHANGED_SINCE = "changed since; left as is"
 async def rollback(rec: ActionRecord, mgr: SystemdManager) -> str | None:
     """Undo `rec`. Returns a note when there was nothing (or nothing safe) to undo.
 
-    A throttle is restored only while every value it wrote is still in
-    place; if someone changed one since, their change wins and nothing is
-    written. Raises on failure.
+    A throttle puts back each value that still holds what it wrote. A value
+    someone changed since is theirs and is left alone, and the note names
+    it; one that is already back (an apply that never took) needs nothing.
+    Raises on failure.
     """
     try:
         if rec.action == "throttle":
             props = await mgr.get_properties(rec.target)
-            if any(getattr(props, k) != rec.params.get(k) for k in rec.previous):
-                return CHANGED_SINCE
-            prev = rec.previous
-            await mgr.set_properties(rec.target, prev.get("memory_high"), prev.get("cpu_weight"))
+            restore, theirs = {}, []
+            for k, prev in rec.previous.items():
+                now = getattr(props, k)
+                if now == rec.params.get(k):
+                    restore[k] = prev
+                elif now != prev:
+                    theirs.append(k)
+            if restore:
+                await mgr.set_properties(
+                    rec.target, restore.get("memory_high"), restore.get("cpu_weight")
+                )
+            if theirs:
+                return f"{', '.join(theirs)} {CHANGED_SINCE}"
         elif rec.action == "freeze":
             await mgr.thaw(rec.target)
     except UnitNotFound:

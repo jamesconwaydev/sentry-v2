@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import pytest
 
-from conftest import records_for, show, wait_for
+from conftest import records_for, sh, show, wait_for
 
 pytestmark = pytest.mark.integration
 
@@ -39,3 +39,16 @@ def test_throttle_applies_and_rolls_back(transient_unit: Callable[..., str]) -> 
 
     wait_for(lambda: _status(unit, "rolled_back"), 50, "the throttle to expire")
     assert {p: show(unit, p) for p in before} == before
+
+
+def test_hand_edit_is_kept_and_the_rest_rolled_back(transient_unit: Callable[..., str]) -> None:
+    unit = transient_unit("throttle", ["python3", "-c", HOG], "MemoryHigh=40M", "MemorySwapMax=64M")
+    before = show(unit, "MemoryHigh")
+
+    wait_for(lambda: _status(unit, "applied"), 90, "the throttle to be applied")
+    sh("systemctl", "set-property", "--runtime", unit, "CPUWeight=77")
+
+    rec = wait_for(lambda: _status(unit, "rolled_back"), 50, "the throttle to expire")
+    assert rec["error"] == "cpu_weight changed since; left as is"
+    assert show(unit, "CPUWeight") == "77"  # theirs
+    assert show(unit, "MemoryHigh") == before  # ours, put back

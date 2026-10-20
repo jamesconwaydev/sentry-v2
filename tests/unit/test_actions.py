@@ -67,8 +67,30 @@ def test_throttle_rollback_skips_if_changed(tmp_path: Path) -> None:
     r = dataclasses.replace(
         rec("throttle", {"memory_high": UNSET}), params={"memory_high": 64 * MiB}
     )
-    assert run(actions.rollback(r, mgr)) == "changed since; left as is"
+    assert run(actions.rollback(r, mgr)) == "memory_high changed since; left as is"
     assert mgr.units[UNIT].memory_high == 999
+    assert [c[0] for c in mgr.calls] == ["get_properties"]
+
+
+def test_throttle_rollback_restores_the_values_nobody_touched() -> None:
+    # throttled to 48M / 10, then someone set CPUWeight=77 by hand
+    mgr = fake(memory_high=48 * MiB, cpu_weight=77)
+    r = dataclasses.replace(
+        rec("throttle", {"memory_high": 40 * MiB, "cpu_weight": UNSET}),
+        params={"memory_high": 48 * MiB, "cpu_weight": 10},
+    )
+    assert run(actions.rollback(r, mgr)) == "cpu_weight changed since; left as is"
+    assert (mgr.units[UNIT].memory_high, mgr.units[UNIT].cpu_weight) == (40 * MiB, 77)
+
+
+def test_throttle_rollback_skips_values_already_back() -> None:
+    # apply never took effect: nothing to write, and nobody changed anything
+    mgr = fake(memory_high=40 * MiB, cpu_weight=100)
+    r = dataclasses.replace(
+        rec("throttle", {"memory_high": 40 * MiB, "cpu_weight": 100}),
+        params={"memory_high": 48 * MiB, "cpu_weight": 10},
+    )
+    assert run(actions.rollback(r, mgr)) is None
     assert [c[0] for c in mgr.calls] == ["get_properties"]
 
 

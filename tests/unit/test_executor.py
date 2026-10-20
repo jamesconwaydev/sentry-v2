@@ -649,7 +649,7 @@ def test_unexpected_error_compensated_and_plan_continues(h: Harness) -> None:
         # set_properties never took effect, so the values differ from what was written
         assert (final.status, final.error) == (
             "rolled_back",
-            "apply outcome unknown: RuntimeError; changed since; left as is",
+            "apply outcome unknown: RuntimeError",
         )
 
     run(main)
@@ -794,10 +794,18 @@ def test_throttle_left_alone_if_changed_since(h: Harness, caplog: pytest.LogCapt
         h.mgr.units[UNIT] = dataclasses.replace(h.mgr.units[UNIT], memory_high=8 * 1024 * MiB)
         await h.clock.advance(60)
         final = h.journal.load()[rec.id]
-        assert (final.status, final.error) == ("rolled_back", "changed since; left as is")
+        assert (final.status, final.error) == (
+            "rolled_back",
+            "memory_high changed since; left as is",
+        )
 
     run(main)
-    assert [c[0] for c in h.mgr.calls].count("set_properties") == 1
+    # the apply, then the rollback of cpu_weight alone, which nobody touched
+    assert [c[1:] for c in h.mgr.calls if c[0] == "set_properties"][-1] == (
+        UNIT,
+        "None",
+        str(h.journal.load()[rec_id[0]].previous["cpu_weight"]),
+    )
     assert h.mgr.units[UNIT].memory_high == 8 * 1024 * MiB
     [warning] = [r for r in caplog.records if "changed since" in r.getMessage()]
     assert warning.levelname == "WARNING"

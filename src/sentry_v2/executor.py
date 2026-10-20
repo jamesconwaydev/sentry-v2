@@ -442,7 +442,7 @@ class Executor:
                     error = str(e)
                     log.warning("rollback %s attempt %d failed: %s", rec_id, attempt + 1, e)
                     continue
-                if note == actions.CHANGED_SINCE:
+                if note and note.endswith(actions.CHANGED_SINCE):
                     log.warning(
                         "rollback %s on %s: %s (changed by someone else)", rec_id, rec.target, note
                     )

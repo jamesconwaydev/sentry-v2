@@ -6,6 +6,14 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- A throttle's rollback now looks at each value on its own. Before, if
+  you changed `CPUWeight` by hand during a throttle, the whole rollback was
+  skipped and `MemoryHigh` stayed at the throttled value until the next
+  reboot, while the record said `rolled_back`. Now your `CPUWeight` stays,
+  `MemoryHigh` goes back, and the note names the value left alone.
+
 ### Fixed
 
 - A daemon that was killed or crashed while holding a throttle or freeze,
