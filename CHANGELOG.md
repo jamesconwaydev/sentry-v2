@@ -6,6 +6,12 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The Cockpit page said a throttle or freeze rolls back "now" when it had
+  up to a minute left. It now says "in under a minute", or "just now" for
+  something that has passed.
+
 ### Added
 
 - Property-based fuzz tests, with Hypothesis, for every parser that reads
