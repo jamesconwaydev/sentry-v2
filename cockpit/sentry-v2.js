@@ -227,8 +227,10 @@ function when(value) {
 
 function relative(epochSeconds) {
     if (!isNum(epochSeconds)) return "–";
-    const mins = Math.round((epochSeconds * 1000 - Date.now()) / 60000);
-    if (Math.abs(mins) < 1) return "now";
+    const ms = epochSeconds * 1000 - Date.now();
+    const mins = Math.round(ms / 60000);
+    // "now" read as if a rollback due in 20 s were already happening
+    if (Math.abs(mins) < 1) return ms > 0 ? "in under a minute" : "just now";
     const span = Math.abs(mins) < 120 ? `${Math.abs(mins)} min` : `${Math.round(Math.abs(mins) / 60)} h`;
     return mins > 0 ? `in ${span}` : `${span} ago`;
 }
