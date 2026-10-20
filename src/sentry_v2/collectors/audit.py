@@ -159,10 +159,9 @@ class AvcAssembler:
         self._groups.setdefault(rec.serial, (now, []))[1].append(rec)
         return []
 
-    @property
-    def pending(self) -> bool:
-        """Some record group is still waiting for the rest of its records."""
-        return bool(self._groups)
+    def oldest_pending_us(self) -> int | None:
+        """Audit time of the oldest record group still waiting for the rest."""
+        return min((recs[0].ts_us for _t, recs in self._groups.values()), default=None)
 
     def flush(self, now: float) -> list[AvcEvent]:
         due = [s for s, (t, _) in self._groups.items() if now - t >= self._flush_after]
@@ -230,6 +229,11 @@ class NetlinkSource:
     max_queued = 10_000
     dropped = 0  # records shed because the queue below was full
     overruns = 0  # ENOBUFS: the kernel dropped records before we read them
+    quiet_after = 1.0  # seconds without a message before "caught up" means now
+    _q: asyncio.Queue[AuditRecord | OSError] | None = None
+    _seen_us = 0  # newest audit stamp read off the socket, of any record type
+    _yielded_us = 0  # newest stamp handed on
+    _last_msg = float("-inf")  # monotonic time of the last message read
 
     def __init__(self) -> None:
         af = getattr(socket, "AF_NETLINK", None)
@@ -237,7 +241,6 @@ class NetlinkSource:
             raise OSError("AF_NETLINK is not available on this platform")
         self._sock = socket.socket(af, socket.SOCK_RAW, NETLINK_AUDIT)
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._q: asyncio.Queue[AuditRecord | OSError] | None = None
         try:
             self._sock.setblocking(False)
             with contextlib.suppress(OSError):
@@ -248,15 +251,24 @@ class NetlinkSource:
             raise
 
     def caught_up(self) -> float | None:
-        """Now, if nothing is waiting on the socket or in the queue behind it."""
-        if self._q is None or not self._q.empty():
+        """The audit time up to which every record has been handed on.
+
+        The kernel sends records in order, but in a denial storm its own
+        queue can run seconds behind, so an empty socket proves nothing.
+        The newest stamp read does: everything older has been read. Only
+        after a quiet second with nothing waiting is it simply now.
+        """
+        if self._q is None:
             return None
-        try:
-            if select.select([self._sock], [], [], 0)[0]:
-                return None
-        except (OSError, ValueError):
-            return None
-        return time.time()
+        if not self._q.empty():
+            return self._yielded_us / 1_000_000 if self._yielded_us else None
+        if time.monotonic() - self._last_msg >= self.quiet_after:
+            try:
+                if not select.select([self._sock], [], [], 0)[0]:
+                    return time.time()
+            except (OSError, ValueError):
+                pass
+        return self._seen_us / 1_000_000 if self._seen_us else None
 
     @property
     def rcvbuf(self) -> int:
@@ -298,7 +310,10 @@ class NetlinkSource:
                     loop.remove_reader(self._sock.fileno())
                     push(e)
                     return
+                self._last_msg = time.monotonic()
                 for mtype, text in parse_netlink(buf):
+                    if m := _STAMP.match(text):
+                        self._seen_us = max(self._seen_us, int(m[1]) * 1_000_000 + int(m[2]) * 1000)
                     if (name := NETLINK_TYPES.get(mtype)) and (rec := parse_audit_text(name, text)):
                         push(rec)
 
@@ -308,6 +323,7 @@ class NetlinkSource:
                 item = await q.get()
                 if isinstance(item, OSError):
                     raise item
+                self._yielded_us = max(self._yielded_us, item.ts_us)
                 yield item
         finally:
             self.close()
@@ -322,13 +338,16 @@ class LogTailSource:
         self._interval = interval
         self.error: str | None = None
         self._read_to_eof_at: float | None = None  # set while idle after a full read
+        self._yielded_us = 0
 
     def close(self) -> None:
         pass  # the file handle is released when records() is closed
 
     def caught_up(self) -> float | None:
-        """When the file was last read to its end, while waiting for more."""
-        return self._read_to_eof_at
+        """When the file was last read to its end, or else the newest stamp handed on."""
+        if self._read_to_eof_at is not None:
+            return self._read_to_eof_at
+        return self._yielded_us / 1_000_000 if self._yielded_us else None
 
     def _fail(self, e: OSError) -> None:
         if self.error is None:
@@ -378,6 +397,7 @@ class LogTailSource:
                         *lines, buf = buf.split(b"\n")  # last item is a partial line
                         for line in lines:
                             if rec := self._parse(line.decode("utf-8", "replace")):
+                                self._yielded_us = max(self._yielded_us, rec.ts_us)
                                 yield rec
                         if len(buf) > self.max_partial:
                             log.warning("audit log line over %d bytes; dropped", self.max_partial)
@@ -444,7 +464,7 @@ class AuditCollector:
         self._asm = AvcAssembler()
         self._source: Source | None = None
         self._lost = 0
-        # µs up to which every audit record has been published to the queue
+        # audit time (µs) up to which every record has been published to the queue
         self.caught_up_us: int | None = None
 
     def health(self) -> dict[str, object]:
@@ -491,10 +511,12 @@ class AuditCollector:
 
     def _note_caught_up(self) -> None:
         caught_up = getattr(self._source, "caught_up", None)
-        if caught_up is None or self._asm.pending:
+        if caught_up is None or (t := caught_up()) is None:
             return
-        if (t := caught_up()) is not None:
-            self.caught_up_us = int(t * 1_000_000)
+        us = int(t * 1_000_000)
+        if (oldest := self._asm.oldest_pending_us()) is not None:
+            us = min(us, oldest - 1)  # that group's events aren't published yet
+        self.caught_up_us = us
 
     async def run(self) -> None:
         self._source = source = self._factory()

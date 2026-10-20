@@ -786,7 +786,7 @@ def test_collector_records_when_its_source_has_caught_up(tmp_path):
     assert c.caught_up_us == 4_000_000
 
 
-def test_collector_not_caught_up_while_a_record_group_is_open(tmp_path):
+def test_collector_stays_behind_a_record_group_still_open(tmp_path):
     class Drained(Stub):
         def caught_up(self):
             return 4.0
@@ -805,7 +805,7 @@ def test_collector_not_caught_up_while_a_record_group_is_open(tmp_path):
             await t
 
     asyncio.run(go())
-    assert c.caught_up_us is None
+    assert c.caught_up_us == avc(1).ts_us - 1  # its event isn't published yet
 
 
 def test_logtail_caught_up_only_while_idle_at_eof(tmp_path):
@@ -827,3 +827,33 @@ def test_logtail_caught_up_only_while_idle_at_eof(tmp_path):
 
     idle = asyncio.run(go())
     assert idle is not None and abs(idle - time.time()) < 5
+
+
+def test_netlink_watermark_follows_audit_stamps_not_the_socket():
+    a, b = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+    a.setblocking(False)
+
+    class Fake(NetlinkSource):
+        quiet_after = 0.05
+
+        def __init__(self) -> None:
+            self._sock = a
+
+    async def go():
+        src = Fake()
+        it = src.records()
+        task = asyncio.ensure_future(anext(it))
+        await asyncio.sleep(0.01)
+        # a record type we don't parse still proves everything older was read
+        b.send(nl(1320, "audit(9.500:2): ") + nl(1000, "audit(9.700:3): skipped"))
+        await asyncio.wait_for(task, 2)
+        busy = src.caught_up()  # the kernel may still be behind: trust the stamps
+        await asyncio.sleep(0.1)
+        quiet = src.caught_up()  # nothing for a while and nothing waiting
+        await it.aclose()
+        return busy, quiet
+
+    busy, quiet = asyncio.run(go())
+    b.close()
+    assert busy == 9.7
+    assert quiet is not None and abs(quiet - time.time()) < 5

@@ -91,10 +91,13 @@ it: the failure would be finalised before its denials arrived, and a
 denied process that had exited in the meantime would have no cgroup left
 to read.
 
-So the audit collector notes how far it has read: the last moment its
-source had nothing left to hand over. A failure is finalised only once
-that point is past the end of its window, plus 0.2 s for records still on
-their way from the kernel. If audit is more than 30 s behind, the failure
+Most of that delay is in the kernel's own audit queue, upstream of the
+daemon's socket, so an empty socket proves nothing. The audit collector
+tracks the newest audit timestamp it has read instead, of any record type:
+the kernel sends records in order, so everything older has arrived. Only
+after a quiet second with nothing waiting does it count as caught up to
+now. A failure is finalised once that point is past the end of its window,
+plus 0.2 s. If audit is more than 30 s behind, the failure
 goes out anyway with `incident.audit_caught_up` set to `false`, which means
 denials may be missing from it. The second problem is what the
 `pid was the unit's main process` reason is for.
