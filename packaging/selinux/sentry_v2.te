@@ -1,4 +1,4 @@
-policy_module(sentry_v2, 0.2.2)
+policy_module(sentry_v2, 0.2.3)
 
 # Each rule says which part of the daemon needs it. The rules for paths the
 # integration suite exercises name the test; scripts/itest.sh runs the suite

@@ -1,4 +1,4 @@
-%global upstream_version 0.2.2
+%global upstream_version 0.2.3
 %global selinuxtype targeted
 %global modulename sentry_v2
 
@@ -170,6 +170,9 @@ fi
 %{_datadir}/cockpit/sentry-v2/sentry-v2.css
 
 %changelog
+* Tue Oct 20 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.3-1
+- Denials from another unit's cgroup are no longer linked; licence in /usr/share/licenses
+
 * Tue Oct 20 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.2-1
 - Failed-unit bundles show the unit's own slice pressure
 
