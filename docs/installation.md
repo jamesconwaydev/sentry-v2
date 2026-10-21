@@ -7,7 +7,7 @@ packages from BaseOS and AppStream only. No EPEL.
 ## From the RPM (recommended)
 
 Download the RPMs from the
-[v0.2.5 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.2.5)
+[v0.2.6 release](https://github.com/jamesconwaydev/sentry-v2/releases/tag/v0.2.6)
 and check them against `SHA256SUMS` before you install:
 
 ```console
@@ -38,7 +38,7 @@ $ gh release download --repo jamesconwaydev/sentry-v2 --pattern 'sentry-v2-*.noa
 Install both:
 
 ```console
-# dnf install ./sentry-v2-0.2.5-*.noarch.rpm ./sentry-v2-selinux-0.2.5-*.noarch.rpm
+# dnf install ./sentry-v2-0.2.6-*.noarch.rpm ./sentry-v2-selinux-0.2.6-*.noarch.rpm
 ```
 
 `dnf` pulls in `python3`, `python3-systemd` and `python3-dbus` from the base
@@ -107,9 +107,9 @@ $ git clone https://github.com/jamesconwaydev/sentry-v2.git
 $ cd sentry-v2
 $ make rpm
 $ ls rpmbuild/RPMS/noarch/
-sentry-v2-0.2.5-1.el10.noarch.rpm  sentry-v2-cockpit-0.2.5-1.el10.noarch.rpm  sentry-v2-selinux-0.2.5-1.el10.noarch.rpm
-# dnf install ./rpmbuild/RPMS/noarch/sentry-v2-0.2.5-*.noarch.rpm \
-    ./rpmbuild/RPMS/noarch/sentry-v2-selinux-0.2.5-*.noarch.rpm
+sentry-v2-0.2.6-1.el10.noarch.rpm  sentry-v2-cockpit-0.2.6-1.el10.noarch.rpm  sentry-v2-selinux-0.2.6-1.el10.noarch.rpm
+# dnf install ./rpmbuild/RPMS/noarch/sentry-v2-0.2.6-*.noarch.rpm \
+    ./rpmbuild/RPMS/noarch/sentry-v2-selinux-0.2.6-*.noarch.rpm
 ```
 
 The exact dist tag in the file names depends on your EL10 minor release.

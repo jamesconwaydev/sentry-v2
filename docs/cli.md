@@ -69,7 +69,7 @@ actions. A failed reload shows up here as `last reload failed: …`.
 
 ```console
 $ sentry-v2ctl status
-sentry-v2 0.2.5  running for 2h14m  mode dry-run
+sentry-v2 0.2.6  running for 2h14m  mode dry-run
 
 COLLECTOR  HEALTH
 psi        state=ok, triggers=6, restarts=0, last_error=None
