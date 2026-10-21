@@ -11,6 +11,7 @@
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/downloads/release/python-3120/)
 [![EL10](https://img.shields.io/badge/platform-EL10-red)](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/installation.md)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/jamesconwaydev/sentry-v2/badge)](https://securityscorecards.dev/viewer/?uri=github.com/jamesconwaydev/sentry-v2)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15751/badge)](https://www.bestpractices.dev/projects/15751)
 
 It's 3am and `app-billing.service` has died for the fourth time. The
 journal says "permission denied", `ausearch` hands you two hundred denials
