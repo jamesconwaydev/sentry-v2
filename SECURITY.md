@@ -6,7 +6,8 @@ Sentry-v2 runs as root on your servers, so we take reports seriously and would r
 
 | Version | Supported |
 | ------- | --------- |
-| 0.1.x   | Yes       |
+| 0.2.x   | Yes       |
+| 0.1.x   | No        |
 
 Once a newer minor version ships, we'll fix security problems in the latest release only, and say so here.
 
