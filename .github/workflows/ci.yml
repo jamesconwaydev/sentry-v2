@@ -13,6 +13,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  dco:
+    # Every commit in a pull request carries a Signed-off-by line (CONTRIBUTING.md).
+    # Dependabot's commits are exempt.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check sign-offs
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          missing=0
+          for c in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            [ "$(git log -1 --format=%an "$c")" = "dependabot[bot]" ] && continue
+            if ! git log -1 --format=%B "$c" | grep -q '^Signed-off-by: '; then
+              echo "::error::$(git log -1 --format='%h %s' "$c") has no Signed-off-by line; see CONTRIBUTING.md"
+              missing=1
+            fi
+          done
+          exit "$missing"
+
   lint:
     runs-on: ubuntu-latest
     steps:

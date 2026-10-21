@@ -322,7 +322,9 @@ flowchart LR
 | [Cockpit](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/cockpit.md) | The Cockpit page and its permissions |
 | [Metrics](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/metrics.md) | Prometheus metrics and alert rules |
 | [Hardening and SELinux](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/hardening.md) | Sandbox, capabilities, SELinux module |
+| [Security model](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/security-model.md) | What to expect, threat model, assurance case |
 | [Troubleshooting](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/troubleshooting.md) | PSI off, audit fallback, stuck rollbacks, spool growth |
+| [Upgrading](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/upgrading.md) | Moving to a new release |
 | [Architecture](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/architecture.md) | Components, data flow, threads |
 | [Development](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/development.md) | Setup, tests, integration tests, releasing |
 | [FAQ](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/faq.md) | Short answers |
@@ -333,4 +335,5 @@ The full index is [docs/README.md](https://github.com/jamesconwaydev/sentry-v2/b
 ## License
 
 [Apache-2.0](https://github.com/jamesconwaydev/sentry-v2/blob/main/LICENSE). Maintained by James Conway
-([@jamesconwaydev](https://github.com/jamesconwaydev)).
+([@jamesconwaydev](https://github.com/jamesconwaydev)); how decisions are made is in
+[GOVERNANCE.md](https://github.com/jamesconwaydev/sentry-v2/blob/main/GOVERNANCE.md).

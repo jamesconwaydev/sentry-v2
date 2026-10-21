@@ -50,7 +50,15 @@ Fork the repo, branch from `main`, and make your change with tests; a bug fix st
 
 `main` is protected. Every change lands through a pull request that passes CI, and we squash-merge, so the PR title becomes the commit message on `main`. Write it as a Conventional Commit.
 
-There's no DCO sign-off or CLA. By contributing you agree that your work is released under the project's [Apache-2.0](LICENSE) licence.
+## Developer Certificate of Origin
+
+Every commit in a pull request needs a `Signed-off-by` line, which certifies that you wrote the change or otherwise have the right to submit it under the project's [Apache-2.0](LICENSE) licence, as set out in the [Developer Certificate of Origin](https://developercertificate.org/). Git adds the line for you:
+
+```sh
+git commit -s
+```
+
+It uses your `user.name` and `user.email`. A CI check fails a pull request with an unsigned commit; to fix one, run `git commit --amend -s` for the last commit or `git rebase --signoff main` for all of them, then force-push. There's no CLA.
 
 ## Reporting bugs and security problems
 

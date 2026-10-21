@@ -22,6 +22,7 @@ you need it.
 | [Cockpit](cockpit.md) | Use the Cockpit page. |
 | [Metrics](metrics.md) | Scrape Prometheus metrics and alert on them. |
 | [Troubleshooting](troubleshooting.md) | Fix PSI being off, permission errors, stuck rollbacks and more. |
+| [Upgrading](upgrading.md) | Move to a new release and what carries over. |
 | [FAQ](faq.md) | Get short answers to common questions. |
 
 ## Reference
@@ -32,6 +33,7 @@ you need it.
 | [sentry-v2ctl](cli.md) | Look up every subcommand, flag and exit code. |
 | [Bundle schema](reference/bundle.schema.json) | Validate bundles with JSON Schema. |
 | [Hardening and SELinux](hardening.md) | See the unit's sandbox, capabilities and SELinux module. |
+| [Security model](security-model.md) | What you can and can't expect in terms of security, and why. |
 
 ## Inside it
 

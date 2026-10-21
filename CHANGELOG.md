@@ -6,6 +6,13 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- GOVERNANCE.md, a security model with the threat model and assurance case
+  (docs/security-model.md), and an upgrade guide (docs/upgrading.md).
+- Contributions now need a Developer Certificate of Origin sign-off
+  (`git commit -s`), checked in CI.
+
 ## [0.2.6] - 2026-10-20
 
 ### Fixed
