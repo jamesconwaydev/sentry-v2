@@ -857,3 +857,9 @@ def test_netlink_watermark_follows_audit_stamps_not_the_socket():
     b.close()
     assert busy == 9.7
     assert quiet is not None and abs(quiet - time.time()) < 5
+
+
+def test_non_ascii_digits_in_pid_are_not_a_pid():
+    # str.isdigit() accepts "²", int() doesn't; found by test_fuzz.py
+    [ev] = AvcAssembler()._build([avc(1, pid="²")])
+    assert ev.pid is None

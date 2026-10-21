@@ -199,7 +199,7 @@ class AvcAssembler:
                     tclass=f.get("tclass", ""),
                     comm=None if user else _known(syscall.get("comm")) or _known(f.get("comm")),
                     exe=None if user else _known(syscall.get("exe")) or _known(f.get("exe")),
-                    pid=int(pid) if pid.isdigit() else None,
+                    pid=int(pid) if pid.isascii() and pid.isdigit() else None,
                     permissive=f.get("permissive") == "1",
                     raw=" ".join(f"{k}={v}" for k, v in f.items()),
                 )

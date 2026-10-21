@@ -6,6 +6,13 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An audit record whose `pid` held non-ASCII digits (such as `²`, which
+  Python's `isdigit()` accepts) raised while being assembled, so its whole
+  record group was dropped. The PID is now read only from ASCII digits.
+  Found by the new fuzz tests.
+
 ## [0.2.5] - 2026-10-20
 
 ### Fixed
