@@ -325,6 +325,7 @@ flowchart LR
 | [Security model](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/security-model.md) | What to expect, threat model, assurance case |
 | [Troubleshooting](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/troubleshooting.md) | PSI off, audit fallback, stuck rollbacks, spool growth |
 | [Upgrading](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/upgrading.md) | Moving to a new release |
+| [Roadmap](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/roadmap.md) | Planned and not planned, next 12 months |
 | [Architecture](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/architecture.md) | Components, data flow, threads |
 | [Development](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/development.md) | Setup, tests, integration tests, releasing |
 | [FAQ](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/faq.md) | Short answers |

@@ -10,8 +10,8 @@ Discussion or a pull request, and anyone can argue for or against a
 change there. The maintainer weighs that, decides, and says why in the
 thread.
 
-Some decisions are settled up front, in [CONTRIBUTING.md](CONTRIBUTING.md),
-so contributors don't have to guess: dry-run stays the default, protected
+Some decisions are settled up front, in [CONTRIBUTING.md](CONTRIBUTING.md)
+and the [roadmap](docs/roadmap.md), so contributors don't have to guess: dry-run stays the default, protected
 targets stay protected, runtime dependencies come from the EL10 base
 repositories only, and nothing lands without tests.
 
@@ -22,7 +22,7 @@ carries the most weight.
 
 | Role | Who | Responsibilities |
 |---|---|---|
-| Maintainer | James Conway ([@jamesconwaydev](https://github.com/jamesconwaydev)) | Triages issues and Discussions; reviews and merges pull requests; keeps CI, dependencies and the integration suite green; cuts releases and publishes them to GitHub and PyPI; handles vulnerability reports as described in [SECURITY.md](SECURITY.md); enforces the [Code of Conduct](CODE_OF_CONDUCT.md). |
+| Maintainer | James Conway ([@jamesconwaydev](https://github.com/jamesconwaydev)) | Triages issues and Discussions; reviews and merges pull requests; keeps CI, dependencies and the integration suite green; cuts releases and publishes them to GitHub and PyPI; handles vulnerability reports as described in [SECURITY.md](SECURITY.md); enforces the [Code of Conduct](CODE_OF_CONDUCT.md); keeps the [roadmap](docs/roadmap.md) current. |
 | Contributor | Anyone who opens an issue, a Discussion or a pull request | Follows [CONTRIBUTING.md](CONTRIBUTING.md) and the Code of Conduct; signs off commits under the [Developer Certificate of Origin](CONTRIBUTING.md#developer-certificate-of-origin). |
 
 [CODEOWNERS](.github/CODEOWNERS) routes every review to the maintainer.

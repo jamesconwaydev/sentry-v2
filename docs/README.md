@@ -23,6 +23,7 @@ you need it.
 | [Metrics](metrics.md) | Scrape Prometheus metrics and alert on them. |
 | [Troubleshooting](troubleshooting.md) | Fix PSI being off, permission errors, stuck rollbacks and more. |
 | [Upgrading](upgrading.md) | Move to a new release and what carries over. |
+| [Roadmap](roadmap.md) | What the project plans to do, and not do, over the next year. |
 | [FAQ](faq.md) | Get short answers to common questions. |
 
 ## Reference

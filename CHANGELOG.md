@@ -10,6 +10,7 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 - GOVERNANCE.md, a security model with the threat model and assurance case
   (docs/security-model.md), and an upgrade guide (docs/upgrading.md).
+- A roadmap for November 2026 to October 2027 (docs/roadmap.md).
 - Contributions now need a Developer Certificate of Origin sign-off
   (`git commit -s`), checked in CI.
 
