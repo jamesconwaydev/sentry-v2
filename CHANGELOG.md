@@ -14,6 +14,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - Contributions now need a Developer Certificate of Origin sign-off
   (`git commit -s`), checked in CI.
 
+- Man pages: `sentry-v2(8)` and `sentry-v2ctl(8)`, installed by the RPM.
+  `sentry-v2 --help` now describes `--config` and `--policies` too.
+
 ### Fixed
 
 - A non-number `--limit` on `incidents` now says `must be a whole number,

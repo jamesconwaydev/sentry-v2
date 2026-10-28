@@ -584,10 +584,20 @@ async def rollback_only(cfg: Config, fs: CgroupFS, mgr: SystemdManager) -> int:
     return 1 if executor.stuck() else 0
 
 
-def main(argv: list[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sentry-v2", description="The sentry-v2 daemon.")
-    parser.add_argument("--config", type=Path, default=Path("/etc/sentry-v2/sentry-v2.toml"))
-    parser.add_argument("--policies", type=Path, default=Path("/etc/sentry-v2/policies.d"))
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("/etc/sentry-v2/sentry-v2.toml"),
+        help="global configuration (default %(default)s)",
+    )
+    parser.add_argument(
+        "--policies",
+        type=Path,
+        default=Path("/etc/sentry-v2/policies.d"),
+        help="policies directory (default %(default)s)",
+    )
     parser.add_argument("--check", action="store_true", help="validate the configuration and exit")
     parser.add_argument(
         "--rollback-only",
@@ -595,7 +605,11 @@ def main(argv: list[str] | None = None) -> int:
         help="undo the throttles and freezes a stopped daemon left active, then exit",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parser().parse_args(argv)
     if args.check:
         return _check(args.config, args.policies)
 

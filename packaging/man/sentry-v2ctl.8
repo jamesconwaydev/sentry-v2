@@ -1,0 +1,147 @@
+.TH SENTRY-V2CTL 8 "2026-10-28" "Sentry-v2" "System Administration"
+.SH NAME
+sentry-v2ctl \- control the sentry-v2 daemon and test policies
+.SH SYNOPSIS
+.B sentry-v2ctl
+.RB [ \-\-socket
+.IR PATH ]
+.RB [ \-\-json ]
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B sentry-v2ctl
+talks to a running
+.BR sentry-v2 (8)
+over its control socket. The
+.B policy
+and
+.B redact
+commands read the configuration directly instead, so they work without the
+daemon: in CI, on a laptop, or before the service is installed.
+.PP
+Reading commands need root or membership of the
+.B sentry-v2
+group. Commands that change something need root, or membership of both
+.B sentry-v2
+and
+.BR sentry-v2-admin .
+.SH OPTIONS
+These work before or after the command.
+.TP
+.BI \-\-socket " PATH"
+The control socket. Default:
+.IR /run/sentry-v2/control.sock .
+.TP
+.B \-\-json
+Print JSON instead of tables.
+.TP
+.BR \-h ", " \-\-help
+Help for
+.B sentry-v2ctl
+or for one command.
+.SH COMMANDS
+.SS Reading
+.TP
+.B status
+Daemon version, mode, uptime, collector health, active actions and held units.
+.TP
+.BR top " [" \-\-once "] [" \-\-sort " {" avg10 , cgroup }]
+Cgroups under the most pressure. Refreshes every second on a terminal unless
+.B \-\-once
+is given. Sorted by
+.B avg10
+by default.
+.TP
+\fBincidents\fR [\fB\-\-since\fR \fITIME\fR] [\fB\-\-unit\fR \fIUNIT\fR] [\fB\-\-limit\fR \fIN\fR]
+Recent incidents, newest first.
+.B \-\-since
+takes an RFC 3339 time;
+.B \-\-limit
+defaults to 50.
+.TP
+.BI show " ID"
+Print the bundle for one incident as JSON.
+.TP
+.B actions
+Active throttles and freezes, then recent action records.
+.TP
+.B policies
+Loaded policies with their effective mode, and the last reload error if any.
+.SS Changing
+.TP
+.BR rollback " {" \fIID\fR | \-\-all }
+Undo one action now, or every active one. Any unique 6 or more characters
+from the start or end of an action id will do.
+.TP
+.BI ack " UNIT"
+Let a unit held for acting too often be acted on again.
+.TP
+.BR pause ", " resume
+Force dry-run for new actions while everything else keeps running, and turn
+that off again.
+.TP
+.B reload
+Re-read the configuration and policies, like
+.BR "systemctl reload sentry-v2" .
+.TP
+.BI restore " UNIT/YYYYmmddTHHMMSSZ"
+Put back the files a
+.B backup_reload
+action saved. Checks every file before writing any; doesn't reload the unit
+itself.
+.SS Offline
+These take
+.BI \-\-config " FILE"
+(default
+.IR /etc/sentry-v2/sentry-v2.toml )
+and
+.BI \-\-policies " DIR"
+(default
+.IR /etc/sentry-v2/policies.d ).
+.TP
+.B policy validate
+Check the configuration and policies.
+.TP
+.BI "policy test \-\-event" " FILE"
+Feed a JSON event, a list of events, or a bundle saved by the daemon through
+the correlator and the policies, and print the actions that would be
+planned.
+.TP
+.BR redact " [" \fIFILE\fR ]
+Print what the configured redaction leaves of
+.IR FILE ,
+or of stdin when it's left out or
+.BR \- .
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+The command failed: an invalid configuration, an error from the daemon, or an
+unreadable file.
+.TP
+.B 2
+The daemon isn't running, or the command line was wrong.
+.TP
+.B 3
+Permission denied, on the socket or by the daemon.
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+When set, status words aren't coloured.
+.SH EXAMPLES
+.nf
+sentry-v2ctl status
+sentry-v2ctl \-\-json incidents \-\-limit 10
+sentry-v2ctl show 0199f2a1\-8150\-7d44\-a2b6\-0c1d2e3f4a5b
+sentry-v2ctl policy test \-\-event /tmp/fail.json
+echo 'app \-\-password hunter2' | sentry-v2ctl redact
+.fi
+.SH SEE ALSO
+.BR sentry-v2 (8)
+.PP
+The full CLI guide:
+.UR https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/cli.md
+docs/cli.md
+.UE

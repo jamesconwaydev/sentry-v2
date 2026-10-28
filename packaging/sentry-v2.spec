@@ -84,6 +84,8 @@ install -Dpm 0644 packaging/sentry-v2.service %{buildroot}%{_unitdir}/sentry-v2.
 install -Dpm 0644 packaging/90-sentry-v2.preset %{buildroot}%{_presetdir}/90-sentry-v2.preset
 install -Dpm 0644 packaging/sentry-v2.sysusers %{buildroot}%{_sysusersdir}/sentry-v2.conf
 install -Dpm 0644 packaging/sentry-v2.tmpfiles %{buildroot}%{_tmpfilesdir}/sentry-v2.conf
+install -Dpm 0644 packaging/man/sentry-v2.8 %{buildroot}%{_mandir}/man8/sentry-v2.8
+install -Dpm 0644 packaging/man/sentry-v2ctl.8 %{buildroot}%{_mandir}/man8/sentry-v2ctl.8
 install -Dpm 0644 packaging/examples/sentry-v2.toml %{buildroot}%{_sysconfdir}/sentry-v2/sentry-v2.toml
 install -d -m 0755 %{buildroot}%{_sysconfdir}/sentry-v2/policies.d
 install -pm 0644 packaging/examples/policies.d/*.toml %{buildroot}%{_sysconfdir}/sentry-v2/policies.d/
@@ -146,6 +148,8 @@ fi
 %license LICENSE
 %{_bindir}/sentry-v2
 %{_bindir}/sentry-v2ctl
+%{_mandir}/man8/sentry-v2.8*
+%{_mandir}/man8/sentry-v2ctl.8*
 %{_unitdir}/sentry-v2.service
 %{_presetdir}/90-sentry-v2.preset
 %{_sysusersdir}/sentry-v2.conf

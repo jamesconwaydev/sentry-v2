@@ -1,0 +1,115 @@
+.TH SENTRY-V2 8 "2026-10-28" "Sentry-v2" "System Administration"
+.SH NAME
+sentry-v2 \- act safely on pressure, unit failures and SELinux denials
+.SH SYNOPSIS
+.B sentry-v2
+.RB [ \-\-config
+.IR FILE ]
+.RB [ \-\-policies
+.IR DIR ]
+.br
+.B sentry-v2
+.B \-\-check
+.RB [ \-\-config
+.IR FILE ]
+.RB [ \-\-policies
+.IR DIR ]
+.br
+.B sentry-v2
+.B \-\-rollback\-only
+.br
+.B sentry-v2
+.B \-\-version
+.SH DESCRIPTION
+.B sentry-v2
+is the daemon behind
+.BR sentry-v2.service .
+It reads cgroup v2 pressure (PSI), systemd unit failures from the journal and
+SELinux denials from the audit stream, links each failure to the denials
+around it, and writes one redacted JSON bundle per incident to the
+configured sinks.
+.PP
+Policies can throttle or freeze a unit, or back up its files and reload it.
+Every action is time-boxed and rolled back on expiry, on shutdown and after a
+crash. Nothing is applied unless both
+.B daemon.mode
+and the policy's
+.B mode
+are
+.BR enforce ;
+the shipped configuration is dry-run.
+.PP
+You normally start it with
+.BR systemctl ,
+not by hand.
+.B systemctl reload sentry-v2
+sends SIGHUP, which re-reads the configuration and policies; an invalid one
+is rejected and the old one stays live.
+.SH OPTIONS
+.TP
+.BI \-\-config " FILE"
+The global configuration. Default:
+.IR /etc/sentry-v2/sentry-v2.toml .
+.TP
+.BI \-\-policies " DIR"
+The policies directory. Every
+.I *.toml
+file in it is loaded. Default:
+.IR /etc/sentry-v2/policies.d .
+.TP
+.B \-\-check
+Validate the configuration and policies, list each policy with its effective
+mode, and exit.
+.TP
+.B \-\-rollback\-only
+Undo the throttles and freezes a stopped daemon left active, then exit. The
+unit runs this after every stop
+.RB ( ExecStopPost= ),
+so a daemon that was killed and can't restart doesn't leave a unit throttled
+or frozen. Don't run it while the daemon is running.
+.TP
+.B \-\-version
+Print the version and exit.
+.TP
+.BR \-h ", " \-\-help
+Print a short help and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Clean shutdown, a valid configuration with
+.BR \-\-check ,
+or everything put back with
+.BR \-\-rollback\-only .
+.TP
+.B 1
+A rollback failed under
+.BR \-\-rollback\-only .
+.TP
+.B 2
+The configuration is invalid, a sink secret can't be read, or the command
+line was wrong.
+.SH FILES
+.TP
+.I /etc/sentry-v2/sentry-v2.toml
+Global configuration.
+.TP
+.I /etc/sentry-v2/policies.d/
+Policies, one or more per file.
+.TP
+.I /var/lib/sentry-v2/
+State: the action journal, held units, backups, and bundles from the file sink.
+.TP
+.I /run/sentry-v2/control.sock
+The control socket that
+.BR sentry-v2ctl (8)
+talks to.
+.SH SEE ALSO
+.BR sentry-v2ctl (8),
+.BR systemd.resource-control (5),
+.BR ausearch (8),
+.BR audit2allow (1)
+.PP
+The full guides, including the configuration and policy reference:
+.UR https://github.com/jamesconwaydev/sentry-v2/tree/main/docs
+the Sentry-v2 docs
+.UE

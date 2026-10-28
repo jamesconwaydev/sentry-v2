@@ -1,9 +1,15 @@
+import argparse
 import configparser
 import re
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 import sentry_v2
+from sentry_v2.cli import _parser as cli_parser
 from sentry_v2.config import load_config
+from sentry_v2.daemon import _parser as daemon_parser
 
 ROOT = Path(__file__).parents[2]
 PACKAGING = ROOT / "packaging"
@@ -100,3 +106,34 @@ def test_spec_installs_the_licence_where_rpm_looks() -> None:
     spec = (PACKAGING / "sentry-v2.spec").read_text()
     main_files = spec.split("%files -f %{pyproject_files}", 1)[1].split("%files ", 1)[0]
     assert "%license LICENSE" in main_files
+
+
+def _options(parser: argparse.ArgumentParser, prefix: str = "") -> set[str]:
+    """Every subcommand path and long option a parser accepts, help aside."""
+    out: set[str] = set()
+    for a in parser._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            for name, sub in a.choices.items():
+                out.add(prefix + name)
+                out |= _options(sub, f"{prefix}{name} ")
+        else:
+            out |= {o for o in a.option_strings if o.startswith("--") and o != "--help"}
+    return out
+
+
+@pytest.mark.parametrize(
+    ("page", "parser"),
+    [("sentry-v2.8", daemon_parser), ("sentry-v2ctl.8", cli_parser)],
+)
+def test_man_page_covers_every_command_and_option(page: str, parser: Any) -> None:
+    text = (PACKAGING / "man" / page).read_text().replace("\\-", "-")
+    text = re.sub(r"\\f[BIR]", "", text)
+    missing = sorted(o for o in _options(parser()) if o not in text)
+    assert not missing, f"{page} doesn't mention {missing}"
+
+
+def test_spec_installs_the_man_pages() -> None:
+    spec = (PACKAGING / "sentry-v2.spec").read_text()
+    for page in ("sentry-v2.8", "sentry-v2ctl.8"):
+        assert f"packaging/man/{page} %{{buildroot}}%{{_mandir}}/man8/{page}" in spec
+        assert f"%{{_mandir}}/man8/{page}*" in spec
