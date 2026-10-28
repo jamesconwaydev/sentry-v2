@@ -19,7 +19,6 @@ These won't change, because the project depends on them:
 
 - **OpenSSF Best Practices silver**, then gold where it's realistic for a
   small project.
-- **Man pages** for `sentry-v2` and `sentry-v2ctl`, shipped in the RPM.
 - **Per-policy slice permission.** `allow_slices` is global today; letting
   one policy act on slices without opening them to all of them.
 - **Closing documented limits:**

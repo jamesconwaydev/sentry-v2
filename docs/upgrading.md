@@ -43,9 +43,11 @@ Then check the configuration still loads and the daemon is healthy:
 ## Before you upgrade
 
 Read the CHANGELOG entries between your version and the new one. Changes
-that could need you to act are under **Changed**. For example, in 0.2.4 a
-throttle's rollback started treating each value separately, and in 0.2.0
-actions on slices began to need `protection.allow_slices`.
+that could need you to act are under **Changed**. For example, 0.2.7
+refuses some values that used to load, such as relative paths and empty
+hosts; in 0.2.4 a throttle's rollback started treating each value
+separately; and in 0.2.0 actions on slices began to need
+`protection.allow_slices`.
 
 If a new version can't load your configuration, the daemon exits with
 status 2 and stays down, and `sentry-v2ctl policy validate` names the file

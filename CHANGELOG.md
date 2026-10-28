@@ -6,52 +6,54 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
-### Added
+## [0.2.7] - 2026-10-28
 
-- GOVERNANCE.md, a security model with the threat model and assurance case
-  (docs/security-model.md), and an upgrade guide (docs/upgrading.md).
-- A roadmap for November 2026 to October 2027 (docs/roadmap.md).
-- Contributions now need a Developer Certificate of Origin sign-off
-  (`git commit -s`), checked in CI.
+### Changed
+
+- The configuration is stricter. Each of these used to load and then fail,
+  or quietly do the wrong thing, at run time. They're now refused when the
+  file loads, naming the file and key, so check with
+  `sentry-v2ctl policy validate` from 0.2.7 before you upgrade:
+  - a relative or non-normalised path in `daemon.state_dir`,
+    `control.socket`, `sinks.file.dir` or a `ca_file`, which used to resolve
+    against `/`. Secret keys (`hmac_key_file`, `token_file`, `api_key_file`,
+    `password_file`) still take a bare systemd credential name;
+  - an empty `metrics.host`, `sinks.syslog.host` or `sinks.elastic.index`;
+  - a sink `url` with no host, such as `https://`;
+  - a `sinks.webhook.timeout`, `sinks.file.max_age` or `sinks.file.max_size`
+    of zero;
+  - an absolute `memory_high` of zero in a throttle;
+  - a duration or size with a trailing newline, non-ASCII digits, or a value
+    too large to be finite.
+
+### Added
 
 - Man pages: `sentry-v2(8)` and `sentry-v2ctl(8)`, installed by the RPM.
   `sentry-v2 --help` now describes `--config` and `--policies` too.
-
-- Each release ships its build provenance as `sentry-v2-<version>.intoto.jsonl`,
-  so `gh attestation verify --bundle` works offline. Releases 0.1.0 to 0.2.6
-  have it attached too.
+- Each release ships its build provenance as
+  `sentry-v2-<version>.intoto.jsonl`, so `gh attestation verify --bundle`
+  works offline. Releases 0.1.0 to 0.2.6 have it attached too.
+- Coverage-guided fuzzing of the audit, PSI, config-value and redaction
+  parsers with ClusterFuzzLite and Atheris, on pull requests and weekly.
+- GOVERNANCE.md, a security model with the threat model and assurance case
+  (docs/security-model.md), an upgrade guide (docs/upgrading.md) and a
+  roadmap (docs/roadmap.md).
+- Contributions need a Developer Certificate of Origin sign-off
+  (`git commit -s`), checked in CI.
 
 ### Fixed
 
-- `parse_duration` and `parse_size` now refuse a trailing newline, non-ASCII
-  digits, and durations that overflow to infinity. The old patterns used `$`
-  (which matches before a final newline) and `\d` (which matches every Unicode
-  digit).
-- A zero absolute `memory_high` in a throttle is now refused when the policy
-  loads, matching the rejection of zero percentages.
-
-- A sink `url` of `https://` with no host was accepted and only failed at
-  delivery time. The shared check now refuses it when the config loads.
-- An empty `sinks.elastic.index` was accepted, and every bundle was then
-  rejected by Elasticsearch. The key is required, so it is refused now.
-- Relative or non-normalised paths in single-path config keys (`daemon.state_dir`,
-  `control.socket`, `sinks.file.dir`, and the `*_file` keys) are now refused
-  instead of being resolved against the daemon's cwd at `/`. Secret keys
-  still take a bare systemd credential name, such as `webhook-hmac`.
-- A non-number `--limit` on `incidents` now says `must be a whole number,
-  not 'abc'` instead of naming the private `_positive` helper.
-- Redaction now removes the whole of a quoted secret flag or pair, such as
+- Redaction removes the whole of a quoted secret flag or pair, such as
   `--password "two words"` or `token='a b'`. Before, everything after the
   first space was left in the bundle.
-- An empty `metrics.host` or `sinks.syslog.host` was accepted, and an empty
-  metrics host made the daemon listen on every interface while its warning
-  printed a blank address. Both are now refused when the config loads.
-- A zero `sinks.webhook.timeout` was accepted, and every delivery then failed
-  with `BlockingIOError` because the socket was left non-blocking. It is now
-  refused when the config loads.
-- A zero `sinks.file.max_age` or `max_size` was accepted, and the file sink
-  then pruned every bundle, including the one it had just written. Both are
-  now refused when the config loads.
+- A zero `sinks.file.max_age` or `max_size` made the file sink prune every
+  bundle, including the one it had just written.
+- A zero `sinks.webhook.timeout` left the socket non-blocking, so every
+  delivery failed with `BlockingIOError`.
+- An empty `metrics.host` made the metrics endpoint listen on every
+  interface, and its warning printed a blank address.
+- A non-number `--limit` on `incidents` says `must be a whole number, not
+  'abc'` instead of naming the private `_positive` helper.
 
 ## [0.2.6] - 2026-10-20
 
