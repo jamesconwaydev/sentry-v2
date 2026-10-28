@@ -17,6 +17,10 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - Man pages: `sentry-v2(8)` and `sentry-v2ctl(8)`, installed by the RPM.
   `sentry-v2 --help` now describes `--config` and `--policies` too.
 
+- Each release ships its build provenance as `sentry-v2-<version>.intoto.jsonl`,
+  so `gh attestation verify --bundle` works offline. Releases 0.1.0 to 0.2.6
+  have it attached too.
+
 ### Fixed
 
 - A sink `url` of `https://` with no host was accepted and only failed at

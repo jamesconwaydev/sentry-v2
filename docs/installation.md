@@ -21,6 +21,15 @@ a download came from this repository's release workflow:
 $ gh attestation verify <file> --repo jamesconwaydev/sentry-v2
 ```
 
+The same provenance ships with the release as
+`sentry-v2-<version>.intoto.jsonl`, one Sigstore bundle covering every
+file. Download it too and the check needs no call to GitHub's attestation
+API, which helps on a host that can't reach it:
+
+```console
+$ gh attestation verify <file> --repo jamesconwaydev/sentry-v2 --bundle sentry-v2-0.2.6.intoto.jsonl
+```
+
 Prefer to build it yourself? See [From source](#from-source).
 
 | Package | What it is |
