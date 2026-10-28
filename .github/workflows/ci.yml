@@ -42,6 +42,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check line endings
+        # .gitattributes asks for LF, but some Windows tools commit CRLF anyway.
+        run: |
+          crlf=$(git ls-files --eol | awk '$1 == "i/crlf" {print $NF}')
+          for f in $crlf; do echo "::error file=$f::CRLF line endings; see CONTRIBUTING.md#line-endings"; done
+          [ -z "$crlf" ]
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"

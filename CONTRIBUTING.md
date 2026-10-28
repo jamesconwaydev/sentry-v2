@@ -50,6 +50,15 @@ Fork the repo, branch from `main`, and make your change with tests; a bug fix st
 
 `main` is protected. Every change lands through a pull request that passes CI, and we squash-merge, so the PR title becomes the commit message on `main`. Write it as a Conventional Commit.
 
+### Line endings
+
+Files in the repository use LF. On Windows, `git config core.autocrlf input` keeps it that way. CI names any file that arrives with CRLF; to fix one:
+
+```sh
+sed -i 's/\r$//' path/to/file
+git commit -as --amend --no-edit
+```
+
 ## Developer Certificate of Origin
 
 Every commit in a pull request needs a `Signed-off-by` line, which certifies that you wrote the change or otherwise have the right to submit it under the project's [Apache-2.0](LICENSE) licence, as set out in the [Developer Certificate of Origin](https://developercertificate.org/). Git adds the line for you:
