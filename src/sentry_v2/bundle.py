@@ -20,6 +20,8 @@ SCHEMA_ID = "sentry-v2/bundle/1"
 REDACTED = "[REDACTED]"
 
 _SECRET_NAMES = "password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret"  # noqa: S105 - names, not a secret
+# a whole quoted value, so --password "two words" doesn't leave "words" behind
+_VALUE = r"""(?:"(?:[^"\\]|\\.)*"|'[^']*'|\S+)"""
 
 DEFAULT_PATTERNS = (
     # first, so the bare Authorization pattern below never sees half of one
@@ -34,8 +36,8 @@ DEFAULT_PATTERNS = (
     r'(?i)\bresponse="?[0-9a-f]{32,}"?',  # HTTP Digest
     r"eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*",  # JWT
     # before the pairs pattern, which would leave "--[REDACTED]" behind
-    rf"(?i)--(?:[a-z0-9]+[-_]){{0,3}}(?:{_SECRET_NAMES})(?:=|\s+)\S+",
-    rf"(?i)(?:{_SECRET_NAMES})=\S+",
+    rf"(?i)--(?:[a-z0-9]+[-_]){{0,3}}(?:{_SECRET_NAMES})(?:=|\s+){_VALUE}",
+    rf"(?i)(?:{_SECRET_NAMES})={_VALUE}",
 )
 
 

@@ -18,6 +18,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 - A non-number `--limit` on `incidents` now says `must be a whole number,
   not 'abc'` instead of naming the private `_positive` helper.
+- Redaction now removes the whole of a quoted secret flag or pair, such as
+  `--password "two words"` or `token='a b'`. Before, everything after the
+  first space was left in the bundle.
 
 ## [0.2.6] - 2026-10-20
 

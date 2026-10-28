@@ -219,6 +219,11 @@ def test_api_keys_and_authorization_headers(text: str, expected: str) -> None:
         ('nonce="n", response="6629fae49393a05397450978507c4ef1"', 'nonce="n", [REDACTED]'),
         ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.sig-_D end", "jwt [REDACTED] end"),
         ("mkdir -p /x", "mkdir -p /x"),
+        ('app --password "two words" --port 80', "app [REDACTED] --port 80"),
+        ("app --password='a b' --port 80", "app [REDACTED] --port 80"),
+        ('password="two words" x', "[REDACTED] x"),
+        ('token="a \\"b c" x', "[REDACTED] x"),
+        ('--password "unclosed rest', "[REDACTED] rest"),
     ],
 )
 def test_flags_json_digest_and_jwt(text: str, expected: str) -> None:

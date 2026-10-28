@@ -253,7 +253,9 @@ which is exactly where passwords and tokens leak. Before a bundle goes
 anywhere, matches of these patterns are replaced with `[REDACTED]`:
 
 `NAMES` below stands for
-`password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret`.
+`password|passwd|secret|token|api[_-]?key|access[_-]?key|client[_-]?secret`,
+and `VALUE` for a whole quoted value or the next word:
+`(?:"(?:[^"\\]|\\.)*"|'[^']*'|\S+)`.
 
 | What | Pattern |
 |---|---|
@@ -265,8 +267,8 @@ anywhere, matches of these patterns are replaced with `[REDACTED]`:
 | PEM private keys | `-----BEGIN … PRIVATE KEY-----` through the matching `END` line, or to the end of the text if it's cut off |
 | HTTP Digest responses | `(?i)\bresponse="?[0-9a-f]{32,}"?` |
 | JSON Web Tokens | `eyJ[\w-]+\.eyJ[\w-]+\.[\w-]*` |
-| Secret flags, `--password x` or `--db-password=x` | `(?i)--(?:[a-z0-9]+[-_]){0,3}(?:NAMES)(?:=\|\s+)\S+` |
-| Secret pairs | `(?i)(?:NAMES)=\S+` |
+| Secret flags, `--password x` or `--db-password=x` | `(?i)--(?:[a-z0-9]+[-_]){0,3}(?:NAMES)(?:=\|\s+)VALUE` |
+| Secret pairs | `(?i)(?:NAMES)=VALUE` |
 
 They're applied to:
 
@@ -323,7 +325,6 @@ only yours.
   in the first place.
 - Short flags aren't in the defaults, because `-p` is a port to half your
   tools and a password to MySQL. If your command lines carry
-  `mysql -pSECRET`, add `'(?<!\S)-p\S+'`. A flag value with a space
-  inside quotes (`--password "two words"`) loses only its first word.
+  `mysql -pSECRET`, add `'(?<!\S)-p\S+'`.
 - A slow, backtracking pattern runs on every string in every bundle. Keep
   patterns anchored on a literal prefix where you can.
