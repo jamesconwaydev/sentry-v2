@@ -117,6 +117,9 @@ and where the scoring can mislead you is in
 
 Everything else, from every config key to the bundle schema, is in
 [docs/](https://github.com/jamesconwaydev/sentry-v2/blob/main/docs/README.md).
+For recipes that start from a problem on your host, like tying a dying
+service to its denials or throttling a batch job that starves the box, see
+the [wiki](https://github.com/jamesconwaydev/sentry-v2/wiki).
 
 ## Contributing
 
