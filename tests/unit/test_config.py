@@ -175,6 +175,18 @@ def test_window_must_be_a_multiple_of_2s(tmp_path: Path, threshold: str) -> None
         ("[sinks.webhook]", "sinks.webhook.url"),
         ('[sinks.webhook]\nurl = "https://a.example"', "sinks.webhook.hmac_key_file"),
         (
+            '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "k"',
+            "sinks.webhook.hmac_key_file",
+        ),
+        (
+            '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "/k/./x"',
+            "sinks.webhook.hmac_key_file",
+        ),
+        ('[daemon]\nstate_dir = "state"', "daemon.state_dir"),
+        ('[daemon]\nstate_dir = "/var/./state"', "daemon.state_dir"),
+        ('[sinks.file]\ndir = "bundles"', "sinks.file.dir"),
+        ('[control]\nsocket = "run/sv2.sock"', "control.socket"),
+        (
             '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "/k"\nallow_insecure_http = true',
             "sinks.webhook.allow_insecure_http",
         ),

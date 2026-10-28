@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import posixpath
 import re
 import tomllib
 from collections.abc import Callable
@@ -109,16 +110,18 @@ def _strs(v: object) -> tuple[str, ...]:
     return tuple(v)
 
 
+def _abs_path(v: str) -> str:
+    if not v.startswith("/") or posixpath.normpath(v) != v:
+        raise ValueError(f"{v!r}: paths must be absolute, normalised paths")
+    return v
+
+
 def _abs_paths(v: object) -> tuple[Path, ...]:
-    paths = _strs(v)
-    for p in paths:
-        if not p.startswith("/") or os.path.normpath(p) != p:
-            raise ValueError(f"{p!r}: paths must be absolute, normalised paths")
-    return tuple(Path(p) for p in paths)
+    return tuple(Path(_abs_path(p)) for p in _strs(v))
 
 
 def _path(v: object) -> Path:
-    return Path(_str(v))
+    return Path(_abs_path(_str(v)))
 
 
 def _duration(v: object) -> float:
