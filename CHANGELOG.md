@@ -23,7 +23,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   delivery time. The shared check now refuses it when the config loads.
 - Relative or non-normalised paths in single-path config keys (`daemon.state_dir`,
   `control.socket`, `sinks.file.dir`, and the `*_file` keys) are now refused
-  instead of being resolved against the daemon's cwd at `/`.
+  instead of being resolved against the daemon's cwd at `/`. Secret keys
+  still take a bare systemd credential name, such as `webhook-hmac`.
 - A non-number `--limit` on `incidents` now says `must be a whole number,
   not 'abc'` instead of naming the private `_positive` helper.
 - Redaction now removes the whole of a quoted secret flag or pair, such as

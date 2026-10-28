@@ -168,6 +168,18 @@ def test_window_must_be_a_multiple_of_2s(tmp_path: Path, threshold: str) -> None
     )
 
 
+def test_secret_keys_take_a_systemd_credential_name(tmp_path: Path) -> None:
+    # docs/configuration.md#secrets: LoadCredential=webhook-hmac:... in a drop-in
+    (tmp_path / "main.toml").write_text(
+        '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "webhook-hmac"\n'
+        '[sinks.elastic]\nurl = "https://e.example"\nindex = "i"\napi_key_file = "es-key"\n'
+    )
+    cfg = load_config(tmp_path / "main.toml", tmp_path / "policies.d")
+    assert cfg.sinks.webhook is not None and cfg.sinks.elastic is not None
+    assert cfg.sinks.webhook.hmac_key_file == Path("webhook-hmac")
+    assert cfg.sinks.elastic.api_key_file == Path("es-key")
+
+
 @pytest.mark.parametrize(
     ("main", "key"),
     [
@@ -177,7 +189,7 @@ def test_window_must_be_a_multiple_of_2s(tmp_path: Path, threshold: str) -> None
         ("[sinks.webhook]", "sinks.webhook.url"),
         ('[sinks.webhook]\nurl = "https://a.example"', "sinks.webhook.hmac_key_file"),
         (
-            '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "k"',
+            '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "keys/k"',
             "sinks.webhook.hmac_key_file",
         ),
         (

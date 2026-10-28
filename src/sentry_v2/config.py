@@ -132,6 +132,16 @@ def _path(v: object) -> Path:
     return Path(_abs_path(_str(v)))
 
 
+def _secret_path(v: object) -> Path:
+    """An absolute path, or the bare name of a systemd credential (LoadCredential=)."""
+    s = _str(v)
+    if "/" not in s and s not in ("", ".", ".."):
+        return Path(s)
+    if not s.startswith("/"):
+        raise ValueError(f"{s!r}: give an absolute path, or a systemd credential name with no '/'")
+    return Path(_abs_path(s))
+
+
 def _duration(v: object) -> float:
     return parse_duration(_str(v))
 
@@ -317,7 +327,7 @@ def _sinks(root: _Reader, state_dir: Path) -> SinksConfig:
     if w := r.sub("webhook"):
         webhook = WebhookSinkConfig(
             url=_url(w),
-            hmac_key_file=w.require("hmac_key_file", _path),
+            hmac_key_file=w.require("hmac_key_file", _secret_path),
             ca_file=w.get("ca_file", _path, None),
             timeout=w.get("timeout", _pos_duration, 10.0),
         )
@@ -338,7 +348,7 @@ def _sinks(root: _Reader, state_dir: Path) -> SinksConfig:
     if h := r.sub("splunk_hec"):
         splunk = SplunkHecSinkConfig(
             url=_url(h),
-            token_file=h.require("token_file", _path),
+            token_file=h.require("token_file", _secret_path),
             index=h.get("index", _str, None),
             ca_file=h.get("ca_file", _path, None),
         )
@@ -349,9 +359,9 @@ def _sinks(root: _Reader, state_dir: Path) -> SinksConfig:
         elastic = ElasticSinkConfig(
             url=_url(e),
             index=e.require("index", _str),
-            api_key_file=e.get("api_key_file", _path, None),
+            api_key_file=e.get("api_key_file", _secret_path, None),
             username=e.get("username", _str, None),
-            password_file=e.get("password_file", _path, None),
+            password_file=e.get("password_file", _secret_path, None),
             ca_file=e.get("ca_file", _path, None),
         )
         e.finish()
