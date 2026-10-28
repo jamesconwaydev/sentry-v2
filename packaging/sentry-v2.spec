@@ -1,4 +1,4 @@
-%global upstream_version 0.2.7
+%global upstream_version 0.2.8
 %global selinuxtype targeted
 %global modulename sentry_v2
 
@@ -174,6 +174,10 @@ fi
 %{_datadir}/cockpit/sentry-v2/sentry-v2.css
 
 %changelog
+* Wed Oct 28 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.8-1
+- Stricter configuration checks for redaction patterns, policy names and unit patterns
+- Clearer policy test errors for a missing or wrong-shaped event file
+
 * Wed Oct 28 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.7-1
 - Man pages for sentry-v2 and sentry-v2ctl
 - Stricter configuration checks; quoted secrets fully redacted

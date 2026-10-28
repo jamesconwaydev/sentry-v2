@@ -6,23 +6,28 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-10-28
+
+### Changed
+
+- The configuration is stricter again. Each of these used to load and then
+  do nothing, or the wrong thing. They're now refused when the file loads,
+  naming the file and key, so check with `sentry-v2ctl policy validate` from
+  0.2.8 before you upgrade:
+  - a `redaction.patterns` entry that matches the empty string, such as
+    `""`, `"x|"` or `"a*"`, which redacted every character of every bundle;
+  - a policy with an empty `name`, which left a blank column in
+    `sentry-v2ctl policies` and an empty value in the metric labels;
+  - an empty string in a policy's `units`, `cgroups` or `scontext_types`,
+    which matches nothing, so the policy loaded and never fired.
+
 ### Fixed
 
-- A `redaction.patterns` entry that matches the empty string, such as `""`,
-  `"x|"` or `"a*"`, is refused when the config loads instead of redacting
-  every character of every bundle.
-- A policy with an empty `name` was accepted, leaving a blank column in
-  `sentry-v2ctl policies` and an empty value in the metric labels. It is now
-  refused when the config loads.
 - `sentry-v2ctl policy test --event` on a missing file said the event was the
   wrong shape instead of naming the file it could not read.
-- An empty string in a policy's `units`, `cgroups` or `scontext_types` list
-  was accepted; the pattern matches nothing, so the policy loaded and never
-  fired. It is now refused when the config loads.
 - `sentry-v2ctl policy test --event` on JSON that is not shaped like an event
-  raised a Python error instead of naming the problem. Each entry is now
-  checked, and the error names the event number, the unknown field and the
-  expected type.
+  raised a Python error instead of naming the problem. The error now names
+  the event number, the unknown field or the expected type.
 
 ## [0.2.7] - 2026-10-28
 
@@ -289,7 +294,9 @@ The first release.
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,
   hardening, troubleshooting, architecture and development guides.
 
-[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.7...v0.2.8
+[0.2.7]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.3...v0.2.4

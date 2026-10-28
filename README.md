@@ -60,8 +60,8 @@ check them, and install:
 
 ```console
 $ sha256sum -c SHA256SUMS --ignore-missing
-$ gh attestation verify sentry-v2-0.2.7-1.el10.noarch.rpm --repo jamesconwaydev/sentry-v2
-# dnf install ./sentry-v2-0.2.7-*.noarch.rpm ./sentry-v2-selinux-0.2.7-*.noarch.rpm
+$ gh attestation verify sentry-v2-0.2.8-1.el10.noarch.rpm --repo jamesconwaydev/sentry-v2
+# dnf install ./sentry-v2-0.2.8-*.noarch.rpm ./sentry-v2-selinux-0.2.8-*.noarch.rpm
 ```
 
 EL kernels ship with PSI off. This turns it on, and only reboots a host
@@ -87,7 +87,7 @@ dry-run. Copy one, check it, start the daemon:
 ok: 4 policies
 # systemctl enable --now sentry-v2
 # sentry-v2ctl status
-sentry-v2 0.2.7  running for 3s  mode dry-run
+sentry-v2 0.2.8  running for 3s  mode dry-run
 
 COLLECTOR  HEALTH
 psi        state=ok, triggers=0, restarts=0, last_error=None

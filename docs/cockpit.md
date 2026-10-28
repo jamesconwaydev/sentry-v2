@@ -13,7 +13,7 @@ spec as the daemon and published alongside it on the
 needs Cockpit 300 or later (`cockpit-system`):
 
 ```console
-# dnf install ./sentry-v2-cockpit-0.2.7-*.noarch.rpm
+# dnf install ./sentry-v2-cockpit-0.2.8-*.noarch.rpm
 ```
 
 The files go to `/usr/share/cockpit/sentry-v2/`. It's plain JavaScript and
