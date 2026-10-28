@@ -150,6 +150,13 @@ def _size(v: object) -> int | Percent:
     return parse_size(_str(v))
 
 
+def _pos_size(v: object) -> int | Percent:
+    size = _size(v)
+    if isinstance(size, int) and size <= 0:
+        raise ValueError("must be above 0")
+    return size
+
+
 def _bytes(v: object) -> int:
     size = _size(v)
     if isinstance(size, Percent):
@@ -483,7 +490,7 @@ def _action(r: _Reader, limits: LimitsConfig) -> ActionSpec:
     action: ActionSpec
     if kind == "throttle":
         action = Throttle(
-            memory_high=r.get("memory_high", _size, None),
+            memory_high=r.get("memory_high", _pos_size, None),
             cpu_weight=r.get("cpu_weight", _int_in(1, 10000), None),
             duration=duration(),
         )

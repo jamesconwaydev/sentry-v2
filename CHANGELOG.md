@@ -23,6 +23,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
+- A zero absolute `memory_high` in a throttle is now refused when the policy
+  loads, matching the rejection of zero percentages.
+
 - A sink `url` of `https://` with no host was accepted and only failed at
   delivery time. The shared check now refuses it when the config loads.
 - Relative or non-normalised paths in single-path config keys (`daemon.state_dir`,

@@ -118,6 +118,26 @@ def test_duration_over_limit(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.parametrize("size", ["0", "0K", "0M"])
+def test_throttle_memory_high_refuses_zero(tmp_path: Path, size: str) -> None:
+    do = f'action = "throttle"\nmemory_high = "{size}"\nduration = "1m"'
+    assert err(tmp_path, x=policy_text(do=do)) == (
+        "x.toml: policy[0].do[0].memory_high: must be above 0"
+    )
+
+
+@pytest.mark.parametrize(
+    ("size", "expected"), [("80%", Percent(80.0)), ("512M", 512 * 1024**2), ("1M", 1024**2)]
+)
+def test_throttle_memory_high_accepts_positive_sizes(
+    tmp_path: Path, size: str, expected: int | Percent
+) -> None:
+    do = f'action = "throttle"\nmemory_high = "{size}"\nduration = "1m"'
+    assert load(tmp_path, x=policy_text(do=do)).policies[0].actions == (
+        Throttle(expected, None, 60.0),
+    )
+
+
 def test_throttle_needs_a_knob(tmp_path: Path) -> None:
     got = err(tmp_path, x=policy_text(do='action = "throttle"\nduration = "1m"'))
     assert got == "x.toml: policy[0].do[0].action: throttle needs memory_high or cpu_weight"
