@@ -50,6 +50,46 @@ each one is tied to the unit, with the reasons. A 0.94 from "pid in unit
 cgroup" and "comm matches ExecStart" is a strong lead, not a verdict. See
 [correlation.md](correlation.md).
 
+## What happens when it gets it wrong?
+
+A linked denial is a lead, not a verdict. Here's where the scoring can
+mislead you, and what happens when something underneath fails.
+
+- **A denial from a process that's already gone.** The cgroup is read when
+  the denial arrives. If the process has exited by then, its PID still
+  counts when it was the unit's main process; otherwise only the domain
+  and name can, and a sibling running the same binary in the same domain
+  (two instances of a template unit, say) can score 0.76 against the wrong
+  one. The reasons show it: no `pid in unit cgroup`. When the cgroup is
+  known and belongs to another unit, the denial is left out.
+- **A denial storm.** On a busy host the daemon can fall seconds behind the
+  audit stream. A failure waits until audit has been read past its window,
+  for up to 30 s; after that it goes out with `audit_caught_up: false`, and
+  denials may be missing from it.
+- **Timing.** Only denials from 5 s before to 1 s after the failure count.
+  A service that's denied early and dies later needs a wider
+  `correlation.before`.
+- **Dropped records.** `USER_AVC` records over 1000 bytes are dropped and
+  counted in `user_avc_truncated`; denials the kernel drops before the
+  daemon reads them show up as `overruns`. Both are in `sentry-v2ctl
+  status`.
+- **The daemon crashes or is killed.** systemd runs
+  `sentry-v2 --rollback-only` as soon as it exits, which puts back every
+  throttle and freeze still on record, then restarts the daemon after 5 s.
+  If the daemon can't come back, say because its configuration no longer
+  loads, the rollback has already happened. If the rollback itself can't
+  reach systemd, the next start tries again.
+- **A rollback fails.** It's retried 10 times. Then the record is marked
+  `rollback_failed`, a critical bundle goes to every sink, and no new
+  action touches that unit until you retry with `sentry-v2ctl rollback ID`.
+- **systemd keeps refusing.** Three failed systemd calls in ten minutes
+  trip the circuit breaker, and everything runs in dry-run for fifteen.
+- **The host reboots.** Throttles are runtime-only, so they're gone with
+  the reboot whatever else happened.
+
+More of this, with the fixes, is in [Troubleshooting](troubleshooting.md)
+and [Actions and safety](actions-and-safety.md).
+
 ## Why Python, and why no dependencies from PyPI?
 
 Python 3.12 and the two bindings it needs (`python3-systemd` and
