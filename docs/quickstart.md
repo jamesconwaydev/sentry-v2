@@ -64,7 +64,7 @@ invalid: 50-myapp-notify.toml: policy[0].name: duplicate policy name 'unit-failu
 ```console
 # systemctl enable --now sentry-v2
 $ sentry-v2ctl status
-sentry-v2 0.2.8  running for 4s  mode dry-run
+sentry-v2 0.2.9  running for 4s  mode dry-run
 
 COLLECTOR  HEALTH
 ...

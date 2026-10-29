@@ -1,4 +1,4 @@
-%global upstream_version 0.2.8
+%global upstream_version 0.2.9
 %global selinuxtype targeted
 %global modulename sentry_v2
 
@@ -174,6 +174,11 @@ fi
 %{_datadir}/cockpit/sentry-v2/sentry-v2.css
 
 %changelog
+* Thu Oct 29 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.9-1
+- Correlate denials from a child that exited, through its parent
+- Restore stages every file first and never follows a symlink
+- Webhook spools each bundle as soon as it is built
+
 * Wed Oct 28 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.8-1
 - Stricter configuration checks for redaction patterns, policy names and unit patterns
 - Clearer policy test errors for a missing or wrong-shaped event file

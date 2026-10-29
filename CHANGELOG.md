@@ -6,6 +6,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.9] - 2026-10-29
+
 ### Added
 
 - A denial from a child process that exited before its cgroup could be
@@ -318,7 +320,8 @@ The first release.
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,
   hardening, troubleshooting, architecture and development guides.
 
-[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.8...HEAD
+[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.9...HEAD
+[0.2.9]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.5...v0.2.6
