@@ -7,10 +7,18 @@ updates:
     labels: [dependencies]
     commit-message:
       prefix: "ci"
+    groups:
+      # Every codeql-action step must run the same version, or analyze fails.
+      codeql-action:
+        patterns: ["github/codeql-action*"]
   - package-ecosystem: pip
-    directories: [/, /requirements]
+    # The pins live here; scanning / as well opened every bump twice.
+    directory: /requirements
     schedule:
       interval: weekly
     labels: [dependencies]
     commit-message:
       prefix: "chore"
+    groups:
+      requirements:
+        patterns: ["*"]
