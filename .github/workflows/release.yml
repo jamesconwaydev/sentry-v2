@@ -165,7 +165,7 @@ jobs:
         with:
           name: python
           path: dist
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
 
   # Manual backfill: publish the wheel and sdist of an existing GitHub release.
   # Running it is the explicit act, so it is not gated on PYPI_PUBLISH.
@@ -193,6 +193,6 @@ jobs:
           [ "$(find . -type f -printf '%f\n' | grep -v '^SHA256SUMS$' | sort)" = "$(printf 'sentry_v2-%s-py3-none-any.whl\nsentry_v2-%s.tar.gz\n' "$v" "$v")" ] \
             || { echo "expected exactly one wheel and one sdist for $v:" >&2; ls >&2; exit 1; }
           rm SHA256SUMS
-      - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: dist/
