@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import socket
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -77,24 +76,3 @@ class ControlClient:
             raise ControlError("daemon did not answer: reply id does not match the request")
         result: dict[str, Any] = resp["result"]
         return result
-
-    def subscribe(self) -> Iterator[dict[str, Any]]:
-        """Yield event dicts until the daemon disconnects."""
-        with self._connect() as s:
-            try:
-                s.sendall(self._request("subscribe", {}))
-                with s.makefile("rb") as f:
-                    ack = self._parse(f.readline())  # still under the connect timeout
-                    if not ack.get("ok"):
-                        raise ControlError(str(ack.get("error", "unknown error")))
-                    if not _is_one(ack.get("id")):
-                        raise ControlError("daemon did not answer: ack id does not match")
-                    s.settimeout(None)
-                    for line in f:
-                        msg = self._parse(line)
-                        if "event" in msg:
-                            yield msg["event"]
-                        elif msg.get("ok") is False:
-                            raise ControlError(str(msg.get("error", "unknown error")))
-            except OSError as e:
-                raise ControlError(f"daemon did not answer: {e}") from None

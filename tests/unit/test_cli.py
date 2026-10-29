@@ -60,9 +60,7 @@ class Stub:
             with contextlib.suppress(BrokenPipeError), c, c.makefile("rwb") as f:
                 req = json.loads(f.readline())
                 self.seen.append(req)
-                if req["cmd"] == "subscribe":
-                    f.write(b'{"id":1,"ok":true,"result":{}}\n{"event":{"a":1}}\n')
-                elif isinstance(self.replies[req["cmd"]], bytes):
+                if isinstance(self.replies[req["cmd"]], bytes):
                     f.write(self.replies[req["cmd"]])
                     if self.replies[req["cmd"]] == b"hang":
                         threading.Event().wait(1)
@@ -250,8 +248,7 @@ def test_server_side_permission_error_is_exit_3(stub, capsys):
     assert rc == 3 and "sentry-v2-admin" in err
 
 
-def test_subscribe_and_call_errors(stub):
-    assert list(ControlClient(stub.path).subscribe()) == [{"a": 1}]
+def test_call_errors(stub):
     stub.replies["x"] = {"ok": False, "error": "boom"}
     with pytest.raises(ControlError, match="boom"):
         ControlClient(stub.path).call("x")
