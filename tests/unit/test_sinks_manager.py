@@ -46,6 +46,7 @@ class Spooled(Recorder):
         self.flushed = 0
 
     async def flush(self) -> None:
+        await self.gate.wait()
         self.flushed += 1
         if self.fail:
             raise SinkError("still down")
@@ -67,22 +68,19 @@ def test_delivers_to_every_sink_and_counts_failures() -> None:
     assert m.failures == {"bad": 1}
 
 
-def test_full_queue_spools_or_drops(tmp_path: Path) -> None:
-    plain, spooled = Recorder("plain"), Spooled(Spool(tmp_path))
+def test_full_queue_drops(tmp_path: Path) -> None:
+    plain = Recorder("plain")
     plain.gate.clear()
-    spooled.gate.clear()
     bundles = [make_bundle() for _ in range(4)]
 
     async def run() -> SinkManager:
-        m = SinkManager([plain, spooled], queue_size=1)
+        m = SinkManager([plain], queue_size=1)
         m.start()
         m.submit(bundles[0])
-        await asyncio.sleep(0.01)  # workers take bundle 0 and block on the gate
+        await asyncio.sleep(0.01)  # the worker takes bundle 0 and blocks on the gate
         for b in bundles[1:]:
             m.submit(b)
-        await asyncio.sleep(0.05)
         plain.gate.set()
-        spooled.gate.set()
         await m.close()
         return m
 
@@ -90,8 +88,27 @@ def test_full_queue_spools_or_drops(tmp_path: Path) -> None:
     # bundle 0 in flight, bundle 1 queued, bundles 2-3 overflow
     assert plain.got == [b["id"] for b in bundles[:2]]
     assert m.dropped == {"plain": 2}
-    assert [b["id"] for _, b in spooled.spool.pending()] == [b["id"] for b in bundles[2:]]
-    assert spooled.flushed == 1
+
+
+def test_spooled_sink_has_every_bundle_on_disk_while_a_flush_is_stuck(tmp_path: Path) -> None:
+    spooled = Spooled(Spool(tmp_path))
+    spooled.gate.clear()  # the startup flush hangs, like a webhook in backoff
+    bundles = [make_bundle() for _ in range(3)]
+
+    async def run() -> SinkManager:
+        m = SinkManager([spooled], queue_size=1)
+        m.start()
+        for b in bundles:
+            m.submit(b)
+        await asyncio.sleep(0.05)
+        assert [b["id"] for _, b in spooled.spool.pending()] == [b["id"] for b in bundles]
+        spooled.gate.set()
+        await m.close()
+        return m
+
+    m = asyncio.run(run())
+    assert m.dropped == {}
+    assert spooled.flushed == 2  # the startup one, then one for everything pushed meanwhile
 
 
 def test_submit_never_raises(caplog: pytest.LogCaptureFixture) -> None:
@@ -110,7 +127,7 @@ def test_submit_never_raises(caplog: pytest.LogCaptureFixture) -> None:
     assert asyncio.run(run()).dropped == {"broken": 1}
 
 
-def test_close_times_out_and_spools_leftovers(tmp_path: Path) -> None:
+def test_close_times_out_and_keeps_the_spool(tmp_path: Path) -> None:
     plain, spooled = Recorder("plain"), Spooled(Spool(tmp_path))
     plain.gate.clear()
     spooled.gate.clear()
@@ -127,8 +144,7 @@ def test_close_times_out_and_spools_leftovers(tmp_path: Path) -> None:
     m = asyncio.run(run())
     assert plain.got == []
     assert m.dropped == {"plain": 3}
-    # the in-flight bundle is the sink's own business (the webhook spools before sending)
-    assert [b["id"] for _, b in spooled.spool.pending()] == [b["id"] for b in bundles[1:]]
+    assert [b["id"] for _, b in spooled.spool.pending()] == [b["id"] for b in bundles]
 
 
 def test_startup_flush_failure_is_counted(tmp_path: Path) -> None:

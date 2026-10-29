@@ -15,14 +15,16 @@ syslog, Splunk HEC and Elasticsearch sinks turn on when their table is in
 
 ## How delivery works
 
-Each sink has its own queue and worker, so a slow sink never holds up
-another one or the daemon. If a sink's queue fills, the webhook sink spills
-the bundle to its spool and the others drop it. Drops and failures are
-counted per sink in `sentry-v2ctl status` and in
-`sentry_v2_sink_failures_total`.
+Each sink has its own worker, so a slow sink never holds up another one or
+the daemon. The webhook writes every bundle to its spool on disk the moment
+it's built, even while it's retrying an older one, so a crash loses nothing.
+The other sinks keep an in-memory queue of 1000 and drop bundles when it's
+full. Drops and failures are counted per sink in `sentry-v2ctl status` and
+in `sentry_v2_sink_failures_total`.
 
-When the daemon stops, sinks get 5 s to deliver what's queued. After that,
-the webhook spools what's left and the others drop it.
+When the daemon stops, sinks get 5 s to deliver what they have. After that,
+the webhook's bundles wait in its spool for the next start and the others'
+are dropped.
 
 On an SELinux host, the policy module may refuse a sink on an unusual
 port even when the network allows it: the sink fails with a permission

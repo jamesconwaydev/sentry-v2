@@ -22,8 +22,6 @@ These won't change, because the project depends on them:
 - **Per-policy slice permission.** `allow_slices` is global today; letting
   one policy act on slices without opening them to all of them.
 - **Closing documented limits:**
-  - Webhook: stop a persistent 4xx from holding the worker in backoff for
-    up to an hour.
   - Correlation: match a denial from a child process that exited before
     its cgroup could be read, not just from the unit's main process.
 - **Wider integration testing:** the outbound sinks (webhook, syslog,

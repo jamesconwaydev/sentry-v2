@@ -1,4 +1,4 @@
-"""Bundle sinks and the manager that feeds them, one queue and worker per sink."""
+"""Bundle sinks and the manager that feeds them, one worker per sink."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 @runtime_checkable
 class Spooled(Protocol):
-    """A sink that keeps undelivered bundles on disk and resends them with `flush`."""
+    """A sink that keeps undelivered bundles on disk and delivers them with `flush`."""
 
     name: str
     spool: Spool
@@ -40,8 +40,10 @@ class Spooled(Protocol):
 class SinkManager:
     """Fans bundles out to sinks without ever blocking the caller.
 
-    A full queue spills to the sink's spool if it has one; otherwise the
-    bundle is dropped and counted in `dropped`.
+    A spooled sink gets each bundle written to its spool at once, and its
+    worker drains the spool, so a delivery stuck in backoff holds nothing in
+    memory that a crash could lose. Other sinks get an in-memory queue; when
+    it's full the bundle is dropped and counted in `dropped`.
     """
 
     def __init__(self, sinks: Iterable[Sink], queue_size: int = 1000) -> None:
@@ -49,6 +51,9 @@ class SinkManager:
         self.failures: Counter[str] = Counter()
         self.dropped: Counter[str] = Counter()
         self._queues = {s.name: asyncio.Queue[Bundle](queue_size) for s in self.sinks}
+        # spooled sinks: `wake` means something new is on disk, `idle` that the worker waits for it
+        self._wake = {s.name: asyncio.Event() for s in self.sinks}
+        self._idle = {s.name: asyncio.Event() for s in self.sinks}
         self._tasks: list[asyncio.Task[None]] = []
         self._spilling: set[asyncio.Task[None]] = set()
 
@@ -62,19 +67,19 @@ class SinkManager:
     def submit(self, bundle: Bundle) -> None:
         for sink in self.sinks:
             try:
-                self._queues[sink.name].put_nowait(bundle)
+                if isinstance(sink, Spooled):
+                    self._spool(sink, bundle)
+                else:
+                    self._queues[sink.name].put_nowait(bundle)
             except asyncio.QueueFull:
-                self._overflow(sink, bundle)
+                log.warning("sink %s: queue full, dropping bundle %s", sink.name, bundle.get("id"))
+                self.dropped[sink.name] += 1
             except Exception:
                 log.exception("sink %s: could not queue bundle", sink.name)
                 self.dropped[sink.name] += 1
 
-    def _overflow(self, sink: Sink, bundle: Bundle) -> None:
-        if not isinstance(sink, Spooled):
-            log.warning("sink %s: queue full, dropping bundle %s", sink.name, bundle.get("id"))
-            self.dropped[sink.name] += 1
-            return
-        # Known limit: one task per spilled bundle, unbounded, so a sustained flood
+    def _spool(self, sink: Spooled, bundle: Bundle) -> None:
+        # Known limit: one task per spooled bundle, unbounded, so a sustained flood
         # queues work on the default executor (upgrade path: bound it with a semaphore).
         task = asyncio.create_task(asyncio.to_thread(sink.spool.push, bundle))
         self._spilling.add(task)
@@ -85,21 +90,34 @@ class SinkManager:
         if not task.cancelled() and (e := task.exception()):
             log.error("sink %s: could not spool bundle: %s", name, e)
             self.dropped[name] += 1
+            return
+        self._idle[name].clear()
+        self._wake[name].set()
 
-    async def _work(self, sink: Sink, queue: asyncio.Queue[Bundle]) -> None:
-        if isinstance(sink, Spooled):
+    async def _drain(self, sink: Spooled) -> None:
+        """Deliver the spool at start and again after every push."""
+        wake, idle = self._wake[sink.name], self._idle[sink.name]
+        while True:
             try:
                 await sink.flush()
             except Exception as e:
-                log.warning("sink %s: resending spooled bundles failed: %s", sink.name, e)
+                log.warning("sink %s: spooled bundles not delivered: %s", sink.name, e)
                 self.failures[sink.name] += 1
+            if not wake.is_set():
+                idle.set()
+            await wake.wait()
+            wake.clear()
+            idle.clear()
+
+    async def _work(self, sink: Sink, queue: asyncio.Queue[Bundle]) -> None:
+        if isinstance(sink, Spooled):
+            return await self._drain(sink)
         while True:
             bundle = await queue.get()
             try:
                 await sink.send(bundle)
             except asyncio.CancelledError:
-                if not isinstance(sink, Spooled):  # a spooled sink already has it on disk
-                    self.dropped[sink.name] += 1
+                self.dropped[sink.name] += 1
                 raise
             except Exception as e:
                 log.warning("sink %s: bundle %s not delivered: %s", sink.name, bundle.get("id"), e)
@@ -108,19 +126,22 @@ class SinkManager:
                 queue.task_done()
 
     async def close(self, timeout: float = 5.0) -> None:
-        """Deliver what can go within `timeout`; spool or count the rest."""
+        """Deliver what can go within `timeout`; drop and count the rest, unless spooled."""
+        await asyncio.gather(*self._spilling, return_exceptions=True)
+        done = [
+            self._idle[s.name].wait() if isinstance(s, Spooled) else self._queues[s.name].join()
+            for s in self.sinks
+        ]
         with contextlib.suppress(TimeoutError):
-            await asyncio.wait_for(
-                asyncio.gather(*(q.join() for q in self._queues.values())), timeout
-            )
+            await asyncio.wait_for(asyncio.gather(*done), timeout)
         for t in self._tasks:
             t.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
         for sink in self.sinks:
             queue = self._queues[sink.name]
             while not queue.empty():
-                self._overflow(sink, queue.get_nowait())
-        await asyncio.gather(*self._spilling, return_exceptions=True)
+                queue.get_nowait()
+                self.dropped[sink.name] += 1
 
 
 def build_sinks(cfg: SinksConfig, state_dir: Path, *, check_owner: bool = True) -> list[Sink]:

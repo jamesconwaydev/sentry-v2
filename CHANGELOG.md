@@ -14,6 +14,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - `restore` no longer follows a symlink below `/etc/systemd/system` or
   `/run/systemd/system`. Recreating a removed drop-in directory used to
   follow one, so a link planted there could send the file elsewhere.
+- The webhook writes each bundle to its spool as soon as it's built. Before,
+  while it was retrying an endpoint that kept failing, new bundles waited in
+  memory behind that retry, and a crash or `kill -9` lost them.
 - Webhook retries wait at most 5 minutes between attempts, so an endpoint
   fixed during the retry hour is used within 5 minutes instead of up to
   half an hour later.

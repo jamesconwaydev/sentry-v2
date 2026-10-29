@@ -52,7 +52,7 @@ flowchart LR
 | `systemd.py` | The only D-Bus client. Reads unit properties, sets runtime limits, freezes, thaws and reloads. |
 | `cgroupfs.py` | Reads the cgroup tree and `/proc`. |
 | `bundle.py` | Builds and redacts bundles. |
-| `sinks/` | One module per destination, plus the manager that gives each one a queue and a worker. |
+| `sinks/` | One module per destination, plus the manager that gives each one a worker: the webhook's reads from its spool, the others' from an in-memory queue. |
 | `metrics.py` | The Prometheus registry and a minimal HTTP server. |
 | `config.py`, `config_types.py` | Strict TOML loading and the frozen config dataclasses. |
 | `reporting.py` | Builds bundles in the background (up to 4 at once) with bounded context lookups, and caches unit properties for the correlator. |
