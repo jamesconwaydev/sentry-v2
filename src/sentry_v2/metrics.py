@@ -7,6 +7,7 @@ are no locks. Callers on other threads must hop onto the loop first.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ipaddress
 import logging
 import re
@@ -353,7 +354,13 @@ class MetricsServer:
                     await self._respond(writer, 500)
                 else:
                     await self._respond(writer, 200, body, CONTENT_TYPE)
-        except (ConnectionError, OSError):
+        except (ConnectionError, OSError, TimeoutError):
+            # A write timed out: drop the buffered reply and close the socket
+            # at once instead of waiting for the buffer to flush.
+            transport = getattr(writer, "transport", None)
+            if transport is not None:
+                with contextlib.suppress(Exception):
+                    transport.abort()
             pass
         finally:
             writer.close()
