@@ -285,6 +285,36 @@ def test_collector_fills_cgroup_and_flushes(tmp_path):
     assert c.health() == {"source": "stub", "user_avc_truncated": 0}
 
 
+def test_collector_reads_the_parent_cgroup_of_an_exited_process(tmp_path):
+    proc = tmp_path / "proc"
+    (proc / "8").mkdir(parents=True)
+    (proc / "8" / "cgroup").write_text("0::/system.slice/httpd.service\n")
+    q = EventQueue()
+    recs = [  # pid 999 has exited; its parent 8 and PID 1 are still there
+        avc(1, pid="999"),
+        rec("SYSCALL", 1, ppid="8"),
+        rec("EOE", 1),
+        avc(2, pid="999"),
+        rec("SYSCALL", 2, ppid="1"),
+        rec("EOE", 2),
+    ]
+    c = AuditCollector(q, CgroupFS(tmp_path, proc), lambda: Stub(recs), flush_interval=0.01)
+
+    async def go():
+        t = asyncio.ensure_future(c.run())
+        await asyncio.sleep(0.05)
+        t.cancel()
+
+    asyncio.run(go())
+    child, orphan = q._q.popleft(), q._q.popleft()
+    assert (child.ppid, child.cgroup_at_receipt) == (8, None)
+    assert (child.parent_cgroup_at_receipt, child.parent_unit_at_receipt) == (
+        "system.slice/httpd.service",
+        "httpd.service",
+    )
+    assert orphan.ppid == 1 and orphan.parent_cgroup_at_receipt is None
+
+
 def test_collector_survives_bad_record(tmp_path):
     q = EventQueue()
     calls = []

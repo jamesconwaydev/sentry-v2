@@ -68,9 +68,13 @@ class AvcEvent:
     comm: str | None = None
     exe: str | None = None
     pid: int | None = None
+    ppid: int | None = None
     permissive: bool = False
     cgroup_at_receipt: str | None = None
     unit_at_receipt: str | None = None
+    # read only when the process had already exited
+    parent_cgroup_at_receipt: str | None = None
+    parent_unit_at_receipt: str | None = None
     raw: str = ""
 
     def to_dict(self) -> dict[str, object]:

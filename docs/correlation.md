@@ -45,12 +45,16 @@ Granted (`avc: granted`) records are ignored.
 
 ### Scoring
 
-Each denial is scored on three signals:
+Each denial is scored on three signals: where the process was, its domain
+and its name. Only one of the four "where" reasons counts for a denial,
+the first that applies:
 
 | Reason in the bundle | Weight | When it applies |
 |---|---|---|
 | `pid in unit cgroup` | 0.9 | The denied process was in the failed unit's cgroup when the denial was received. |
 | `pid was the unit's main process` | 0.9 | The process had already exited, so its cgroup couldn't be read, but its PID is the unit's last main PID (`ExecMainPID`, which systemd keeps after the process exits). Used only when the cgroup is unknown. |
+| `parent pid in unit cgroup` | 0.8 | The process had already exited, but its parent (`ppid` from the audit record) was in the unit's cgroup. A child starts in its parent's cgroup; the parent can move it elsewhere, which is why this counts for less. |
+| `parent was the unit's main process` | 0.8 | Both had exited, but the parent's PID is the unit's last main PID. |
 | `scontext type matches unit domain` | 0.6 | The denial's source type (for example `httpd_t`) is the unit's SELinux domain. |
 | `comm matches ExecStart` | 0.4 | The process name or executable matches one of the unit's `ExecStart` binaries. |
 
@@ -78,8 +82,10 @@ If that cgroup belongs to a different unit, the denial isn't scored at all.
 Two instances of a template unit (`app@a`, `app@b`) run the same binary in
 the same domain, so without this rule a denial from `app@b` would score
 0.76 against `app@a`'s failure on domain and name alone. When the cgroup
-couldn't be read, because the process had already exited, the unit's last
-main PID, the domain and the name still count.
+couldn't be read, because the process had already exited, the daemon reads
+its parent's cgroup instead, and the unit's last main PID, the domain and
+the name still count. A forked worker that hits a denial and dies straight
+away is the usual case.
 
 ### When the daemon falls behind the audit stream
 

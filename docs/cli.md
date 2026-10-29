@@ -317,7 +317,7 @@ Each event is a JSON object with a `kind` and that kind's fields. `ts_us`
 |---|---|---|
 | `unit_failed` | `unit` | `result`, `exit_code`, `exit_status`, `invocation_id`, `main_pid` |
 | `psi` | `cgroup`, `resource`, `avg10`, `avg60`, `avg300`, `total_us`, `triggered`, `stall_us`, `window_us` | `pressure` (`some` or `full`, default `full`) |
-| `avc` | `serial`, `denied`, `perms`, `scontext`, `scontext_type`, `tcontext`, `tclass` | `comm`, `exe`, `pid`, `permissive`, `cgroup_at_receipt`, `unit_at_receipt`, `raw` |
+| `avc` | `serial`, `denied`, `perms`, `scontext`, `scontext_type`, `tcontext`, `tclass` | `comm`, `exe`, `pid`, `ppid`, `permissive`, `cgroup_at_receipt`, `unit_at_receipt`, `parent_cgroup_at_receipt`, `parent_unit_at_receipt`, `raw` |
 
 For a `psi` event, `stall_us` and `window_us` must match a policy's
 `threshold` exactly (for `300ms/2s`, `300000` and `2000000`). A single PSI

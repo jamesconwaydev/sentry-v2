@@ -6,6 +6,15 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A denial from a child process that exited before its cgroup could be
+  read now correlates through its parent: `parent pid in unit cgroup` or
+  `parent was the unit's main process`, both 0.8. A forked worker that
+  hits a denial and dies with the service used to count only on its domain
+  and name. AVC events gain `ppid`, `parent_cgroup_at_receipt` and
+  `parent_unit_at_receipt`.
+
 ### Fixed
 
 - `sentry-v2ctl restore` writes every file to a temporary copy before

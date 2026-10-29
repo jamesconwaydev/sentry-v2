@@ -56,6 +56,10 @@ def _exec_names(avc: AvcEvent) -> set[str]:
     return names
 
 
+def _leaf(cgroup: str | None) -> str:
+    return (cgroup or "").rstrip("/").rsplit("/", 1)[-1]
+
+
 def score(
     avc: AvcEvent,
     unit: str,
@@ -69,12 +73,16 @@ def score(
         # (a sibling template instance, say) points away from this one.
         return None
     found: list[tuple[str, float]] = []
-    cgroup_leaf = (avc.cgroup_at_receipt or "").rstrip("/").rsplit("/", 1)[-1]
-    if unit in (avc.unit_at_receipt, cgroup_leaf):
+    if unit in (avc.unit_at_receipt, _leaf(avc.cgroup_at_receipt)):
         found.append(("pid in unit cgroup", 0.9))
     elif avc.cgroup_at_receipt is None and main_pid is not None and avc.pid == main_pid:
         # gone before its cgroup could be read, but systemd remembers it
         found.append(("pid was the unit's main process", 0.9))
+    elif unit in (avc.parent_unit_at_receipt, _leaf(avc.parent_cgroup_at_receipt)):
+        # a child starts in its parent's cgroup, but the parent can move it: weaker
+        found.append(("parent pid in unit cgroup", 0.8))
+    elif avc.cgroup_at_receipt is None and main_pid is not None and avc.ppid == main_pid:
+        found.append(("parent was the unit's main process", 0.8))
     if unit_domain is not None and avc.scontext_type == unit_domain:
         found.append(("scontext type matches unit domain", 0.6))
     if _exec_names(avc) & exec_names:

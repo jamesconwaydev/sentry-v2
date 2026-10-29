@@ -184,6 +184,7 @@ class AvcAssembler:
                 continue
             user = r.type == "USER_AVC"  # caller-chosen comm/exe are not attribution
             pid = (f.get("spid") if user else None) or f.get("pid", "")
+            ppid = "" if user else syscall.get("ppid", "")
             scontext = f.get("scontext", "")
             parts = scontext.split(":")
             perms = tuple(f["perms"].split()) if "perms" in f else ((f["op"],) if "op" in f else ())
@@ -200,6 +201,7 @@ class AvcAssembler:
                     comm=None if user else _known(syscall.get("comm")) or _known(f.get("comm")),
                     exe=None if user else _known(syscall.get("exe")) or _known(f.get("exe")),
                     pid=int(pid) if pid.isascii() and pid.isdigit() else None,
+                    ppid=int(ppid) if ppid.isascii() and ppid.isdigit() else None,
                     permissive=f.get("permissive") == "1",
                     raw=" ".join(f"{k}={v}" for k, v in f.items()),
                 )
@@ -492,8 +494,18 @@ class AuditCollector:
         for ev in events:
             cgroup = self._fs.pid_cgroup(ev.pid) if ev.pid is not None else None
             unit = self._fs.unit_of(cgroup) if cgroup else None
+            parent = None
+            # gone already; its parent may not be. PID 1 is every main process's parent.
+            if cgroup is None and ev.ppid is not None and ev.ppid > 1:
+                parent = self._fs.pid_cgroup(ev.ppid)
             self._queue.put_nowait(
-                dataclasses.replace(ev, cgroup_at_receipt=cgroup, unit_at_receipt=unit)
+                dataclasses.replace(
+                    ev,
+                    cgroup_at_receipt=cgroup,
+                    unit_at_receipt=unit,
+                    parent_cgroup_at_receipt=parent,
+                    parent_unit_at_receipt=self._fs.unit_of(parent) if parent else None,
+                )
             )
 
     def _now(self) -> float:

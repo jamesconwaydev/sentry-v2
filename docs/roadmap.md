@@ -21,9 +21,6 @@ These won't change, because the project depends on them:
   small project.
 - **Per-policy slice permission.** `allow_slices` is global today; letting
   one policy act on slices without opening them to all of them.
-- **Closing documented limits:**
-  - Correlation: match a denial from a child process that exited before
-    its cgroup could be read, not just from the unit's main process.
 - **Wider integration testing:** the outbound sinks (webhook, syslog,
   Splunk HEC, Elasticsearch) against real endpoints with SELinux enforcing.
 

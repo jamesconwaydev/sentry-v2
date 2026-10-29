@@ -503,3 +503,29 @@ def test_main_pid_from_unit_info_is_used_at_finalisation() -> None:
     c.ingest(failed(T))
     [inc] = c.tick(T + S)
     assert inc.correlations[0].reasons == ("pid was the unit's main process",)
+
+
+def test_exited_child_matches_by_parent_cgroup() -> None:
+    gone = avc(
+        T - S,
+        cgroup_at_receipt=None,
+        unit_at_receipt=None,
+        parent_cgroup_at_receipt="system.slice/web.service",
+        parent_unit_at_receipt="web.service",
+        comm="x",
+        exe="/x",
+    )
+    c = score(gone, "web.service", None, set())
+    assert c is not None
+    assert c.reasons == ("parent pid in unit cgroup",)
+    assert c.confidence == pytest.approx(0.8)
+    assert score(gone, "other.service", None, set()) is None
+
+
+def test_exited_child_of_exited_main_process_matches_by_ppid() -> None:
+    gone = avc(T - S, ppid=4242, cgroup_at_receipt=None, unit_at_receipt=None, comm="x", exe="/x")
+    c = score(gone, "web.service", "httpd_t", set(), main_pid=4242)
+    assert c is not None
+    assert c.reasons == ("parent was the unit's main process", "scontext type matches unit domain")
+    assert c.confidence == pytest.approx(1 - 0.2 * 0.4)
+    assert score(gone, "web.service", None, set(), main_pid=4243) is None
