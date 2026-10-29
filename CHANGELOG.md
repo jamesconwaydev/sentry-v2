@@ -8,6 +8,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
+- Control socket drops a connection (and its buffered reply) with
+  `transport.abort()` when a write times out, so the per-uid connection
+  count is released only once the socket is really gone (#125).
 - Webhook retries wait at most 5 minutes between attempts, so an endpoint
   fixed during the retry hour is used within 5 minutes instead of up to
   half an hour later.
