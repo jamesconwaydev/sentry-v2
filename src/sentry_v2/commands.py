@@ -38,6 +38,7 @@ transition. Errors come back as ok:false with the CommandError text.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import hashlib
 import json
@@ -90,13 +91,42 @@ def _check_private(path: Path) -> None:
         raise CommandError(f"{path}: must be a directory owned by root, writable only by it")
 
 
-def _make_dirs(path: Path) -> None:
-    """Create `path` and any missing parents as 0755, whatever the umask."""
-    if path.is_dir():
-        return
-    _make_dirs(path.parent)
-    path.mkdir()
-    path.chmod(0o755)
+def _open_dir(path: Path) -> int:
+    """Open `path` under its restore root without following a symlink below the root.
+
+    Missing directories (a drop-in directory removed since the backup) are
+    created 0755, whatever the umask. The caller closes the returned fd.
+    """
+    root = next(r for r in RESTORE_ROOTS if path.is_relative_to(r))
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for name in path.relative_to(root).parts:
+            created = True
+            try:
+                os.mkdir(name, 0o700, dir_fd=fd)
+            except FileExistsError:
+                created = False
+            child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = child
+            if created:
+                os.fchmod(fd, 0o755)
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _stage(dir_fd: int, name: str, data: bytes, src: Path) -> None:
+    """Write `data` to a new `name` in `dir_fd`, with the mode and times of `src`."""
+    with contextlib.suppress(FileNotFoundError):
+        os.unlink(name, dir_fd=dir_fd)  # a leftover from an interrupted restore
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    with os.fdopen(os.open(name, flags, 0o600, dir_fd=dir_fd), "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+        actions.copy_mode_and_times(src, f.fileno())
 
 
 def _parse_ts(text: str) -> dt.datetime:
@@ -228,9 +258,10 @@ class Commands:
 
         The pre-flight refuses before anything is written: files that still
         match the backup are skipped, and a changed file outside
-        RESTORE_ROOTS refuses the whole restore. Writing isn't atomic, so an
-        OS error part-way through can leave a partial restore; the error
-        lists what was restored.
+        RESTORE_ROOTS refuses the whole restore. Every file is then staged
+        next to its destination, so a failure there (a full disk, a symlinked
+        directory) restores nothing. Only a rename failing after that can
+        leave a partial restore; the error lists what was restored.
         """
         backup_id = _required(args, "backup_id", str)
         m = _BACKUP_ID.fullmatch(backup_id)
@@ -276,21 +307,29 @@ class Commands:
                 f"write: {', '.join(outside)}. Copy them back by hand from "
                 f"{bdir}/files and run the restore again."
             )
+        staged: list[tuple[int, str, Path]] = []
         restored: list[str] = []
-        for src, data, dest in copies:
-            tmp = dest.with_name(f".{dest.name}.sentry-v2-restore")
-            try:
-                _make_dirs(dest.parent)  # a drop-in directory removed since the backup
-                # the bytes that were verified, not whatever the file holds now
-                tmp.unlink(missing_ok=True)  # a leftover from an interrupted restore
-                fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(fd, "wb") as f:
-                    f.write(data)
-                actions.copy_mode_and_times(src, tmp)
-                os.replace(tmp, dest)
-            except OSError as e:
-                raise CommandError(f"restoring {dest} failed ({e}); restored {restored}") from None
-            restored.append(str(dest))
+        try:
+            for src, data, dest in copies:
+                try:
+                    dir_fd = _open_dir(dest.parent)
+                    staged.append((dir_fd, f".{dest.name}.sentry-v2-restore", dest))
+                    # the bytes that were verified, not whatever the file holds now
+                    _stage(dir_fd, staged[-1][1], data, src)
+                except OSError as e:
+                    _unstage(staged)
+                    raise CommandError(f"nothing restored: staging {dest} failed ({e})") from None
+            for i, (dir_fd, tmp, dest) in enumerate(staged):
+                try:
+                    os.replace(tmp, dest.name, src_dir_fd=dir_fd, dst_dir_fd=dir_fd)
+                except OSError as e:
+                    _unstage(staged[i:])
+                    msg = f"restoring {dest} failed ({e}); restored {restored}"
+                    raise CommandError(msg) from None
+                restored.append(str(dest))
+        finally:
+            for dir_fd, _, _ in staged:
+                os.close(dir_fd)
         if restored:
             note = f"run systemctl daemon-reload && systemctl reload {m.group(1)}"
         else:
@@ -311,6 +350,12 @@ class Commands:
             for p in self.d.cfg.policies
         ]
         return {"policies": rows, "last_reload_error": self.d.last_reload_error}
+
+
+def _unstage(staged: list[tuple[int, str, Path]]) -> None:
+    for dir_fd, tmp, _ in staged:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp, dir_fd=dir_fd)
 
 
 def _restorable(path: Path) -> bool:

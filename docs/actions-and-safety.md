@@ -81,7 +81,9 @@ $ sentry-v2ctl restore app-web.service/20261014T031502Z
 The daemon checks every file against the manifest first and refuses the
 whole restore on a mismatch, or if the backup directory isn't owned by root
 or is writable by anyone else. Files that still match the backup are
-skipped; the rest go back atomically, and you're told what to run next,
+skipped. The rest are written to temporary copies first, so a failure
+there restores nothing; then they're swapped in, and you're told what to
+run next,
 `systemctl daemon-reload && systemctl reload <unit>`. It never reloads
 anything itself.
 

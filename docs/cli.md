@@ -219,9 +219,10 @@ $ sentry-v2ctl restore app-web.service/20261014T031502Z
 Before writing anything, the daemon checks every file against the backup's
 `MANIFEST.sha256` and refuses a backup directory that isn't owned by root
 or is writable by anyone else. Files that still match the backup are left
-alone. The rest go back atomically, and a drop-in directory removed since
-the backup is recreated (mode 0755). You get the paths and what to run
-next:
+alone. The rest are written to temporary copies before any is swapped in,
+so a full disk or a directory that has become a symlink restores nothing.
+A drop-in directory removed since the backup is recreated (mode 0755). You get
+the paths and what to run next:
 
 ```text
 restored:

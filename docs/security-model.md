@@ -129,7 +129,7 @@ Root on the host is out of scope: it can do anything Sentry-v2 can.
 |---|---|
 | Improper input validation (CWE-20) | Audit, netlink, journal and pressure parsers return or raise only what their callers handle; property-based fuzz tests enforce this (`tests/unit/test_fuzz.py`). Record, line and request sizes are bounded. |
 | OS command injection (CWE-78) | The daemon starts no processes and runs no shell. Units are changed through typed D-Bus calls. |
-| Path traversal and links (CWE-22, CWE-59) | `restore` writes only under `/etc/systemd/system` and `/run/systemd/system` and refuses changed files elsewhere. One known gap: creating missing parent directories follows symlinks, which only root can plant there. |
+| Path traversal and links (CWE-22, CWE-59) | `restore` writes only under `/etc/systemd/system` and `/run/systemd/system` and refuses changed files elsewhere. Below those roots it never follows a symlink, whether the directory exists or it creates it. |
 | Uncontrolled resource consumption (CWE-400) | Bounded event and audit queues with counted drops; per-user and total connection limits on the socket; idle timeouts; action limits, flap guard and circuit breaker. |
 | Sensitive information in output (CWE-532, CWE-200) | Redaction before any sink, the file sink included; secrets read from files or systemd credentials, never logged. |
 | Improper certificate validation (CWE-295) | System trust store or `ca_file`, TLS 1.2 minimum, hostname checks on. |

@@ -69,7 +69,7 @@ def describe(spec: ActionSpec) -> dict[str, Any]:
     }
 
 
-def copy_mode_and_times(src: Path | str, dest: Path | str) -> None:
+def copy_mode_and_times(src: Path | str, dest: Path | str | int) -> None:
     """Give `dest` the permission bits and times of `src`, but not its xattrs.
 
     shutil.copystat (and copy2) also copies security.selinux. That would

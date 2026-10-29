@@ -739,6 +739,66 @@ def test_restore_recreates_a_removed_drop_in_directory(env: Env, unit_roots: Pat
     drive(d, body)
 
 
+def test_restore_writes_nothing_when_a_drop_in_directory_is_now_a_symlink(
+    env: Env, unit_roots: Path
+) -> None:
+    unit_file = unit_roots / "demo.service"
+    drop_in = unit_roots / "demo.service.d" / "override.conf"
+    drop_in.parent.mkdir(parents=True)
+    unit_file.write_text("[Service]\n")
+    drop_in.write_text("[Service]\nNice=5\n")
+    d = env.daemon()
+    files = [str(unit_file), str(drop_in)]
+    backup_id = actions.backup("demo.service", files, d.executor.backups_dir, 0.0)
+    unit_file.write_text("broken")
+    shutil.rmtree(drop_in.parent)
+    elsewhere = env.root / "elsewhere"
+    elsewhere.mkdir()
+    drop_in.parent.symlink_to(elsewhere)
+
+    async def body() -> None:
+        with pytest.raises(CommandError, match=f"nothing restored: staging {drop_in}"):
+            await d.commands.restore({"backup_id": backup_id})
+        assert unit_file.read_text() == "broken"  # staged first, then thrown away
+        assert sorted(p.name for p in unit_roots.iterdir()) == ["demo.service", "demo.service.d"]
+        assert list(elsewhere.iterdir()) == []
+
+    drive(d, body)
+
+
+def test_restore_reports_a_rename_that_fails_after_staging(
+    env: Env, unit_roots: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first, second = unit_roots / "a.conf", unit_roots / "b.conf"
+    unit_roots.mkdir()
+    first.write_text("a")
+    second.write_text("b")
+    d = env.daemon()
+    backup_id = actions.backup(
+        "demo.service", [str(first), str(second)], d.executor.backups_dir, 0.0
+    )
+    first.write_text("broken")
+    second.write_text("broken")
+    replace = os.replace
+
+    def flaky(src: str, dst: str, **kw: int) -> None:
+        if dst == "b.conf":
+            raise OSError(5, "Input/output error")
+        replace(src, dst, **kw)
+
+    monkeypatch.setattr(os, "replace", flaky)
+
+    async def body() -> None:
+        with pytest.raises(
+            CommandError, match=rf"restoring {second} failed .*restored \['{first}'\]"
+        ):
+            await d.commands.restore({"backup_id": backup_id})
+        assert (first.read_text(), second.read_text()) == ("a", "broken")
+        assert sorted(p.name for p in unit_roots.iterdir()) == ["a.conf", "b.conf"]
+
+    drive(d, body)
+
+
 def test_subscribe_receives_incidents_and_records(env: Env) -> None:
     ts = now_us()
     env.journal_entries.append(failure_entry("nginx.service", ts + 300_000))

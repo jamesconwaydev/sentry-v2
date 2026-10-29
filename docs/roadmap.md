@@ -22,8 +22,6 @@ These won't change, because the project depends on them:
 - **Per-policy slice permission.** `allow_slices` is global today; letting
   one policy act on slices without opening them to all of them.
 - **Closing documented limits:**
-  - Restore: write files atomically, and stop following symlinks when it
-    creates missing parent directories.
   - Webhook: stop a persistent 4xx from holding the worker in backoff for
     up to an hour.
   - Correlation: match a denial from a child process that exited before
