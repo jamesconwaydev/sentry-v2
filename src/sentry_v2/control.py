@@ -198,6 +198,13 @@ class ControlServer:
                 self._per_uid[capped] += 1
             await self._serve(peer, reader, writer)
         except (ConnectionError, TimeoutError):
+            # A write timed out: drop the buffered reply and close the socket
+            # at once, so the per-uid count (released in finally) only comes
+            # down once the connection is really gone.
+            transport = getattr(writer, "transport", None)
+            if transport is not None:
+                with contextlib.suppress(Exception):
+                    transport.abort()
             pass
         except Exception:
             log.exception("control connection failed")
