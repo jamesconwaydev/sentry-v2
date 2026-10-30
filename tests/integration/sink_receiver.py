@@ -20,9 +20,6 @@ from typing import Any
 
 log_path, cert, key = sys.argv[1:]
 lock = threading.Lock()
-tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-tls.minimum_version = ssl.TLSVersion.TLSv1_2
-tls.load_cert_chain(cert, key)
 
 
 def record(port: int, body: bytes, **extra: Any) -> None:
@@ -61,7 +58,10 @@ class Server(socketserver.ThreadingTCPServer):
     def get_request(self) -> tuple[socket.socket, Any]:
         conn, addr = super().get_request()
         if self.use_tls:
-            conn = tls.wrap_socket(conn, server_side=True)
+            ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+            ctx.load_cert_chain(cert, key)
+            conn = ctx.wrap_socket(conn, server_side=True)
         return conn, addr
 
     use_tls = False
