@@ -209,10 +209,15 @@ connecting out to port 8443. The rule that allows this,
 `init_read_pid_files`, is wider than credentials: it lets the daemon read
 every `init_var_run_t` file, which includes much of `/run/systemd`. File
 modes still apply, so it can only read what root can read without a DAC
-override. The automated suite doesn't reach the outbound
-sinks (webhook, syslog, Splunk HEC, Elasticsearch); their rules are written
-from the ports they use. If a sink fails with a permission
-error, look for a denial; see
+override.
+
+The integration suite sends a bundle through every outbound sink with the
+module enforcing, and fails on any denial: the webhook on 8443, Splunk HEC on
+8088, Elasticsearch on 9200, and syslog on 514/udp, 601/tcp and 6514/tcp. The
+far end is a small local receiver, not the real products. The Elasticsearch
+and syslog sinks were also checked once by hand against Elasticsearch 8.19 and
+rsyslog 8.2510; Splunk HEC hasn't met a real Splunk yet. If a sink fails
+with a permission error, look for a denial; see
 [troubleshooting.md](troubleshooting.md#selinux-denials-from-sentry_v2_t).
 
 ### Sinks on other ports

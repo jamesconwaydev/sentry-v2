@@ -152,6 +152,12 @@ structured-data element for filtering:
 `unit` is the incident's target, which for a `psi` incident is a cgroup
 path and for an `avc` incident a domain.
 
+Over UDP, a name that resolves to several addresses gets the message on the
+first one only, and nothing tells the daemon if nobody's listening there.
+`localhost` is the usual trap: it's often `::1` first, while the collector
+listens on `127.0.0.1`. Give an address, or use `tcp` or `tls`, which try each
+address in turn.
+
 | `transport` | Framing | Size |
 |---|---|---|
 | `udp` | One datagram per bundle | Cut to 8192 bytes, with `truncated="1"` added to the structured data. The JSON in a cut message won't parse. |
