@@ -8,9 +8,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
-- Metrics endpoint drops a connection (and its buffered reply) with
-  `transport.abort()` when a write times out, instead of waiting for the
-  buffer to flush (#124).
+- The metrics endpoint closes a connection whose client stops reading,
+  instead of keeping it and its response open after the write timeout
+  (#124).
 - Webhook retries wait at most 5 minutes between attempts, so an endpoint
   fixed during the retry hour is used within 5 minutes instead of up to
   half an hour later.
