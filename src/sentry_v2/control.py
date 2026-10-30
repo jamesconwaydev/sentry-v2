@@ -201,11 +201,7 @@ class ControlServer:
             # A write timed out: drop the buffered reply and close the socket
             # at once, so the per-uid count (released in finally) only comes
             # down once the connection is really gone.
-            transport = getattr(writer, "transport", None)
-            if transport is not None:
-                with contextlib.suppress(Exception):
-                    transport.abort()
-            pass
+            writer.transport.abort()
         except Exception:
             log.exception("control connection failed")
         finally:
