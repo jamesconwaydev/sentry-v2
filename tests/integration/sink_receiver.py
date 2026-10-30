@@ -21,6 +21,7 @@ from typing import Any
 log_path, cert, key = sys.argv[1:]
 lock = threading.Lock()
 tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+tls.minimum_version = ssl.TLSVersion.TLSv1_2
 tls.load_cert_chain(cert, key)
 
 
