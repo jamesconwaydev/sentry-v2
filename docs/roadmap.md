@@ -21,9 +21,6 @@ These won't change, because the project depends on them:
   small project.
 - **Per-policy slice permission.** `allow_slices` is global today; letting
   one policy act on slices without opening them to all of them.
-- **Splunk HEC against a real Splunk.** The other sinks have met the real
-  thing or a live receiver with SELinux enforcing; this one has only met the
-  receiver.
 
 ## Being considered
 

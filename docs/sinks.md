@@ -181,6 +181,16 @@ there) with `Authorization: Splunk <token>`, sourcetype
 `sentry-v2:bundle`, the event time taken from the bundle's `ts`, and `index`
 if you set one.
 
+Two things catch people out, both seen on Splunk 10.6:
+
+- **A misspelt `index` looks like success.** Splunk answers `200 Success`
+  and then drops the event, so the sink counts no failure. Its only sign is a
+  message in Splunk itself: `Received event for unconfigured/disabled/deleted
+  index`. Send one bundle and search for it before you rely on this.
+- **Splunk's default certificate won't verify.** It names no host, so
+  `ca_file` alone isn't enough, and the sink has no switch to skip the check.
+  Give HEC a certificate that names the host in `url`.
+
 ```spl
 index=linux sourcetype="sentry-v2:bundle"
 | spath severity | search severity=warning

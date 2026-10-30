@@ -214,9 +214,10 @@ override.
 The integration suite sends a bundle through every outbound sink with the
 module enforcing, and fails on any denial: the webhook on 8443, Splunk HEC on
 8088, Elasticsearch on 9200, and syslog on 514/udp, 601/tcp and 6514/tcp. The
-far end is a small local receiver, not the real products. The Elasticsearch
-and syslog sinks were also checked once by hand against Elasticsearch 8.19 and
-rsyslog 8.2510; Splunk HEC hasn't met a real Splunk yet. If a sink fails
+far end is a small local receiver, not the real products. The Elasticsearch,
+syslog and Splunk HEC sinks were also checked once by hand against
+Elasticsearch 8.19, rsyslog 8.2510 and Splunk 10.6, without SELinux in the
+path. If a sink fails
 with a permission error, look for a denial; see
 [troubleshooting.md](troubleshooting.md#selinux-denials-from-sentry_v2_t).
 
