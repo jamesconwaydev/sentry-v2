@@ -62,6 +62,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
+- The control socket closes a connection whose client stops reading,
+  instead of keeping it and its reply open after the write timeout (#125).
 - `sentry-v2ctl restore` writes every file to a temporary copy before
   replacing any, so a full disk part-way through restores nothing instead
   of half the unit.
