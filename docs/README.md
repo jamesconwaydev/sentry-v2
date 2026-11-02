@@ -35,6 +35,7 @@ you need it.
 | [Bundle schema](reference/bundle.schema.json) | Validate bundles with JSON Schema. |
 | [Hardening and SELinux](hardening.md) | See the unit's sandbox, capabilities and SELinux module. |
 | [Security model](security-model.md) | What you can and can't expect in terms of security, and why. |
+| [Security review](security-review.md) | See what the last review checked, what it found and what's fixed. |
 
 ## Inside it
 
