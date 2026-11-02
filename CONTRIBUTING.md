@@ -68,6 +68,20 @@ sed -i 's/\r$//' path/to/file
 git commit -as --amend --no-edit
 ```
 
+## Code review
+
+Every pull request is read by someone other than its author before it merges. The maintainer reviews contributors' PRs, and the backup maintainer is asked to review the maintainer's. A maintainer PR can still merge without that second review if the backup is away; that's what [GOVERNANCE.md](GOVERNANCE.md#continuity) is for, and it shouldn't be the habit.
+
+The reviewer checks, in this order:
+
+1. **It's worth having.** It fixes a real problem or adds something on the [roadmap](docs/roadmap.md), and it doesn't break a ground rule above.
+2. **It's tested.** A bug fix comes with a test that fails on `main` and passes with the change. The reviewer checks that it really fails without the fix.
+3. **It's safe.** Nothing new acts on a host by default, nothing weakens a protected target or the SELinux module, input from the kernel, the journal, audit or a config file is bounded and validated, and no secret can reach a bundle or a log.
+4. **It's as small as it can be.** No dead code, no option nobody asked for, no change outside the PR's purpose.
+5. **The words match.** Docs and CHANGELOG say what a user would notice, and never claim more than the code does.
+
+To merge, a PR needs all of that plus green `lint`, `typecheck`, `test` and `dco` checks, every review thread resolved (including ones from CodeQL), and a branch up to date with `main`. The reviewer asks for changes in the PR, says why, and approves the CI run on each new push from a fork.
+
 ## Developer Certificate of Origin
 
 Every commit in a pull request needs a `Signed-off-by` line, which certifies that you wrote the change or otherwise have the right to submit it under the project's [Apache-2.0](LICENSE) licence, as set out in the [Developer Certificate of Origin](https://developercertificate.org/). Git adds the line for you:
