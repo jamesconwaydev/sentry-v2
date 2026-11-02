@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import stat
 import time
 from pathlib import Path
@@ -24,6 +23,7 @@ from .systemd import SystemdError, SystemdManager, UnitNotFound
 from .units import Percent
 
 MEMORY_HIGH_FLOOR = 32 * 1024**2
+MAX_BACKUP_FILE = 1024**2  # unit files and configs are small; this keeps a backup off MemoryMax
 UNIT_INACTIVE = "org.freedesktop.systemd1.UnitInactive"
 
 
@@ -83,10 +83,28 @@ def copy_mode_and_times(src: Path | str, dest: Path | str | int) -> None:
     os.utime(dest, ns=(st.st_atime_ns, st.st_mtime_ns))
 
 
+def _copy_regular_file(src: str, dest: Path) -> str:
+    """Copy one backup source to `dest` with its mode and times; return its sha256."""
+    fd = os.open(src, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    with open(fd, "rb") as f:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            raise OSError(f"{src}: not a regular file")
+        data = f.read(MAX_BACKUP_FILE + 1)
+        if len(data) > MAX_BACKUP_FILE:
+            raise OSError(f"{src}: larger than {MAX_BACKUP_FILE} bytes")
+    dest.write_bytes(data)
+    os.chmod(dest, stat.S_IMODE(st.st_mode))
+    os.utime(dest, ns=(st.st_atime_ns, st.st_mtime_ns))
+    return hashlib.sha256(data).hexdigest()
+
+
 def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     """Copy `files` under `backups_dir/<unit>/<ts>/files/<abs path>` with a sha256 manifest.
 
-    Returns the backup id `<unit>/<ts>`. Copies keep mode and mtime.
+    Returns the backup id `<unit>/<ts>`. Copies keep mode and mtime. Each
+    source must be a regular file, not a symlink, of at most MAX_BACKUP_FILE
+    bytes: a service may own the directory a policy's path is in.
     """
     backup_id = f"{unit}/{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime(now))}"
     bdir = backups_dir / backup_id
@@ -101,9 +119,8 @@ def backup(unit: str, files: list[str], backups_dir: Path, now: float) -> str:
     for src, rel in copies:
         dest = bdir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(src, dest)
-        copy_mode_and_times(src, dest)
-        manifest.append(f"{hashlib.sha256(dest.read_bytes()).hexdigest()}  {rel}\n")
+        digest = _copy_regular_file(src, dest)
+        manifest.append(f"{digest}  {rel}\n")
     (bdir / "MANIFEST.sha256").write_text("".join(manifest))
     return backup_id
 

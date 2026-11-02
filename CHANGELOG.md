@@ -28,6 +28,11 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
+- `backup_reload` followed symlinks and copied files of any size, on the
+  daemon's event loop. A service that owned the directory of a file in
+  `paths` could make the backup stall the daemon past its watchdog or run
+  it out of memory. Each file must now be a regular file of at most
+  1 MiB, not a symlink, and the copy runs off the event loop.
 - Any local user could hold the metrics endpoint's connections open until
   the daemon ran out of file descriptors, which stopped the control socket
   and the sinks too. The endpoint now closes any connection past 16.

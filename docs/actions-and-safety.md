@@ -63,6 +63,12 @@ copied, with mode and modification time, to:
     └── etc/app-web/app.conf
 ```
 
+Each file has to be a regular file of at most 1 MiB, and not a symlink.
+Anything else fails the action before the reload, with the path and the
+reason in the action's `error`. A service that owns the directory of a
+file you list can't swap it for a link or a huge file to make the backup
+copy something else or stall the daemon.
+
 The manifest is in `sha256sum` format, so you can check a backup by hand:
 
 ```console

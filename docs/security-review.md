@@ -82,7 +82,7 @@ metrics endpoint turned on.
 |---|---|---|---|
 | F1 | A user's cgroup could stand in for a system unit | Medium | Fixed in #140 |
 | F2 | The metrics endpoint has no connection limit | Low | Fixed in #143 |
-| F3 | `backup_reload` follows symlinks, has no size limit and copies on the event loop | Low | Open |
+| F3 | `backup_reload` follows symlinks, has no size limit and copies on the event loop | Low | Fixed in #144 |
 | F4 | `ProtectKernelTunables=` isn't set | Informational | Open |
 | F5 | The peer-group fallback reads `/proc/<pid>/status` | Informational | Fixed in #142 |
 
@@ -143,9 +143,9 @@ backup, but backups are root-only `0700` and `restore` won't write outside
 the unit directories, so nothing leaks. You lose monitoring until systemd
 restarts the daemon; `ExecStopPost` rolls back what was in force.
 
-**Fix:** open each source with `O_NOFOLLOW`, require a regular file, cap
-the size at 1 MiB, hash while copying, and run the backup in
-`asyncio.to_thread`.
+**Fixed in #144:** each source is opened with `O_NOFOLLOW` and must be a
+regular file of at most 1 MiB, it's hashed from the bytes it was copied
+from, and the backup runs off the event loop.
 
 ### F4. `ProtectKernelTunables=` isn't set
 
