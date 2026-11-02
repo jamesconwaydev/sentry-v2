@@ -57,8 +57,8 @@ described in [Hardening and SELinux](hardening.md) and
   storm, and USER_AVC records over 1000 bytes are dropped. Both are
   counted in `sentry-v2ctl status`.
 - **Encryption for syslog over UDP or TCP.** Use `transport = "tls"` when
-  syslog crosses an untrusted network. The default is UDP, for
-  compatibility with the usual local rsyslog.
+  syslog crosses an untrusted network. There's no default: you choose
+  `udp`, `tcp` or `tls`, so plain text is never sent without asking.
 - **Authentication on the metrics endpoint.** It's off by default and binds
   to localhost when on; anyone who can reach it can read the metrics.
 
@@ -87,7 +87,7 @@ Root on the host is out of scope: it can do anything Sentry-v2 can.
                               count drops                            journal before acting
                                                    │
   control socket clients ──(uid/gid check)──▶ commands         bundles ──(redact)──▶ sinks ──(TLS, HMAC)──▶ network
-  Cockpit (as the logged-in user) ──────────────┘
+  Cockpit (your user, or root as admin) ────────┘
 ```
 
 1. **Kernel and journal input into the collectors.** Journal messages and
@@ -129,7 +129,7 @@ Root on the host is out of scope: it can do anything Sentry-v2 can.
 |---|---|
 | Improper input validation (CWE-20) | Audit, netlink, journal and pressure parsers return or raise only what their callers handle; property-based fuzz tests enforce this (`tests/unit/test_fuzz.py`). Record, line and request sizes are bounded. |
 | OS command injection (CWE-78) | The daemon starts no processes and runs no shell. Units are changed through typed D-Bus calls. |
-| Path traversal and links (CWE-22, CWE-59) | `restore` writes only under `/etc/systemd/system` and `/run/systemd/system` and refuses changed files elsewhere. Below those roots it never follows a symlink, whether the directory exists or it creates it. |
+| Path traversal and links (CWE-22, CWE-59) | `restore` writes only under `/etc/systemd/system` and `/run/systemd/system` and refuses changed files elsewhere. Below those roots it never follows a symlink, whether the directory exists or it creates it. `backup_reload` does follow symlinks when it copies; see [the security review](security-review.md#f3-backup_reload-follows-symlinks-has-no-size-limit-and-copies-on-the-event-loop). |
 | Uncontrolled resource consumption (CWE-400) | Bounded event and audit queues with counted drops; per-user and total connection limits on the socket; idle timeouts; action limits, flap guard and circuit breaker. |
 | Sensitive information in output (CWE-532, CWE-200) | Redaction before any sink, the file sink included; secrets read from files or systemd credentials, never logged. |
 | Improper certificate validation (CWE-295) | System trust store or `ca_file`, TLS 1.2 minimum, hostname checks on. |

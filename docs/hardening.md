@@ -121,7 +121,7 @@ peer group list):
 |---|---|
 | root | Everything. |
 | Member of `sentry-v2` | Read: `status`, `psi`, `incidents`, `show`, `actions`, `policies`, `subscribe`. |
-| Member of `sentry-v2` and `sentry-v2-admin` | Also change things: `rollback`, `pause`, `resume`, `reload`, `restore`. |
+| Member of `sentry-v2` and `sentry-v2-admin` | Also change things: `rollback`, `ack`, `pause`, `resume`, `reload`, `restore`. |
 | Anyone else | Nothing; the directory keeps them out. |
 
 Membership of `sentry-v2-admin` alone would pass the daemon's check, but

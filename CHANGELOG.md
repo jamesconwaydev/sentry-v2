@@ -11,6 +11,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - The integration suite now sends a bundle through every outbound sink with
   the SELinux module enforcing, on each sink's usual port, against a local
   receiver.
+- [docs/security-review.md](docs/security-review.md): the first security
+  review, with five findings and what's done about each.
 
 ### Changed
 
