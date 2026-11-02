@@ -69,6 +69,7 @@ ReadWritePaths=/var/lib/sentry-v2 /sys/fs/cgroup -/etc/systemd/system -/run/syst
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes
+ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectClock=yes
