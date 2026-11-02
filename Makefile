@@ -34,7 +34,13 @@ CONTAINER ?= podman
 # are installed too; loop on that.
 # Installing needs root, so a non-root host is expected to have them.
 SPEC := $(TOPDIR)/SPECS/sentry-v2.spec
-RB := rpmbuild --define "_topdir $(TOPDIR)"
+# The rest pin build time, host and file mtimes to the %changelog date, so a
+# rebuild of the same tree gives the same RPMs.
+RB := rpmbuild --define "_topdir $(TOPDIR)" \
+	--define "source_date_epoch_from_changelog 1" \
+	--define "use_source_date_epoch_as_buildtime 1" \
+	--define "clamp_mtime_to_source_date_epoch 1" \
+	--define "_buildhost reproducible"
 RPM_BUILD := set -e; \
 	if [ $$(id -u) -eq 0 ]; then \
 		dnf -y -q install dnf-plugins-core; \
@@ -51,11 +57,9 @@ RPM_BUILD := set -e; \
 # Builds the SRPM and RPMs into rpmbuild/. Uses rpmbuild directly on an EL
 # host, otherwise a Rocky 10 container (pyproject-rpm-macros is in CRB).
 rpm:
-	rm -rf $(TOPDIR) && mkdir -p $(TOPDIR)/SOURCES $(TOPDIR)/SPECS $(TOPDIR)/stage/sentry-v2-$(VERSION)
-	tar -cf - --exclude=__pycache__ --exclude='*.egg-info' src tests packaging cockpit pyproject.toml README.md LICENSE \
-		| tar -xf - -C $(TOPDIR)/stage/sentry-v2-$(VERSION)
-	tar -czf $(TOPDIR)/SOURCES/sentry-v2-$(VERSION).tar.gz -C $(TOPDIR)/stage sentry-v2-$(VERSION)
-	rm -rf $(TOPDIR)/stage
+	rm -rf $(TOPDIR) && mkdir -p $(TOPDIR)/SOURCES $(TOPDIR)/SPECS
+	python3 scripts/source-tarball.py $(TOPDIR)/SOURCES/sentry-v2-$(VERSION).tar.gz sentry-v2-$(VERSION) \
+		src tests packaging cockpit pyproject.toml README.md LICENSE
 	cp packaging/sentry-v2.spec $(TOPDIR)/SPECS/
 	if command -v rpmbuild >/dev/null; then \
 		$(RPM_BUILD); \

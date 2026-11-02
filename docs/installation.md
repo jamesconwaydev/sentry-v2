@@ -125,6 +125,11 @@ The exact dist tag in the file names depends on your EL10 minor release.
 On a machine without `rpmbuild`, `make rpm` builds in a `rockylinux:10`
 container with Podman instead (set `CONTAINER=docker` to use Docker).
 
+Build the same commit twice with the same packages installed and you get
+the same bytes, SRPM included. File times, build time and build host all
+come from the newest `%changelog` entry in the spec, not from your clock
+or your checkout. Compare with `cmp` or `sha256sum`.
+
 ## From PyPI
 
 Sentry-v2 is on PyPI as [`sentry-v2`](https://pypi.org/project/sentry-v2/).
