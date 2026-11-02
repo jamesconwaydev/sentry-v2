@@ -1,3 +1,5 @@
+/* SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+ * SPDX-License-Identifier: Apache-2.0 */
 /* Sentry-v2 page for Cockpit: talks to the daemon's control socket.
  * Protocol: newline-delimited JSON, {"id", "cmd", "args"} -> {"id", "ok", ...}. */
 

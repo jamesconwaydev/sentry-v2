@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """How each action kind is captured, applied and undone against systemd.
 
 The executor decides when; this module only knows what. Capture (`prepare`)

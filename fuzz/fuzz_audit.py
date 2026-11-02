@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Coverage-guided fuzzing of the audit parsers: the kernel and audit.log feed them."""
 
 import sys

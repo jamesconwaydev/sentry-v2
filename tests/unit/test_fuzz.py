@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Property-based fuzzing of everything that parses input the daemon doesn't control.
 
 Audit records come from the kernel and from processes writing USER_AVCs,

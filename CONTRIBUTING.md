@@ -50,6 +50,15 @@ Fork the repo, branch from `main`, and make your change with tests; a bug fix st
 
 `main` is protected. Every change lands through a pull request that passes CI, and we squash-merge, so the PR title becomes the commit message on `main`. Write it as a Conventional Commit.
 
+### Copyright and licence headers
+
+Every source file starts with these two lines, in that file's comment syntax and after any `#!` line. A test fails if a new file is missing them.
+
+```python
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
+```
+
 ### Line endings
 
 Files in the repository use LF. On Windows, `git config core.autocrlf input` keeps it that way. CI names any file that arrives with CRLF; to fix one:
@@ -58,6 +67,20 @@ Files in the repository use LF. On Windows, `git config core.autocrlf input` kee
 sed -i 's/\r$//' path/to/file
 git commit -as --amend --no-edit
 ```
+
+## Code review
+
+Every pull request is read by someone other than its author before it merges. The maintainer reviews contributors' PRs, and the backup maintainer is asked to review the maintainer's. A maintainer PR can still merge without that second review if the backup is away; that's what [GOVERNANCE.md](GOVERNANCE.md#continuity) is for, and it shouldn't be the habit.
+
+The reviewer checks, in this order:
+
+1. **It's worth having.** It fixes a real problem or adds something on the [roadmap](docs/roadmap.md), and it doesn't break a ground rule above.
+2. **It's tested.** A bug fix comes with a test that fails on `main` and passes with the change. The reviewer checks that it really fails without the fix.
+3. **It's safe.** Nothing new acts on a host by default, nothing weakens a protected target or the SELinux module, input from the kernel, the journal, audit or a config file is bounded and validated, and no secret can reach a bundle or a log.
+4. **It's as small as it can be.** No dead code, no option nobody asked for, no change outside the PR's purpose.
+5. **The words match.** Docs and CHANGELOG say what a user would notice, and never claim more than the code does.
+
+To merge, a PR needs all of that plus green `lint`, `typecheck`, `test` and `dco` checks, every review thread resolved (including ones from CodeQL), and a branch up to date with `main`. The reviewer asks for changes in the PR, says why, and approves the CI run on each new push from a fork.
 
 ## Developer Certificate of Origin
 

@@ -1,3 +1,5 @@
+/* SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+ * SPDX-License-Identifier: Apache-2.0 */
 /* Sentry-v2 page for Cockpit.
  * Cockpit does not share PatternFly's CSS with packages, so this file carries
  * a small set of PatternFly v6-shaped tokens. sentry-v2.js puts Cockpit's own

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Thin, testable access to the cgroup v2 filesystem and /proc."""
 
 from __future__ import annotations

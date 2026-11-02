@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 import argparse
 import configparser
 import os
@@ -169,3 +171,22 @@ def test_source_tarball_ignores_mtimes_and_modes(tmp_path: Path) -> None:
         assert "p-1/src/pkg/a.py" in names
         assert not any("__pycache__" in n for n in names)
         assert {m.mtime for m in tar.getmembers()} == {m.mtime for m in tar.getmembers()[:1]}
+
+
+SOURCE_GLOBS = ("src/**/*.py", "tests/**/*.py", "fuzz/*.py", "scripts/*", "cockpit/*.html")
+SOURCE_GLOBS += ("cockpit/*.js", "cockpit/*.css")
+SOURCE_GLOBS += ("examples/**/*.sh", "examples/**/*.te", "packaging/selinux/*.*")
+SOURCE_GLOBS += (".clusterfuzzlite/*.sh", "Makefile")
+
+
+def test_every_source_file_names_copyright_and_licence() -> None:
+    files = {p for g in SOURCE_GLOBS for p in ROOT.glob(g) if p.is_file()}
+    files = {p for p in files if "__pycache__" not in p.parts and p.suffix != ".pyc"}
+    assert len(files) > 90
+    missing = [
+        str(p.relative_to(ROOT))
+        for p in sorted(files)
+        if "SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors" not in p.read_text()
+        or "SPDX-License-Identifier: Apache-2.0" not in p.read_text()
+    ]
+    assert not missing, missing

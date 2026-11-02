@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Text of a cgroup *.pressure file, shared by fixtures and tests."""
 
 _LINE = "{k} avg10={a:.2f} avg60=0.20 avg300=0.00 total=12345\n"

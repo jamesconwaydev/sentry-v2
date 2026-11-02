@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """HMAC-signed HTTPS webhook, spooled to disk until delivered."""
 
 from __future__ import annotations

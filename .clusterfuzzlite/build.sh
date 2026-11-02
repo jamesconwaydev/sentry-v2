@@ -1,4 +1,6 @@
 #!/bin/bash -eu
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 # The fuzz targets only import parsers that need nothing outside the
 # standard library, so the package is put on the path instead of installed:
 # the base image's Python is older than the 3.12 the package declares.
