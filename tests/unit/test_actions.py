@@ -4,6 +4,7 @@ import asyncio
 import dataclasses
 import hashlib
 import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -197,6 +198,29 @@ def test_backup_missing_file_fails(tmp_path: Path) -> None:
         actions.backup(UNIT, [str(tmp_path / "nope")], tmp_path / "b", now=0.0)
 
 
+def test_backup_refuses_a_symlink(tmp_path: Path) -> None:
+    secret = tmp_path / "secret"
+    secret.write_text("x")
+    (tmp_path / "app.conf").symlink_to(secret)
+    with pytest.raises(OSError):
+        actions.backup(UNIT, [str(tmp_path / "app.conf")], tmp_path / "b", now=0.0)
+
+
+def test_backup_refuses_what_is_not_a_regular_file(tmp_path: Path) -> None:
+    os.mkfifo(tmp_path / "app.conf")  # opening it to read would block
+    with pytest.raises(OSError, match="not a regular file"):
+        actions.backup(UNIT, [str(tmp_path / "app.conf")], tmp_path / "b", now=0.0)
+
+
+def test_backup_refuses_a_file_over_the_size_cap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(actions, "MAX_BACKUP_FILE", 4)
+    (tmp_path / "app.conf").write_text("12345")
+    with pytest.raises(OSError, match="larger than 4 bytes"):
+        actions.backup(UNIT, [str(tmp_path / "app.conf")], tmp_path / "b", now=0.0)
+
+
 def test_backup_does_not_copy_extended_attributes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -205,7 +229,7 @@ def test_backup_does_not_copy_extended_attributes(
     def denied(*_a: object, **_k: object) -> None:
         raise PermissionError(13, "Permission denied", "security.selinux")
 
-    monkeypatch.setattr(actions.shutil, "copystat", denied)
+    monkeypatch.setattr(shutil, "copystat", denied)
     src = tmp_path / "demo.service"
     src.write_text("[Service]\n")
     src.chmod(0o640)

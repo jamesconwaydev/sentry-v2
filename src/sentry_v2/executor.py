@@ -277,7 +277,9 @@ class Executor:
         self.journal.append(rec)
         try:
             if isinstance(spec, BackupReload):
-                backup_id = actions.backup(unit, params["files"], self.backups_dir, self._clock())
+                backup_id = await asyncio.to_thread(
+                    actions.backup, unit, params["files"], self.backups_dir, self._clock()
+                )
                 rec = dataclasses.replace(rec, backup_id=backup_id)
             await actions.apply(spec, unit, params, self.mgr)
             now = self._clock()
