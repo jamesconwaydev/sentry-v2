@@ -32,4 +32,4 @@ Bugs that need root on the host already, or a policy file the administrator wrot
 
 ## What to expect
 
-This is a one-person project, so these are goals and not promises. We aim to acknowledge a report within a week, tell you whether we agree it's a vulnerability within two weeks, and ship a fix for confirmed issues within 90 days. We'll credit you in the advisory unless you'd rather we didn't.
+This is a small project, so these are goals and not promises. We aim to acknowledge a report within a week, tell you whether we agree it's a vulnerability within two weeks, and ship a fix for confirmed issues within 90 days. We'll credit you in the advisory unless you'd rather we didn't.

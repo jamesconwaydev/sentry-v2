@@ -1,7 +1,8 @@
 # Governance
 
-Sentry-v2 is maintained by one person, so its governance is short. This
-page says who decides, how, and who does what.
+Sentry-v2 has one maintainer and one backup, so its governance is short.
+This page says who decides, how, who does what, and what happens if the
+maintainer disappears.
 
 ## How decisions are made
 
@@ -23,9 +24,26 @@ carries the most weight.
 | Role | Who | Responsibilities |
 |---|---|---|
 | Maintainer | James Conway ([@jamesconwaydev](https://github.com/jamesconwaydev)) | Triages issues and Discussions; reviews and merges pull requests; keeps CI, dependencies and the integration suite green; cuts releases and publishes them to GitHub and PyPI; handles vulnerability reports as described in [SECURITY.md](SECURITY.md); enforces the [Code of Conduct](CODE_OF_CONDUCT.md); keeps the [roadmap](docs/roadmap.md) current. |
+| Backup maintainer | [@j-dahl7](https://github.com/j-dahl7) | Steps in as described under [Continuity](#continuity). |
 | Contributor | Anyone who opens an issue, a Discussion or a pull request | Follows [CONTRIBUTING.md](CONTRIBUTING.md) and the Code of Conduct; signs off commits under the [Developer Certificate of Origin](CONTRIBUTING.md#developer-certificate-of-origin). |
 
 [CODEOWNERS](.github/CODEOWNERS) routes every review to the maintainer.
+
+## Continuity
+
+If the maintainer can't be reached for 7 days, the backup maintainer acts
+in their place until they're back. Before that, the backup leaves the
+project's decisions to the maintainer.
+
+The backup has write access, which is enough to keep the project moving
+without anyone's password: triage issues, merge pull requests through the
+same required checks, and push a release tag, which sets off the release
+workflow and publishes to GitHub and PyPI.
+
+One thing doesn't carry over. Private vulnerability reports reach only
+repository admins, so the backup can't read them. If you've reported one
+and heard nothing for 7 days, open an issue that says so, without the
+details, and the backup will pick it up with you.
 
 ## Changes to this document
 

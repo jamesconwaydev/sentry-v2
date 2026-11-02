@@ -1,6 +1,6 @@
 # Contributing to Sentry-v2
 
-Thanks for looking. Sentry-v2 is a small project with one maintainer, so a good bug report or a focused pull request goes a long way.
+Thanks for looking. Sentry-v2 is a small project, so a good bug report or a focused pull request goes a long way.
 
 Not sure where to start? Open a [Discussion](https://github.com/jamesconwaydev/sentry-v2/discussions) and tell us what you're trying to do. Issues labelled `good first issue` and `help wanted` are the easy way in.
 

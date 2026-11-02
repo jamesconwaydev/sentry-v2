@@ -1,7 +1,7 @@
 # Roadmap
 
 What Sentry-v2 plans to do, and not do, from November 2026 to October 2027.
-It's a statement of intent from a one-maintainer project, not a schedule.
+It's a statement of intent from a small project, not a schedule.
 Plans change in the open: through an issue or Discussion, then an update to
 this page.
 
