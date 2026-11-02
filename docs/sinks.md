@@ -167,6 +167,10 @@ address in turn.
 Use TCP or TLS if you want whole bundles. A new connection is opened for
 each bundle.
 
+There's no default `transport`. A bundle can carry command lines and unit
+names, and `udp` and `tcp` send it in the clear, so the config has to say so
+in writing.
+
 ## Splunk HEC
 
 ```toml
