@@ -1,4 +1,4 @@
-%global upstream_version 0.2.9
+%global upstream_version 0.2.10
 %global selinuxtype targeted
 %global modulename sentry_v2
 
@@ -174,6 +174,12 @@ fi
 %{_datadir}/cockpit/sentry-v2/sentry-v2.css
 
 %changelog
+* Mon Nov 02 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.10-1
+- Syslog sink needs an explicit transport
+- A cgroup inside another unit's tree no longer names a system unit
+- Metrics endpoint caps open connections; backup_reload refuses symlinks and files over 1 MiB
+- Unit sets ProtectKernelTunables=yes; reproducible RPM builds
+
 * Thu Oct 29 2026 James Conway <148910373+jamesconwaydev@users.noreply.github.com> - 0.2.9-1
 - Correlate denials from a child that exited, through its parent
 - Restore stages every file first and never follows a symlink
