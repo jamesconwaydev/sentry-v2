@@ -5,9 +5,9 @@ James Conway, maintainer. Reviewed 2 November 2026.
 I took each promise in the [security model](security-model.md), found the
 code that's meant to keep it, and tried to break it as each actor in the
 threat model: a local user, anyone on loopback, members of the two groups,
-and a Cockpit session. Five findings came out of it. One was medium and is
-fixed. Four are low or informational and are still open, each with the fix
-I intend.
+and a Cockpit session. Five findings came out of it. The medium one is fixed. The low and
+informational ones are listed with their fix, and their status is kept up
+to date in the table below.
 
 ## What I reviewed
 
@@ -84,7 +84,7 @@ metrics endpoint turned on.
 | F2 | The metrics endpoint has no connection limit | Low | Open |
 | F3 | `backup_reload` follows symlinks, has no size limit and copies on the event loop | Low | Open |
 | F4 | `ProtectKernelTunables=` isn't set | Informational | Open |
-| F5 | The peer-group fallback reads `/proc/<pid>/status` | Informational | Open |
+| F5 | The peer-group fallback reads `/proc/<pid>/status` | Informational | Fixed in #142 |
 
 ### F1. A user's cgroup could stand in for a system unit
 
@@ -171,7 +171,7 @@ exited and the pid has been reused, those are someone else's groups.
 The RHEL 10 kernel supports `SO_PEERGROUPS`, so reaching the fallback takes
 an account in more than 1024 groups, and then winning a pid-reuse race
 against a member of `sentry-v2-admin`. That's not realistic on a supported
-system. **Fix:** on the fallback, use only the primary gid.
+system. **Fixed in #142:** the fallback now trusts only the primary gid.
 
 ### Documentation that didn't match the code
 
