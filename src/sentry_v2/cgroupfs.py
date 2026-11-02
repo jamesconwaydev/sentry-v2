@@ -67,7 +67,12 @@ class CgroupFS:
         return None
 
     def unit_of(self, rel: str) -> str | None:
-        last = rel.rsplit("/", 1)[-1]
+        # The system manager puts units only under slices. Below any other
+        # unit the tree is delegated (user@.service, a container), and a
+        # cgroup there can carry a system unit's name without being it.
+        *parents, last = rel.strip("/").split("/")
+        if not all(p.endswith(".slice") for p in parents):
+            return None
         return last if last.endswith(UNIT_SUFFIXES) else None
 
     def open_trigger(

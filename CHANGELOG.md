@@ -24,6 +24,14 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 - GOVERNANCE.md names a backup maintainer, @j-dahl7, and says what happens
   if the maintainer can't be reached for 7 days.
 
+### Fixed
+
+- A PSI policy could throttle or freeze a system unit because a cgroup
+  elsewhere had the same name. A user's own `user@1000.service` tree can
+  hold an `app.slice/nginx.service`, and a pattern without `/` matched it
+  and then acted on the system's `nginx.service`. A cgroup now names a unit
+  only when every level above it is a slice.
+
 ## [0.2.9] - 2026-10-29
 
 ### Added

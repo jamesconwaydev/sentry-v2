@@ -180,8 +180,11 @@ that starts later is picked up and triggers on cgroups that vanish are
 closed.
 
 For a `psi` incident, the action target is the last path component if it
-ends in `.service`, `.scope` or `.slice`. A pattern that matches a
-non-unit cgroup can still notify, but its throttles and freezes fail with
+ends in `.service`, `.scope` or `.slice` and everything above it is a
+slice. Below any other unit the tree belongs to someone else: a user's
+`user@1000.service` can hold its own `nginx.service`, and that isn't the
+system's. A pattern that matches a non-unit cgroup, or one inside such a
+tree, can still notify, but its throttles and freezes fail with
 `no unit target`.
 
 ## Thresholds you can start from
