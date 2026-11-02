@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
 # SPDX-License-Identifier: Apache-2.0
-policy_module(sentry_v2, 0.2.9)
+policy_module(sentry_v2, 0.2.10)
 
 # Each rule says which part of the daemon needs it. The rules for paths the
 # integration suite exercises name the test; scripts/itest.sh runs the suite

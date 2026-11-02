@@ -6,6 +6,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.10] - 2026-11-02
+
 ### Added
 
 - The integration suite now sends a bundle through every outbound sink with
@@ -361,7 +363,8 @@ The first release.
   reference, safety, correlation, bundles, sinks, CLI, Cockpit, metrics,
   hardening, troubleshooting, architecture and development guides.
 
-[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.9...HEAD
+[Unreleased]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.10...HEAD
+[0.2.10]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.9...v0.2.10
 [0.2.9]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.8...v0.2.9
 [0.2.8]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/jamesconwaydev/sentry-v2/compare/v0.2.6...v0.2.7
