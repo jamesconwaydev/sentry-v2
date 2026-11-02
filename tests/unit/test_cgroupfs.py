@@ -61,6 +61,12 @@ def test_unit_of() -> None:
     assert fs.unit_of("user.slice/session-1.scope") == "session-1.scope"
     assert fs.unit_of("system.slice/foo") is None
     assert fs.unit_of("") is None
+    assert fs.unit_of("system.slice/nginx.service/worker") is None
+    assert fs.unit_of("system.slice/system-getty.slice/getty@tty1.service") == "getty@tty1.service"
+    # a user's own cgroup that borrows a system unit's name is not that unit
+    user = "user.slice/user-1000.slice/user@1000.service/app.slice/nginx.service"
+    assert fs.unit_of(user) is None
+    assert fs.unit_of("machine.slice/libpod-1.scope/system.slice/nginx.service") is None
 
 
 def test_open_trigger_writes_spec(fake_cgroupfs: Path) -> None:
