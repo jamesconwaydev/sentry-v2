@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Stands in for the sinks' endpoints; test_sinks.py runs it in sentry-test.slice.
 
     sink_receiver.py <log> <cert> <key>

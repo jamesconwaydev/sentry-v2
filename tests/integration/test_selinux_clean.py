@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """The daemon runs confined, its files carry their labels, and the suite left no denials.
 
 The denial check is marked `last`, so conftest.py runs it after every other

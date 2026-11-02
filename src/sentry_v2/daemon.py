@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """The daemon: wires collectors, correlation, policy, actions and sinks together.
 
 Startup order matters. Whatever an earlier run left applied is rolled back

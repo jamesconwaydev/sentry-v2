@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """What every sink shares: the protocol, the error type, bundle encoding and secret loading."""
 
 from __future__ import annotations

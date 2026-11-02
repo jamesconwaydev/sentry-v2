@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Blocking HTTPS POST for the HTTP sinks; callers run it via asyncio.to_thread."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """A broken policy file is reported by reload and leaves the running policies in place."""
 
 from __future__ import annotations

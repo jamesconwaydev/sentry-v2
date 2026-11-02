@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 import json
 
 from sentry_v2.events import AvcEvent, Correlation, Incident, PsiEvent, UnitEvent

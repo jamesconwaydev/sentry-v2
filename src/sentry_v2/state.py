@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Action records and the append-only journal that makes them crash-safe.
 
 Every enforced action is written as `planned` (with the values it will

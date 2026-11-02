@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 policy_module(sentry_test, 1.1.0)
 
 # test_avc_correlation.py: a confined domain that is denied one file. The

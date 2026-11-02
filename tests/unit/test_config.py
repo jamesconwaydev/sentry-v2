@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 from pathlib import Path
 
 import pytest
@@ -279,6 +281,7 @@ def test_secret_keys_take_a_systemd_credential_name(tmp_path: Path) -> None:
             "sinks.elastic.username",
         ),
         ('[sinks.syslog]\ntransport = "smtp"', "sinks.syslog.transport"),
+        ('[sinks.syslog]\nhost = "logs.example.com"', "sinks.syslog.transport"),
         ('[sinks.syslog]\nhost = ""', "sinks.syslog.host"),
         (
             '[sinks.webhook]\nurl = "https://a.example"\nhmac_key_file = "/k"\ntimeout = "0s"',

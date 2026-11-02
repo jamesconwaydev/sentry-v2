@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Load and strictly validate the global config and policy files."""
 
 from __future__ import annotations
@@ -348,7 +350,7 @@ def _sinks(root: _Reader, state_dir: Path) -> SinksConfig:
         syslog = SyslogSinkConfig(
             host=s.get("host", _nonempty_str, sd.host),
             port=s.get("port", _int_in(1, 65535), sd.port),
-            transport=s.get("transport", _choice("udp", "tcp", "tls"), sd.transport),
+            transport=s.require("transport", _choice("udp", "tcp", "tls")),
             ca_file=s.get("ca_file", _path, None),
         )
         s.finish()

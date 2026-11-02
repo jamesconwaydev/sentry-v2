@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 # Runs the integration suite on the Rocky 10 host.
 #
 # From a checkout:  scripts/itest.sh            (or `make itest`)

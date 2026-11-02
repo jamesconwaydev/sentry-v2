@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Incident reporting: turns incidents and alerts into bundles for the sinks.
 
 Bundles are built in the background so the executor never waits on them.

@@ -161,7 +161,7 @@ present. Full behaviour, retries and examples are in [sinks.md](sinks.md).
 |---|---|---|---|
 | `host` | string | `"127.0.0.1"` | Collector host name or address. |
 | `port` | integer, 1 to 65535 | `514` | Collector port. Use 6514 for TLS by convention. |
-| `transport` | `"udp"`, `"tcp"` or `"tls"` | `"udp"` | How messages travel. |
+| `transport` | `"udp"`, `"tcp"` or `"tls"` | required | How messages travel. Only `tls` is encrypted, so plain text has to be asked for by name. |
 | `ca_file` | path | none | PEM bundle for `tls`. Ignored for `udp` and `tcp`. |
 
 ### `[sinks.splunk_hec]`

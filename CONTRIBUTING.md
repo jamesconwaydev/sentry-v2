@@ -50,6 +50,15 @@ Fork the repo, branch from `main`, and make your change with tests; a bug fix st
 
 `main` is protected. Every change lands through a pull request that passes CI, and we squash-merge, so the PR title becomes the commit message on `main`. Write it as a Conventional Commit.
 
+### Copyright and licence headers
+
+Every source file starts with these two lines, in that file's comment syntax and after any `#!` line. A test fails if a new file is missing them.
+
+```python
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
+```
+
 ### Line endings
 
 Files in the repository use LF. On Windows, `git config core.autocrlf input` keeps it that way. CI names any file that arrives with CRLF; to fix one:

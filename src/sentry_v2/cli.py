@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """sentry-v2ctl: talk to the running daemon, or check policies offline."""
 
 from __future__ import annotations

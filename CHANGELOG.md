@@ -14,6 +14,10 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Changed
 
+- `[sinks.syslog]` needs an explicit `transport`. It used to default to
+  `"udp"`, which sent bundles in plain text without the config ever saying
+  so. A config that left it out now fails to load and names the key; add
+  `transport = "udp"` to keep the old behaviour.
 - `make rpm` builds the same bytes from the same commit. The source
   tarball no longer carries checkout times, owners or umask, and the RPMs
   take their build time and host from the spec's `%changelog`.

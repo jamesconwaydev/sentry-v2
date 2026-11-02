@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Policy model, the protected-unit list and the engine that plans actions."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Every outbound sink gets a bundle out of the confined daemon, on its usual port.
 
 sink_receiver.py plays the endpoints, so this proves the daemon's SELinux

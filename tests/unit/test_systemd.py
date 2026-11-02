@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """SystemdManager contract, run against FakeSystemd here and DBusSystemd on a host."""
 
 from __future__ import annotations
