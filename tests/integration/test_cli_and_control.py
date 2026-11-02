@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """sentry-v2ctl against the live daemon, as root and as a user outside both groups."""
 
 from __future__ import annotations

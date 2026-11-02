@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Event and incident records passed between collectors, correlation and sinks."""
 
 from __future__ import annotations

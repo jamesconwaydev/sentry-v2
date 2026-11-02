@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Prometheus text exposition (format 0.0.4) and a tiny localhost HTTP server.
 
 Thread-safety: metrics are updated only from the event loop thread, so there

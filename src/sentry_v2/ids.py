@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """UUIDv7 generation (RFC 9562)."""
 
 from __future__ import annotations

@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Audit collector: SELinux AVC denials from the kernel audit netlink socket.
 
 Falls back to tailing audit.log when the daemon lacks CAP_AUDIT_READ.

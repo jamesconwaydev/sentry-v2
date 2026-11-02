@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Keep the docs honest: config keys, policy examples, the example bundle and links."""
 
 import dataclasses

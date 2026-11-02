@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Shared pytest fixtures. Integration tests are opt-in via `-m integration`."""
 
 from pathlib import Path

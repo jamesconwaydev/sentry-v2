@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Always-on sink: one JSON file per bundle under <root>/YYYY/MM/DD/."""
 
 from __future__ import annotations

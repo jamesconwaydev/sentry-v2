@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Synchronous client for the control socket (newline-delimited JSON)."""
 
 from __future__ import annotations

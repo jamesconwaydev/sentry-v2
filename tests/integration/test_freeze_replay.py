@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """A frozen unit survives the daemon being killed: the restarted daemon thaws it on replay.
 
 Trigger: CPU pressure. Two busy loops in one unit on this 1-vCPU host keep

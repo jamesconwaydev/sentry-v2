@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Diagnostic bundles: one JSON document per incident, scrubbed of secrets."""
 
 from __future__ import annotations

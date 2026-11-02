@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """An SELinux denial inside a failing unit ends up in that unit's bundle.
 
 selinux/sentry_test.te confines a copy of bash in sentry_test_t and gives

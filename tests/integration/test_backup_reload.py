@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """backup_reload copies a unit's files before reloading it, and restore puts them back.
 
 Trigger: the unit's own failure. It exits 3 on its first start and runs
