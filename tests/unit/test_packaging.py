@@ -1,6 +1,10 @@
 import argparse
 import configparser
+import os
 import re
+import subprocess
+import sys
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -137,3 +141,31 @@ def test_spec_installs_the_man_pages() -> None:
     for page in ("sentry-v2.8", "sentry-v2ctl.8"):
         assert f"packaging/man/{page} %{{buildroot}}%{{_mandir}}/man8/{page}" in spec
         assert f"%{{_mandir}}/man8/{page}*" in spec
+
+
+def test_source_tarball_ignores_mtimes_and_modes(tmp_path: Path) -> None:
+    builds = []
+    for n, (stamp, mode) in enumerate([(1_000_000_000, 0o664), (1_700_000_000, 0o644)]):
+        tree = tmp_path / f"tree{n}"
+        (tree / "packaging").mkdir(parents=True)
+        (tree / "packaging/sentry-v2.spec").write_text((PACKAGING / "sentry-v2.spec").read_text())
+        (tree / "src/pkg/__pycache__").mkdir(parents=True)
+        (tree / "src/pkg/__pycache__/x.pyc").write_bytes(b"junk")
+        for name in ("src/pkg/b.py", "src/pkg/a.py"):
+            (tree / name).write_text("x = 1\n")
+            os.chmod(tree / name, mode)
+            os.utime(tree / name, (stamp, stamp))
+        out = tmp_path / f"out{n}.tar.gz"
+        subprocess.run(  # noqa: S603
+            [sys.executable, ROOT / "scripts/source-tarball.py", out, "p-1", "src", "packaging"],
+            cwd=tree,
+            check=True,
+        )
+        builds.append(out.read_bytes())
+    assert builds[0] == builds[1]
+    with tarfile.open(tmp_path / "out0.tar.gz") as tar:
+        names = tar.getnames()
+        assert names[0] == "p-1" and tar.getmember("p-1").isdir()
+        assert "p-1/src/pkg/a.py" in names
+        assert not any("__pycache__" in n for n in names)
+        assert {m.mtime for m in tar.getmembers()} == {m.mtime for m in tar.getmembers()[:1]}

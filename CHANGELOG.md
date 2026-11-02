@@ -14,6 +14,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Changed
 
+- `make rpm` builds the same bytes from the same commit. The source
+  tarball no longer carries checkout times, owners or umask, and the RPMs
+  take their build time and host from the spec's `%changelog`.
 - GOVERNANCE.md names a backup maintainer, @j-dahl7, and says what happens
   if the maintainer can't be reached for 7 days.
 
