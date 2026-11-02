@@ -33,6 +33,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   `paths` could make the backup stall the daemon past its watchdog or run
   it out of memory. Each file must now be a regular file of at most
   1 MiB, not a symlink, and the copy runs off the event loop.
+- Any local user could hold the metrics endpoint's connections open until
+  the daemon ran out of file descriptors, which stopped the control socket
+  and the sinks too. The endpoint now closes any connection past 16.
 - A control-socket client whose groups the kernel couldn't report through
   `SO_PEERGROUPS` had them read from `/proc/<pid>/status`, which by then
   could belong to another process. It now gets its primary group only.

@@ -19,8 +19,8 @@ sentry_v2_incidents_total{kind="unit_failed"} 4.0
 ```
 
 The endpoint answers `GET /metrics` only. Anything else gets 404 or 405,
-and a client that takes more than 5 s to send its request headers gets
-408. There's no authentication and no TLS, which is why it binds to
+a client that takes more than 5 s to send its request headers gets 408,
+and past 16 open connections a new one is closed straight away. There's no authentication and no TLS, which is why it binds to
 loopback by default. Binding to another address works but logs a warning;
 if you need remote scraping, put an authenticating proxy in front or scrape
 through an SSH tunnel.
