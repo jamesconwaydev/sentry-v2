@@ -12,6 +12,11 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   the SELinux module enforcing, on each sink's usual port, against a local
   receiver.
 
+### Changed
+
+- GOVERNANCE.md names a backup maintainer, @j-dahl7, and says what happens
+  if the maintainer can't be reached for 7 days.
+
 ## [0.2.9] - 2026-10-29
 
 ### Added
