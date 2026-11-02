@@ -81,7 +81,7 @@ metrics endpoint turned on.
 | | Finding | Severity | Status |
 |---|---|---|---|
 | F1 | A user's cgroup could stand in for a system unit | Medium | Fixed in #140 |
-| F2 | The metrics endpoint has no connection limit | Low | Open |
+| F2 | The metrics endpoint has no connection limit | Low | Fixed in #143 |
 | F3 | `backup_reload` follows symlinks, has no size limit and copies on the event loop | Low | Open |
 | F4 | `ProtectKernelTunables=` isn't set | Informational | Open |
 | F5 | The peer-group fallback reads `/proc/<pid>/status` | Informational | Fixed in #142 |
@@ -123,9 +123,9 @@ service, not an unsafe action: a failed `planned` journal write stops the
 action, and rollbacks use the D-Bus connection that's already open. The
 control socket doesn't have this problem because it caps connections.
 
-The endpoint is off by default. **Fix:** cap open connections in
-`MetricsServer` (16 is plenty for a scraper) and abort, rather than close,
-a connection that stops reading. PR #127 covers the abort.
+The endpoint is off by default. **Fixed in #143:** the server closes any
+connection past 16 open ones. Aborting, rather than closing, a connection
+that stops reading is PR #127.
 
 ### F3. `backup_reload` follows symlinks, has no size limit and copies on the event loop
 

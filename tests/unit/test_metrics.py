@@ -166,6 +166,29 @@ def test_server_header_timeout():
     assert asyncio.run(go()).startswith(b"HTTP/1.1 408")
 
 
+def test_server_closes_connections_past_the_cap():
+    async def go() -> tuple[bytes, bytes]:
+        s = MetricsServer(Registry(), "127.0.0.1", 0, max_connections=2)
+        await s.start()
+        try:
+            idle = [await asyncio.open_connection("127.0.0.1", s.port) for _ in range(2)]
+            await asyncio.sleep(0.05)  # let the server accept both
+            reader, writer = await asyncio.open_connection("127.0.0.1", s.port)
+            refused = await asyncio.wait_for(reader.read(), 1)  # closed, not left waiting
+            writer.close()
+            for _, w in idle:
+                w.close()
+            await asyncio.sleep(0.05)
+            served = await _get(s.port, b"GET /metrics HTTP/1.1\r\n\r\n")
+            return refused, served
+        finally:
+            await s.stop()
+
+    refused, served = asyncio.run(go())
+    assert refused == b""
+    assert served.startswith(b"HTTP/1.1 200")
+
+
 def test_non_loopback_host_warns(caplog):
     async def go() -> None:
         s = MetricsServer(Registry(), "0.0.0.0", 0)  # noqa: S104

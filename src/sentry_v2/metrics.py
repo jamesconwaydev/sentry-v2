@@ -34,6 +34,7 @@ RENDER_ERRORS_TOTAL = "sentry_v2_metrics_render_errors_total"
 CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8"
 MAX_HEADER_BYTES = 4096
 HEADER_TIMEOUT = 5.0
+MAX_CONNECTIONS = 16  # a scraper needs one; the cap keeps local users off the fd limit
 WRITE_TIMEOUT = 5.0
 LOG_INTERVAL = 60.0
 
@@ -288,11 +289,14 @@ class MetricsServer:
         host: str,
         port: int,
         header_timeout: float = HEADER_TIMEOUT,
+        max_connections: int = MAX_CONNECTIONS,
     ) -> None:
         self._registry = registry
         self._host = host
         self._port = port
         self._header_timeout = header_timeout
+        self._max = max_connections
+        self._open = 0
         self._server: asyncio.Server | None = None
 
     @property
@@ -326,6 +330,10 @@ class MetricsServer:
         await asyncio.wait_for(writer.drain(), timeout=WRITE_TIMEOUT)
 
     async def _handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        if self._open >= self._max:
+            writer.close()
+            return
+        self._open += 1
         try:
             try:
                 raw = await asyncio.wait_for(
@@ -358,4 +366,5 @@ class MetricsServer:
         except (ConnectionError, OSError):
             pass
         finally:
+            self._open -= 1
             writer.close()
