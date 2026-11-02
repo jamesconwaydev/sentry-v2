@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Bundle sinks and the manager that feeds them, one worker per sink."""
 
 from __future__ import annotations

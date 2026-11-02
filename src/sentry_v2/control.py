@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """The control socket: newline-delimited JSON over a Unix socket.
 
 A request is one line, `{"id": any, "cmd": str, "args": {}}`; the reply is

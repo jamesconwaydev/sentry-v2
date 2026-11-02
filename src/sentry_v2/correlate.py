@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Turns the raw event stream into incidents.
 
 Three kinds come out of here: a unit failure with the SELinux denials that

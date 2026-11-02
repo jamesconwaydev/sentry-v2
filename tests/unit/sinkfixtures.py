@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Helpers shared by the sink tests: bundles, fake time, a self-signed cert, an HTTPS server."""
 
 from __future__ import annotations

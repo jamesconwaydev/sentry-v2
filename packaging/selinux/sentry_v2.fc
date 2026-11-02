@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 /usr/bin/sentry-v2		--	gen_context(system_u:object_r:sentry_v2_exec_t,s0)
 /usr/lib/systemd/system/sentry-v2\.service	--	gen_context(system_u:object_r:sentry_v2_unit_file_t,s0)
 /etc/sentry-v2(/.*)?			gen_context(system_u:object_r:sentry_v2_conf_t,s0)

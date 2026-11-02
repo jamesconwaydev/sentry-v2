@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 # Stage a small incident on a test box and show what Sentry-v2 makes of it.
 #
 #   sudo examples/demo/run.sh [unrelated|sibling]     (PACE=0 to skip the pauses)

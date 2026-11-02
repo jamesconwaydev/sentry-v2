@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Coverage-guided fuzzing of redaction, which runs on every string in every bundle.
 
 A pattern that backtracks badly shows up here as a timeout.

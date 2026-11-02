@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """RFC 5424 syslog over UDP, TCP or TLS, the bundle as JSON in MSG."""
 
 from __future__ import annotations

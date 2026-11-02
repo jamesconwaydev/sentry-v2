@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Decides whether, how and for how long each planned action runs.
 
 Ordering guarantees: one lock serialises every journal write and D-Bus call

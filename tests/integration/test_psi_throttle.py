@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """A memory hog under MemoryHigh stalls on reclaim; the throttle policy squeezes it, then lets go.
 
 The hog touches 80 MiB in a loop inside MemoryHigh=40M, so the kernel

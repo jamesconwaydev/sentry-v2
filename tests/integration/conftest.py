@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright the Sentry-v2 contributors
+# SPDX-License-Identifier: Apache-2.0
 """Helpers for the integration suite. Needs root and a running sentry-v2 on an EL10 host.
 
 Every unit a test starts lives in sentry-test.slice and is stopped and
