@@ -8,7 +8,7 @@ one line, `{"id", "ok": true, "result": ...}` or `{"id", "ok": false,
 `{"event": {...}}` lines that ends when the client hangs up.
 
 Access is decided per request from the peer's credentials (SO_PEERCRED,
-plus the supplementary groups in /proc/<pid>/status). Reads need uid 0 or
+plus SO_PEERGROUPS, or the primary gid alone where that fails). Reads need uid 0 or
 membership of the read or admin group; commands in `mutating` need uid 0
 or the admin group. The daemon's own uid counts as uid 0 (it is root in
 production). The socket file belongs to the read group (or the admin group
@@ -56,18 +56,6 @@ class Peer:
     groups: frozenset[int]
 
 
-def peer_groups(pid: int, gid: int, proc: Path = Path("/proc")) -> frozenset[int]:
-    """The primary gid plus the supplementary groups listed in /proc/<pid>/status."""
-    groups = {gid}
-    try:
-        for line in (proc / str(pid) / "status").read_text().splitlines():
-            if line.startswith("Groups:"):
-                groups.update(int(g) for g in line.split()[1:])
-    except OSError:
-        pass  # the client already exited; it gets the primary group only
-    return frozenset(groups)
-
-
 def peer_cred(sock: Any) -> Peer:
     """Credentials of the process at the other end of a connected Unix socket."""
     if hasattr(socket, "SO_PEERCRED"):
@@ -77,7 +65,8 @@ def peer_cred(sock: Any) -> Peer:
         try:  # the groups at connect time, with no /proc race
             raw = sock.getsockopt(socket.SOL_SOCKET, SO_PEERGROUPS, 4 * 1024)
         except OSError:  # older kernel, or more than 1024 groups
-            return Peer(pid, uid, peer_groups(pid, gid))
+            # Not /proc/<pid>/status: by now the pid may be another process's.
+            return Peer(pid, uid, frozenset({gid}))
         return Peer(pid, uid, frozenset({gid, *struct.unpack(f"{len(raw) // 4}I", raw)}))
     # macOS, for development: LOCAL_PEERCRED (SOL_LOCAL 0, option 1) fills a struct xucred
     raw = sock.getsockopt(0, 1, struct.calcsize("IIh16I"))  # pragma: no cover

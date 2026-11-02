@@ -28,6 +28,9 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
+- A control-socket client whose groups the kernel couldn't report through
+  `SO_PEERGROUPS` had them read from `/proc/<pid>/status`, which by then
+  could belong to another process. It now gets its primary group only.
 - A PSI policy could throttle or freeze a system unit because a cgroup
   elsewhere had the same name. A user's own `user@1000.service` tree can
   hold an `app.slice/nginx.service`, and a pattern without `/` matched it

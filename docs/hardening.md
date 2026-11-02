@@ -25,8 +25,8 @@ delay to each denial.
 
 Root without `CAP_DAC_OVERRIDE` or `CAP_DAC_READ_SEARCH` still owns the
 files it touches: the journal, unit files and drop-ins, the cgroup tree,
-`/var/lib/sentry-v2`. The `/proc/<pid>/cgroup` and `/proc/<pid>/status`
-entries it reads are world-readable, so it doesn't need `CAP_SYS_PTRACE`
+`/var/lib/sentry-v2`. The `/proc/<pid>/cgroup` entries it reads are
+world-readable, so it doesn't need `CAP_SYS_PTRACE`
 either.
 
 ### How the set was chosen

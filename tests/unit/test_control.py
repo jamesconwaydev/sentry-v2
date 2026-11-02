@@ -6,6 +6,7 @@ import os
 import shutil
 import socket
 import stat
+import struct
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from sentry_v2 import control
-from sentry_v2.control import CommandError, ControlServer, Peer, peer_groups
+from sentry_v2.control import CommandError, ControlServer, Peer
 
 
 @pytest.fixture
@@ -336,8 +337,19 @@ def test_peer_cred_of_real_socket() -> None:
         b.close()
 
 
-def test_peer_groups_reads_proc_status(tmp_path: Path) -> None:
-    (tmp_path / "42").mkdir()
-    (tmp_path / "42" / "status").write_text("Name:\tx\nGroups:\t10 20 \nUid:\t0\n")
-    assert peer_groups(42, 5, tmp_path) == frozenset({5, 10, 20})
-    assert peer_groups(43, 5, tmp_path) == frozenset({5})  # process gone
+def test_peer_cred_without_peergroups_trusts_only_the_primary_gid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The pid may already belong to another process, so /proc must not be read.
+    class Sock:
+        def getsockopt(self, level: int, opt: int, size: int) -> bytes:
+            if opt == control.SO_PEERGROUPS:
+                raise OSError("too many groups")
+            return struct.pack("3i", 42, 1000, 5)
+
+    def no_proc(*_a: object) -> str:
+        raise AssertionError("read /proc")
+
+    monkeypatch.setattr(control.socket, "SO_PEERCRED", 17, raising=False)
+    monkeypatch.setattr(Path, "read_text", no_proc)
+    assert control.peer_cred(Sock()) == Peer(42, 1000, frozenset({5}))
