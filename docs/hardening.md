@@ -89,6 +89,7 @@ triggers on `*.pressure` files.
 | `ProtectHome` | `yes` | Home directories are invisible. |
 | `PrivateTmp` | `yes` | Its own `/tmp`. |
 | `PrivateDevices` | `yes` | No access to physical devices. |
+| `ProtectKernelTunables` | `yes` | `/proc/sys` and the rest of `/sys` are read-only. `/sys/fs/cgroup` stays writable through `ReadWritePaths`. |
 | `ProtectKernelModules`, `ProtectKernelLogs`, `ProtectClock`, `ProtectHostname` | `yes` | It never needs to touch any of these. |
 | `RestrictAddressFamilies` | `AF_UNIX AF_NETLINK AF_INET AF_INET6` | Unix sockets for D-Bus, the journal and the control socket; netlink for audit; IP for sinks and metrics. |
 | `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `LockPersonality` | `yes` | Closes off features it doesn't use. |

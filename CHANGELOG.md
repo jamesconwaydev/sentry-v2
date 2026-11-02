@@ -16,6 +16,8 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Changed
 
+- The unit sets `ProtectKernelTunables=yes`, so the daemon can't write
+  `/proc/sys` or anywhere in `/sys` outside `/sys/fs/cgroup`.
 - `[sinks.syslog]` needs an explicit `transport`. It used to default to
   `"udp"`, which sent bundles in plain text without the config ever saying
   so. A config that left it out now fails to load and names the key; add

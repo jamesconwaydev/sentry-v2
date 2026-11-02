@@ -83,7 +83,7 @@ metrics endpoint turned on.
 | F1 | A user's cgroup could stand in for a system unit | Medium | Fixed in #140 |
 | F2 | The metrics endpoint has no connection limit | Low | Fixed in #143 |
 | F3 | `backup_reload` follows symlinks, has no size limit and copies on the event loop | Low | Fixed in #144 |
-| F4 | `ProtectKernelTunables=` isn't set | Informational | Open |
+| F4 | `ProtectKernelTunables=` isn't set | Informational | Fixed in #145 |
 | F5 | The peer-group fallback reads `/proc/<pid>/status` | Informational | Fixed in #142 |
 
 ### F1. A user's cgroup could stand in for a system unit
@@ -158,9 +158,9 @@ On a host with the SELinux module loaded it changes nothing, because
 `sentry_v2_t` can only read sysctls. Without the module, a compromised
 daemon could change sysctls, but it can already reach root through systemd,
 as the security model says. So this is tidiness and a better
-`systemd-analyze security` score, not a new path. **Fix:** add
-`ProtectKernelTunables=yes`, confirm with `make itest` that PSI triggers
-still register, and list it in `docs/hardening.md`.
+`systemd-analyze security` score, not a new path. **Fixed in #145:** the
+unit sets `ProtectKernelTunables=yes`, and `make itest` on Rocky 10 still
+registers PSI triggers and throttles through it.
 
 ### F5. The peer-group fallback reads `/proc/<pid>/status`
 
