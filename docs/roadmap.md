@@ -17,10 +17,6 @@ These won't change, because the project depends on them:
 
 ## Planned
 
-- **OpenSSF Best Practices gold.** Silver came in November 2026. Gold
-  needs one more thing: most changes reviewed by someone other than their
-  author. @j-dahl7 now reviews the maintainer's pull requests, so that
-  share grows with every one.
 - **Per-policy slice permission.** `allow_slices` is global today; letting
   one policy act on slices without opening them to all of them.
 
