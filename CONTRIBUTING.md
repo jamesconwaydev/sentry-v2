@@ -70,7 +70,7 @@ git commit -as --amend --no-edit
 
 ## Code review
 
-Every pull request is read by someone other than its author before it merges. The maintainer reviews contributors' PRs, and the backup maintainer is asked to review the maintainer's. A maintainer PR can still merge without that second review if the backup is away; that's what [GOVERNANCE.md](GOVERNANCE.md#continuity) is for, and it shouldn't be the habit.
+Nothing ships until someone other than its author has read it. The maintainer reviews contributors' PRs before they merge. The maintainer's own PRs get their second reader at release time: the backup maintainer reviews the release PR, which carries every change since the last tag, and the tag waits for that approval. If the backup is away, the release waits, unless it fixes a security problem; then it ships and gets reviewed afterwards.
 
 The reviewer checks, in this order:
 
@@ -102,7 +102,7 @@ By taking part you agree to follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## Releases
 
-Releases are cut by the maintainer. The version lives in `src/sentry_v2/__init__.py`, and `pyproject.toml` reads it from there, so the release PR bumps that file, `upstream_version` in `packaging/sentry-v2.spec` and the `policy_module` version in `packaging/selinux/sentry_v2.te`, and adds a `## [x.y.z]` section to the CHANGELOG. Once that's merged, we tag `main` as `vx.y.z` and push the tag. Tags must be plain `vMAJOR.MINOR.PATCH`; we don't publish prereleases.
+Releases are cut by the maintainer. The version lives in `src/sentry_v2/__init__.py`, and `pyproject.toml` reads it from there, so the release PR bumps that file, `upstream_version` in `packaging/sentry-v2.spec` and the `policy_module` version in `packaging/selinux/sentry_v2.te`, and adds a `## [x.y.z]` section to the CHANGELOG. The backup maintainer reviews it, covering everything since the previous tag (`git diff vPREVIOUS..` on the release branch shows the lot). Once it's approved and merged, we tag `main` as `vx.y.z` and push the tag. Tags must be plain `vMAJOR.MINOR.PATCH`; we don't publish prereleases.
 
 A first job checks that the tag, `__version__`, the spec and the SELinux module agree and that the CHANGELOG has notes for the version, so a bad tag fails in seconds. Then the workflow builds the RPMs on Rocky 10 and the wheel and sdist, checks the built files carry the tag's version, attests everything, and publishes the GitHub release with the CHANGELOG section as its notes. PyPI publishing is live: through trusted publishing, tags publish automatically once the repository variable `PYPI_PUBLISH` is `true`.
 
