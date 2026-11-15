@@ -12,6 +12,12 @@ All notable changes to Sentry-v2 are recorded here. The format follows
   reports the symlink in `/etc/systemd/system` as that unit's fragment, and
   the backup refused it as a link, so the action failed before the reload.
   It now copies the file the link points to.
+- `make rpm` gives the same packages wherever you build. rpmbuild wrote the
+  checkout's path into the SRPM and RPMs, so a clone anywhere but the
+  release workflow's directory couldn't match a release. On a host without
+  rpmbuild, the container now builds the source tarball too, because the
+  host's zlib compressed it differently, and the build tree no longer sits
+  on a bind mount, where a file came out mode 0600 instead of 0644.
 
 ## [0.2.10] - 2026-11-02
 

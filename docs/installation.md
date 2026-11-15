@@ -128,7 +128,15 @@ container with Podman instead (set `CONTAINER=docker` to use Docker).
 Build the same commit twice with the same packages installed and you get
 the same bytes, SRPM included. File times, build time and build host all
 come from the newest `%changelog` entry in the spec, not from your clock
-or your checkout. Compare with `cmp` or `sha256sum`.
+or your checkout, and rpmbuild always works in `/var/tmp/sentry-v2-rpmbuild`,
+so where you cloned doesn't matter either. Compare with `cmp` or `sha256sum`.
+
+To match a release's files byte for byte, build on x86_64, as the release
+workflow does. Even a noarch package records the build machine's
+architecture and compiler flags, so an aarch64 build differs in its header
+while every file inside it is the same. Rocky 10 package updates between
+the release and your build can also change the bytes; `rpm -qp --xml` on
+both and `diff` shows where.
 
 ## From PyPI
 
