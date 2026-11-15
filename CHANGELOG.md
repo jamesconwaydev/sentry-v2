@@ -6,6 +6,13 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `backup_reload` works on a unit added with `systemctl link`. systemd
+  reports the symlink in `/etc/systemd/system` as that unit's fragment, and
+  the backup refused it as a link, so the action failed before the reload.
+  It now copies the file the link points to.
+
 ## [0.2.10] - 2026-11-02
 
 ### Added

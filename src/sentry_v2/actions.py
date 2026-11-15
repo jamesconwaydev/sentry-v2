@@ -54,8 +54,10 @@ async def prepare(
                 raise Refused(f"already {props.freezer_state}")
             return {"freezer_state": props.freezer_state}, {"cgroup": props.cgroup}
         case BackupReload():
-            files = [props.fragment_path, *props.drop_in_paths, *map(str, spec.paths)]
-            return {}, {"files": [f for f in files if f]}
+            # `systemctl link` units report the symlink in /etc as their
+            # fragment; back up (and later restore) the file it points to
+            units = [os.path.realpath(f) for f in (props.fragment_path, *props.drop_in_paths) if f]
+            return {}, {"files": [*units, *map(str, spec.paths)]}
         case Notify():  # pragma: no cover - the executor never prepares a notify
             return {}, {}
 
