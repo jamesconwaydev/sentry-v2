@@ -24,7 +24,7 @@ carries the most weight.
 | Role | Who | Responsibilities |
 |---|---|---|
 | Maintainer | James Conway ([@jamesconwaydev](https://github.com/jamesconwaydev)) | Triages issues and Discussions; reviews and merges pull requests; keeps CI, dependencies and the integration suite green; cuts releases and publishes them to GitHub and PyPI; handles vulnerability reports as described in [SECURITY.md](SECURITY.md); enforces the [Code of Conduct](CODE_OF_CONDUCT.md); keeps the [roadmap](docs/roadmap.md) current. |
-| Backup maintainer | [@j-dahl7](https://github.com/j-dahl7) | Steps in as described under [Continuity](#continuity). |
+| Backup maintainer | [@foothillsdigital](https://github.com/foothillsdigital) | Reviews the maintainer's pull requests before they merge, including each release PR; steps in as described under [Continuity](#continuity). |
 | Contributor | Anyone who opens an issue, a Discussion or a pull request | Follows [CONTRIBUTING.md](CONTRIBUTING.md) and the Code of Conduct; signs off commits under the [Developer Certificate of Origin](CONTRIBUTING.md#developer-certificate-of-origin). |
 
 [CODEOWNERS](.github/CODEOWNERS) routes every review to the maintainer.
