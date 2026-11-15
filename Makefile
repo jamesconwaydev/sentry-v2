@@ -80,6 +80,7 @@ rpm-here:
 	cp packaging/sentry-v2.spec $(RPMTOP)/SPECS/
 	$(RPM_BUILD)
 	cp -r $(RPMTOP)/RPMS $(RPMTOP)/SRPMS $(TOPDIR)/
+	rm -rf $(RPMTOP)
 
 clean:
 	rm -rf build dist htmlcov .coverage .mypy_cache .ruff_cache .pytest_cache
