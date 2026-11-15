@@ -193,6 +193,22 @@ def test_backup_reload_manifest_matches_copies(tmp_path: Path) -> None:
     assert [c[0] for c in mgr.calls].count("reload") == 1
 
 
+def test_backup_reload_follows_a_linked_unit_file(tmp_path: Path) -> None:
+    # `systemctl link /opt/app/app.service` leaves a symlink as FragmentPath
+    real = tmp_path / "opt" / "app.service"
+    real.parent.mkdir()
+    real.write_text("[Service]\n")
+    link = tmp_path / "etc" / "app.service"
+    link.parent.mkdir()
+    link.symlink_to(real)
+    mgr = fake(fragment_path=str(link), drop_in_paths=())
+
+    _, params = run(actions.prepare(BackupReload(), UNIT, mgr, CgroupFS(tmp_path)))
+    assert params["files"] == [str(real)]
+    bid = actions.backup(UNIT, params["files"], tmp_path / "b", now=0.0)
+    assert (tmp_path / "b" / bid / "files" / str(real).lstrip("/")).read_text() == "[Service]\n"
+
+
 def test_backup_missing_file_fails(tmp_path: Path) -> None:
     with pytest.raises(OSError):
         actions.backup(UNIT, [str(tmp_path / "nope")], tmp_path / "b", now=0.0)

@@ -65,7 +65,10 @@ copied, with mode and modification time, to:
 
 Each file has to be a regular file of at most 1 MiB, and not a symlink.
 Anything else fails the action before the reload, with the path and the
-reason in the action's `error`. A service that owns the directory of a
+reason in the action's `error`. The one link that's followed is the one
+systemd itself reports: a unit added with `systemctl link` has a symlink in
+`/etc/systemd/system` as its fragment, so the backup copies the file it
+points to, and the backup path names that file. A service that owns the directory of a
 file you list can't swap it for a link or a huge file to make the backup
 copy something else or stall the daemon.
 
