@@ -8,6 +8,7 @@ All notable changes to Sentry-v2 are recorded here. The format follows
 
 ### Fixed
 
+- The metrics endpoint closes a connection whose client stops reading, instead of keeping it and its response open after the write timeout (#124).
 - `backup_reload` works on a unit added with `systemctl link`. systemd
   reports the symlink in `/etc/systemd/system` as that unit's fragment, and
   the backup refused it as a link, so the action failed before the reload.
