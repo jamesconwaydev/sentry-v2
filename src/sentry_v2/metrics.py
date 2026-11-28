@@ -364,7 +364,7 @@ class MetricsServer:
                 else:
                     await self._respond(writer, 200, body, CONTENT_TYPE)
         except (ConnectionError, OSError):
-            pass
+            writer.transport.abort()  # drop the unsent response and the socket together
         finally:
             self._open -= 1
             writer.close()

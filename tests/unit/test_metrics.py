@@ -166,6 +166,40 @@ def test_server_header_timeout():
     assert asyncio.run(go()).startswith(b"HTTP/1.1 408")
 
 
+def test_server_aborts_connection_when_write_times_out():
+    class TimeoutWriter:
+        def __init__(self) -> None:
+            self.transport = self
+            self.aborted = False
+            self.closed = False
+
+        def write(self, data: bytes) -> None:
+            pass
+
+        async def drain(self) -> None:
+            raise TimeoutError("write timed out")
+
+        def abort(self) -> None:
+            self.aborted = True
+
+        def close(self) -> None:
+            self.closed = True
+
+    class RequestReader:
+        async def readuntil(self, sep: bytes) -> bytes:
+            return b"GET /metrics HTTP/1.1\r\n\r\n"
+
+    async def go() -> TimeoutWriter:
+        s = MetricsServer(Registry(), "127.0.0.1", 0)
+        writer = TimeoutWriter()
+        await s._handle(RequestReader(), writer)  # type: ignore[arg-type]
+        return writer
+
+    writer = asyncio.run(go())
+    assert writer.aborted
+    assert writer.closed
+
+
 def test_server_closes_connections_past_the_cap():
     async def go() -> tuple[bytes, bytes]:
         s = MetricsServer(Registry(), "127.0.0.1", 0, max_connections=2)
